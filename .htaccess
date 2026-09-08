@@ -1,0 +1,7 @@
+<FilesMatch "^\.env">
+  Require all denied
+</FilesMatch>
+
+# Scripts em /scripts são só pra rodar via linha de comando (php scripts/x.php),
+# nunca devem ser acessáveis pelo navegador.
+RedirectMatch 404 ^/scripts/

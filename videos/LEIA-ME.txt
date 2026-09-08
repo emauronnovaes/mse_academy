@@ -1,0 +1,46 @@
+Coloque aqui o vídeo de fundo do banner de boas-vindas:
+
+  boas-vindas.mp4   (obrigatório — formato mais compatível, use esse)
+  boas-vindas.webm  (opcional — só um reforço de compatibilidade)
+
+Dicas pra escolher o vídeo:
+- Curto e em loop (5-15 segundos já basta, ele repete sozinho)
+- Sem áudio importante (o navegador só deixa tocar sozinho se for mudo)
+- Prefira algo com pouco movimento de câmera / não muito "gritante" —
+  ele fica atrás do texto "Bem-vindo, Colaborador", com uma camada
+  escura por cima; cenas muito claras ou muito agitadas competem com a leitura
+
+============================================================
+VÍDEOS DOS MÓDULOS DE INTEGRAÇÃO (temporário — enquanto o
+embed do YouTube não é liberado)
+============================================================
+
+O YouTube bloqueou a incorporação (embed) dos vídeos institucionais da
+MSE Engenharia no player embutido do site (erro 153). Enquanto isso não
+é resolvido com quem administra o canal, os 4 vídeos da trilha de
+integração tocam direto de arquivos locais, colocados aqui nesta pasta.
+
+Coloque os arquivos com EXATAMENTE esses nomes (são lidos direto pelo
+script.js, em ONBOARDING[].videoFile — se mudar o nome aqui, precisa
+mudar lá também):
+
+  modulo-1-visao-geral.mp4       (Visão geral do Portal MSE)
+  modulo-2-dados-cadastrais.mp4  (Atualizando seus dados cadastrais)
+  modulo-3-horas-ferias.mp4      (Lançando horas e solicitando férias)
+  modulo-4-contracheque.mp4      (Emitindo contracheque e documentos)
+
+Formato recomendado: MP4 (H.264 + AAC), que é o que todo navegador
+moderno reproduz sem plugin nenhum. Se o vídeo original for muito
+pesado (algumas dezenas de MB já é o suficiente pra um vídeo de
+5 minutos em resolução razoável — não precisa de 4K), comprima antes
+de subir pro servidor, senão a página fica lenta pra carregar.
+
+Sem esses arquivos aqui, o player aparece como uma tela preta com um
+botão de play que não reproduz nada — é só colocar o .mp4 com o nome
+certo que passa a funcionar, sem precisar mexer em mais nada no código.
+
+Quando o embed do YouTube for liberado (ou vocês decidirem gravar vídeos
+novos e subir num canal próprio), é só trocar a lógica de volta pro
+player do YouTube em renderModuleBody() no script.js — o player da
+integração e o do catálogo de cursos são independentes, só o da
+integração foi trocado pra local.

@@ -1,0 +1,12 @@
+{
+    "name": "mse-engenharia/mse-academy-backend",
+    "description": "Backend da MSE Academy — API PHP pura, com o SDK oficial da AWS pra upload/listagem de vídeos no S3.",
+    "type": "project",
+    "require": {
+        "php": ">=8.1",
+        "aws/aws-sdk-php": "^3.0"
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}

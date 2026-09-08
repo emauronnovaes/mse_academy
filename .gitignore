@@ -1,0 +1,21 @@
+# Nunca suba isso pro Git — tem senha do banco e chaves da AWS de verdade.
+.env
+
+# Vídeos são pesados demais pra Git (o repositório fica gigante rápido).
+# Eles vivem no S3 agora, não precisam estar aqui — só o LEIA-ME.txt
+# explicando onde colocar cada um continua no repositório.
+videos/*.mp4
+videos/*.webm
+videos/*.mov
+
+# Arquivos de sistema operacional
+.DS_Store
+Thumbs.db
+
+# Se algum dia usar Composer ou Node nesse projeto
+/vendor/
+/node_modules/
+
+# Logs e arquivos temporários
+*.log
+*.tmp
