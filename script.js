@@ -199,10 +199,10 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   document.getElementById('greetingTime').textContent = greeting;
 
   if(hasVisited){
-    document.getElementById('greetingName').innerHTML = `teste, <span>${userName}</span>.`;
+    document.getElementById('greetingName').innerHTML = `Bem-vindo de teste, <span>${userName}</span>.`;
     document.getElementById('welcomeSub').textContent = 'Continue de onde parou ou procure um novo tutorial no Portal MSE.';
   } else {
-    document.getElementById('greetingName').innerHTML = `teste, <span>${userName}</span>.`;
+    document.getElementById('greetingName').innerHTML = `Bem-vindo, <span>${userName}</span>.`;
     document.getElementById('welcomeSub').textContent = 'Vamos começar pela sua integração ao Portal MSE.';
   }
 
