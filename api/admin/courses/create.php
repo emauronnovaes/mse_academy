@@ -18,7 +18,9 @@ $areaSlug = trim((string) ($input['area_slug'] ?? ''));
 $type = (string) ($input['type'] ?? 'curso'); // 'curso' (catálogo) ou 'onboarding' (trilha obrigatória)
 $title = trim((string) ($input['title'] ?? ''));
 $description = trim((string) ($input['description'] ?? ''));
+$videoSource = (string) ($input['video_source'] ?? 'youtube'); // 'youtube' ou 's3'
 $youtubeId = trim((string) ($input['youtube_id'] ?? ''));
+$videoKey = trim((string) ($input['video_key'] ?? ''));
 $durationMinutes = (int) ($input['duration_minutes'] ?? 0);
 $orderIndex = $input['order_index'] ?? null; // null = vai pro final da fila automaticamente
 
@@ -35,8 +37,20 @@ if (!in_array($type, ['curso', 'onboarding'], true)) {
 if ($title === '') {
     mse_error('Informe o título do vídeo.', 422);
 }
-if ($youtubeId === '' || !preg_match('/^[A-Za-z0-9_-]{11}$/', $youtubeId)) {
-    mse_error('youtube_id inválido — precisa ter exatamente 11 caracteres (o trecho depois de "v=" na URL do YouTube).', 422);
+if (!in_array($videoSource, ['youtube', 's3'], true)) {
+    mse_error('video_source precisa ser "youtube" ou "s3".', 422);
+}
+if ($videoSource === 'youtube') {
+    if ($youtubeId === '' || !preg_match('/^[A-Za-z0-9_-]{11}$/', $youtubeId)) {
+        mse_error('youtube_id inválido — precisa ter exatamente 11 caracteres (o trecho depois de "v=" na URL do YouTube).', 422);
+    }
+} else {
+    // video_source === 's3' — o vídeo já foi enviado antes via
+    // /api/admin/media/upload.php, aqui só recebemos o caminho dele.
+    if ($videoKey === '') {
+        mse_error('Informe video_key (o caminho devolvido pelo upload em /api/admin/media/upload.php).', 422);
+    }
+    $youtubeId = null; // coluna é NULLABLE desde a migração 008
 }
 if ($durationMinutes < 0 || $durationMinutes > 600) {
     mse_error('duration_minutes fora do intervalo esperado (0 a 600).', 422);
@@ -94,10 +108,10 @@ if ($orderIndex === null) {
 $pdo->beginTransaction();
 try {
     $stmt = $pdo->prepare(
-        'INSERT INTO courses (area_id, type, title, description, youtube_id, duration_minutes, order_index, is_published)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1)'
+        'INSERT INTO courses (area_id, type, title, description, video_source, youtube_id, video_key, duration_minutes, order_index, is_published)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
     );
-    $stmt->execute([$areaId, $type, $title, $description, $youtubeId, $durationMinutes, $orderIndex]);
+    $stmt->execute([$areaId, $type, $title, $description, $videoSource, $youtubeId, $videoKey ?: null, $durationMinutes, $orderIndex]);
     $courseId = (int) $pdo->lastInsertId();
 
     $questionId = null;
@@ -124,7 +138,9 @@ mse_json([
         'area_slug' => $areaSlug,
         'type' => $type,
         'title' => $title,
+        'video_source' => $videoSource,
         'youtube_id' => $youtubeId,
+        'video_key' => $videoKey ?: null,
         'order_index' => $orderIndex,
     ],
     'quiz_question_id' => $questionId,

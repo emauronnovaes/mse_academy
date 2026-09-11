@@ -1,0 +1,77 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/../../../src/Cors.php';
+require_once __DIR__ . '/../../../src/Response.php';
+require_once __DIR__ . '/../../../src/Auth.php';
+
+mse_cors();
+mse_require_admin();
+
+$pdo = mse_db();
+$courseId = isset($_GET['course_id']) ? (int) $_GET['course_id'] : null;
+
+if ($courseId) {
+    // Detalhe de UM vídeo específico: quem assistiu, com nome completo,
+    // e-mail, cargo e quando concluiu — ordenado por mais recente primeiro.
+    $stmt = $pdo->prepare(
+        'SELECT c.id, c.title, c.type
+         FROM courses c WHERE c.id = ? LIMIT 1'
+    );
+    $stmt->execute([$courseId]);
+    $course = $stmt->fetch();
+    if (!$course) {
+        mse_error('Curso não encontrado.', 404);
+    }
+
+    $stmt = $pdo->prepare(
+        'SELECT u.name, u.email, u.cargo, p.status, p.watched_pct, p.completed_at
+         FROM user_course_progress p
+         JOIN users u ON u.id = p.user_id
+         WHERE p.course_id = ? AND p.status <> "nao_iniciado"
+         ORDER BY p.completed_at IS NULL, p.completed_at DESC, u.name ASC'
+    );
+    $stmt->execute([$courseId]);
+    $watchers = $stmt->fetchAll();
+
+    mse_json([
+        'course' => ['id' => (int) $course['id'], 'title' => $course['title'], 'type' => $course['type']],
+        'watchers' => array_map(function ($w) {
+            return [
+                'name' => $w['name'],           // nome completo
+                'email' => $w['email'],
+                'cargo' => $w['cargo'],
+                'status' => $w['status'],
+                'watched_pct' => (float) $w['watched_pct'],
+                'completed_at' => $w['completed_at'],
+            ];
+        }, $watchers),
+        'total' => count($watchers),
+    ]);
+} else {
+    // Visão geral: todos os vídeos, com a contagem de quem assistiu cada um.
+    $stmt = $pdo->query(
+        'SELECT c.id, c.title, c.type, a.name AS area_name,
+                COUNT(CASE WHEN p.status = "concluido" THEN 1 END) AS total_concluido,
+                COUNT(CASE WHEN p.status = "em_andamento" THEN 1 END) AS total_em_andamento
+         FROM courses c
+         JOIN areas a ON a.id = c.area_id
+         LEFT JOIN user_course_progress p ON p.course_id = c.id
+         GROUP BY c.id, c.title, c.type, a.name
+         ORDER BY c.type, c.order_index'
+    );
+    $courses = $stmt->fetchAll();
+
+    mse_json([
+        'courses' => array_map(function ($c) {
+            return [
+                'id' => (int) $c['id'],
+                'title' => $c['title'],
+                'type' => $c['type'],
+                'area_name' => $c['area_name'],
+                'total_concluido' => (int) $c['total_concluido'],
+                'total_em_andamento' => (int) $c['total_em_andamento'],
+            ];
+        }, $courses),
+    ]);
+}

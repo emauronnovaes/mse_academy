@@ -30,8 +30,15 @@ if (!mse_course_is_unlocked($pdo, (int) $user['id'], $courseId)) {
     mse_error('Este módulo ainda está bloqueado.', 403);
 }
 
-$status = $watchedPct >= 95 ? 'concluido' : ($watchedPct > 0 ? 'em_andamento' : 'nao_iniciado');
-$completedAt = $status === 'concluido' ? date('Y-m-d H:i:s') : null;
+// NUNCA marca "concluido" aqui — só quem faz isso é o quiz/submit.php,
+// depois de responder a pergunta certa. Assistir o vídeo (mesmo 100%)
+// só deixa em "em_andamento"; sem essa distinção, o curso "concluía"
+// sozinho só de assistir, e a pergunta virava decorativa (dava pra
+// pular ela e o curso já aparecia como feito). Testado: sem essa
+// correção, quiz/submit.php nunca conseguia dar pontos, porque o
+// status já vinha "concluido" antes mesmo da pessoa responder.
+$status = $watchedPct > 0 ? 'em_andamento' : 'nao_iniciado';
+$completedAt = null;
 
 // GREATEST() garante que o percentual nunca regride (ex: se a pessoa voltar
 // e assistir só um trecho de novo, não perde o progresso já feito).

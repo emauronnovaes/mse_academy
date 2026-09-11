@@ -199,7 +199,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   document.getElementById('greetingTime').textContent = greeting;
 
   if(hasVisited){
-    document.getElementById('greetingName').innerHTML = `Bem-vindo de teste, <span>${userName}</span>.`;
+    document.getElementById('greetingName').innerHTML = `Bem-vindo de volta, <span>${userName}</span>.`;
     document.getElementById('welcomeSub').textContent = 'Continue de onde parou ou procure um novo tutorial no Portal MSE.';
   } else {
     document.getElementById('greetingName').innerHTML = `Bem-vindo, <span>${userName}</span>.`;
@@ -1588,3 +1588,329 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     });
   }, {threshold:0.4});
   counters.forEach(c => statsObserver.observe(c));
+
+// ============================================================
+// Conexão REAL com a API — só pra detectar login/admin e o botão
+// "Adicionar pessoas". O resto do site continua em localStorage
+// (isso aqui é o primeiro pedaço conectado de verdade ao backend).
+// ============================================================
+(function initRealAdminIntegration(){
+  const REAL_SESSION_KEY = 'mse_academy_real_session_token';
+
+  function getRealSessionToken(){
+    return localStorage.getItem(REAL_SESSION_KEY);
+  }
+  function setRealSessionToken(token){
+    localStorage.setItem(REAL_SESSION_KEY, token);
+  }
+
+  async function apiFetch(path, options = {}){
+    const token = getRealSessionToken();
+    const headers = Object.assign({}, options.headers, {
+      'Content-Type': 'application/json',
+    });
+    if(token) headers['Authorization'] = 'Bearer ' + token;
+
+    const res = await fetch(path, Object.assign({}, options, { headers }));
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok){
+      const err = new Error(data.error || 'Erro na API');
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  }
+
+  // 1) Se chegou com ?sso=... na URL, faz o login de verdade contra a API
+  //    (isso é o que o Portal faria em produção; localmente, usamos
+  //    scripts/generate_test_login.php pra gerar esse link).
+  async function tryRealSsoLogin(){
+    const params = new URLSearchParams(window.location.search);
+    const ssoToken = params.get('sso');
+    if(!ssoToken) return;
+
+    try{
+      const data = await apiFetch('/api/auth/sso.php', {
+        method: 'POST',
+        body: JSON.stringify({ token: ssoToken }),
+      });
+      setRealSessionToken(data.token);
+      // limpa o ?sso= da URL, pra não ficar exposto nem reusar sem querer
+      params.delete('sso');
+      const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+      window.history.replaceState({}, '', clean);
+    }catch(e){
+      console.warn('Login SSO real falhou:', e.message);
+    }
+  }
+
+  // 2) Confere se a pessoa logada É admin de verdade (perguntando pra
+  //    API, nunca confiando em nada guardado só no navegador).
+  async function checkIsRealAdmin(){
+    const token = getRealSessionToken();
+    if(!token) return false;
+    try{
+      const data = await apiFetch('/api/auth/me.php');
+      return data.user && data.user.role === 'admin';
+    }catch(e){
+      return false;
+    }
+  }
+
+  function openAdminModal(){
+    document.getElementById('adminModalOverlay').hidden = false;
+    document.getElementById('adminModalEmail').value = '';
+    document.getElementById('adminModalEmail').focus();
+    const feedback = document.getElementById('adminModalFeedback');
+    feedback.hidden = true;
+  }
+  function closeAdminModal(){
+    document.getElementById('adminModalOverlay').hidden = true;
+  }
+
+  async function submitAddPerson(){
+    const email = document.getElementById('adminModalEmail').value.trim();
+    const feedback = document.getElementById('adminModalFeedback');
+    const submitBtn = document.getElementById('adminModalSubmit');
+
+    if(!email || !email.includes('@')){
+      feedback.hidden = false;
+      feedback.className = 'admin-modal-feedback erro';
+      feedback.textContent = 'Digite um e-mail válido.';
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Adicionando...';
+
+    try{
+      const data = await apiFetch('/api/admin/manage_admins.php', {
+        method: 'POST',
+        body: JSON.stringify({ email, action: 'promote' }),
+      });
+      feedback.hidden = false;
+      feedback.className = 'admin-modal-feedback ok';
+      feedback.textContent = data.message || (email + ' agora é admin — vai poder adicionar vídeos e outras pessoas também, assim que ela acessar a Academy pela primeira vez.');
+    }catch(e){
+      feedback.hidden = false;
+      feedback.className = 'admin-modal-feedback erro';
+      feedback.textContent = e.message || 'Não foi possível adicionar essa pessoa.';
+    }finally{
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Adicionar';
+    }
+  }
+
+  // ---------- Modal de adicionar vídeo ----------
+  const AREAS_CONHECIDAS = [
+    ['dp', 'Departamento Pessoal'], ['financeiro', 'Financeiro'], ['ti', 'TI'],
+    ['obras', 'Obras'], ['suprimentos', 'Suprimentos'], ['comercial', 'Comercial'],
+    ['seguranca-trabalho', 'Segurança do Trabalho'], ['qualidade', 'Qualidade'],
+  ];
+
+  function fillAreaSelect(){
+    const select = document.getElementById('videoModalArea');
+    if(!select || select.options.length) return; // já preenchido
+    AREAS_CONHECIDAS.forEach(([slug, nome]) => {
+      const opt = document.createElement('option');
+      opt.value = slug;
+      opt.textContent = nome;
+      select.appendChild(opt);
+    });
+  }
+
+  function openVideoModal(){
+    fillAreaSelect();
+    document.getElementById('videoModalOverlay').hidden = false;
+    document.getElementById('videoModalFeedback').hidden = true;
+  }
+  function closeVideoModal(){
+    document.getElementById('videoModalOverlay').hidden = true;
+  }
+
+  async function submitAddVideo(){
+    const areaSlug = document.getElementById('videoModalArea').value;
+    const type = document.getElementById('videoModalType').value;
+    const titulo = document.getElementById('videoModalTitulo').value.trim();
+    const descricao = document.getElementById('videoModalDescricao').value.trim();
+    const duracao = parseInt(document.getElementById('videoModalDuracao').value, 10) || 5;
+    const arquivo = document.getElementById('videoModalArquivo').files[0];
+    const pergunta = document.getElementById('videoModalPergunta').value.trim();
+    const feedback = document.getElementById('videoModalFeedback');
+    const submitBtn = document.getElementById('videoModalSubmit');
+
+    if(!titulo || !arquivo){
+      feedback.hidden = false;
+      feedback.className = 'admin-modal-feedback erro';
+      feedback.textContent = 'Preencha o título e escolha um arquivo de vídeo.';
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Enviando vídeo...';
+    feedback.hidden = true;
+
+    try{
+      // 1) Upload do arquivo pro S3
+      const destinationKey = `${type === 'onboarding' ? 'onboarding' : 'cursos'}/${Date.now()}-${arquivo.name.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
+      const formData = new FormData();
+      formData.append('video', arquivo);
+      formData.append('destination_key', destinationKey);
+
+      const token = getRealSessionToken();
+      const uploadRes = await fetch('/api/admin/media/upload.php', {
+        method: 'POST',
+        headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+        body: formData,
+      });
+      const uploadData = await uploadRes.json();
+      if(!uploadRes.ok) throw new Error(uploadData.error || 'Falha no upload do vídeo.');
+
+      // 2) Cria o curso, já com o video_key que acabou de subir
+      submitBtn.textContent = 'Criando o curso...';
+      const body = {
+        area_slug: areaSlug,
+        type,
+        title: titulo,
+        description: descricao,
+        video_source: 's3',
+        video_key: uploadData.video_key || destinationKey,
+        duration_minutes: duracao,
+      };
+      if(pergunta){
+        body.quiz_question = pergunta;
+        body.quiz_options = [0, 1, 2].map(i => ({
+          text: document.getElementById('videoModalOpcao' + i).value.trim(),
+          is_correct: document.querySelector(`input[name="videoModalCorreta"][value="${i}"]`).checked,
+        })).filter(o => o.text);
+      }
+
+      const data = await apiFetch('/api/admin/courses/create.php', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+
+      feedback.hidden = false;
+      feedback.className = 'admin-modal-feedback ok';
+      feedback.textContent = `Vídeo "${titulo}" adicionado com sucesso!`;
+    }catch(e){
+      feedback.hidden = false;
+      feedback.className = 'admin-modal-feedback erro';
+      feedback.textContent = e.message || 'Não foi possível adicionar o vídeo.';
+    }finally{
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Adicionar vídeo';
+    }
+  }
+
+  // ---------- Modal de "quem assistiu" ----------
+  function openWatchersModal(){
+    document.getElementById('watchersModalOverlay').hidden = false;
+    loadWatchersOverview();
+  }
+  function closeWatchersModal(){
+    document.getElementById('watchersModalOverlay').hidden = true;
+  }
+
+  async function loadWatchersOverview(){
+    const body = document.getElementById('watchersModalBody');
+    document.getElementById('watchersModalSubtitle').textContent = 'Clique num vídeo pra ver os nomes de quem já assistiu.';
+    body.innerHTML = '<p>Carregando...</p>';
+    try{
+      const data = await apiFetch('/api/admin/courses/watchers.php');
+      body.innerHTML = '<ul class="watchers-course-list"></ul>';
+      const ul = body.querySelector('.watchers-course-list');
+      data.courses.forEach(c => {
+        const li = document.createElement('li');
+        li.className = 'watchers-course-item';
+        li.innerHTML = `
+          <div>
+            <div class="wc-title">${c.title}</div>
+            <div class="wc-area">${c.area_name} · ${c.type === 'onboarding' ? 'Integração' : 'Catálogo'}</div>
+          </div>
+          <div class="wc-counts"><b>${c.total_concluido}</b> concluíram · ${c.total_em_andamento} em andamento</div>
+        `;
+        li.addEventListener('click', () => loadWatchersDetail(c.id, c.title));
+        ul.appendChild(li);
+      });
+    }catch(e){
+      body.innerHTML = `<p>Não foi possível carregar: ${e.message}</p>`;
+    }
+  }
+
+  async function loadWatchersDetail(courseId, courseTitle){
+    const body = document.getElementById('watchersModalBody');
+    document.getElementById('watchersModalSubtitle').textContent = courseTitle;
+    body.innerHTML = '<p>Carregando...</p>';
+    try{
+      const data = await apiFetch('/api/admin/courses/watchers.php?course_id=' + courseId);
+      const rows = data.watchers.map(w => `
+        <tr>
+          <td>${w.name}</td>
+          <td>${w.cargo || '—'}</td>
+          <td><span class="watchers-status ${w.status}">${w.status === 'concluido' ? 'Concluído' : 'Em andamento'}</span></td>
+          <td>${w.completed_at ? new Date(w.completed_at).toLocaleDateString('pt-BR') : '—'}</td>
+        </tr>
+      `).join('');
+      body.innerHTML = `
+        <button type="button" class="watchers-back-btn" id="watchersBackBtn">← Voltar pra lista de vídeos</button>
+        ${data.watchers.length === 0 ? '<p>Ninguém assistiu esse vídeo ainda.</p>' : `
+        <table class="watchers-table">
+          <thead><tr><th>Nome</th><th>Cargo</th><th>Status</th><th>Concluído em</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`}
+      `;
+      document.getElementById('watchersBackBtn').addEventListener('click', loadWatchersOverview);
+    }catch(e){
+      body.innerHTML = `<p>Não foi possível carregar: ${e.message}</p>`;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    await tryRealSsoLogin();
+    const isAdmin = await checkIsRealAdmin();
+
+    if(isAdmin){
+      const toolbar = document.getElementById('adminToolbar');
+      if(toolbar) toolbar.hidden = false;
+      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnQuemAssistiu'].forEach(id => {
+        const btn = document.getElementById(id);
+        if(btn) btn.hidden = false;
+      });
+    }
+
+    const btnAdd = document.getElementById('btnAdicionarPessoas');
+    if(btnAdd) btnAdd.addEventListener('click', openAdminModal);
+
+    const btnClose = document.getElementById('adminModalClose');
+    if(btnClose) btnClose.addEventListener('click', closeAdminModal);
+
+    const overlay = document.getElementById('adminModalOverlay');
+    if(overlay) overlay.addEventListener('click', (e) => {
+      if(e.target === overlay) closeAdminModal();
+    });
+
+    const btnVideo = document.getElementById('btnAdicionarVideo');
+    if(btnVideo) btnVideo.addEventListener('click', openVideoModal);
+    const btnVideoClose = document.getElementById('videoModalClose');
+    if(btnVideoClose) btnVideoClose.addEventListener('click', closeVideoModal);
+    const btnVideoSubmit = document.getElementById('videoModalSubmit');
+    if(btnVideoSubmit) btnVideoSubmit.addEventListener('click', submitAddVideo);
+    const videoOverlay = document.getElementById('videoModalOverlay');
+    if(videoOverlay) videoOverlay.addEventListener('click', (e) => {
+      if(e.target === videoOverlay) closeVideoModal();
+    });
+
+    const btnWatchers = document.getElementById('btnQuemAssistiu');
+    if(btnWatchers) btnWatchers.addEventListener('click', openWatchersModal);
+    const btnWatchersClose = document.getElementById('watchersModalClose');
+    if(btnWatchersClose) btnWatchersClose.addEventListener('click', closeWatchersModal);
+    const watchersOverlay = document.getElementById('watchersModalOverlay');
+    if(watchersOverlay) watchersOverlay.addEventListener('click', (e) => {
+      if(e.target === watchersOverlay) closeWatchersModal();
+    });
+
+    const btnSubmit = document.getElementById('adminModalSubmit');
+    if(btnSubmit) btnSubmit.addEventListener('click', submitAddPerson);
+  });
+})();

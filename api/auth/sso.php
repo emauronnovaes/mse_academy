@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../src/Cors.php';
 require_once __DIR__ . '/../../src/Response.php';
 require_once __DIR__ . '/../../src/Auth.php';
 require_once __DIR__ . '/../../src/Sso.php';
+require_once __DIR__ . '/../../src/PortalFichaApi.php';
 
 mse_cors();
 
@@ -27,9 +28,48 @@ if ($payload === null) {
 $email = strtolower(trim((string) $payload['email']));
 $cpf = isset($payload['cpf']) ? preg_replace('/\D/', '', (string) $payload['cpf']) : null;
 $nome = (string) ($payload['nome'] ?? $email);
-$primeiroNome = mse_first_name_from_email($email);
 $cargo = isset($payload['cargo']) ? (string) $payload['cargo'] : null;
 $areaSlug = isset($payload['area_slug']) ? (string) $payload['area_slug'] : null;
+
+// Enriquecimento OPCIONAL com a ficha funcional oficial do RH (API
+// ff_infos do Hub MSE) — busca pelo nome que já veio no token. Se a API
+// falhar, der timeout, ou não achar ninguém, o login segue normalmente
+// só com o que o token do Portal já trouxe — isso aqui nunca pode
+// travar ninguém de entrar na Academy.
+$ficha = mse_portal_ficha_buscar($nome);
+if ($ficha !== null) {
+    // Função/cargo oficial do RH é mais confiável que o que o token do
+    // Portal eventualmente mande — priorizamos ela quando disponível
+    // (isso melhora a recomendação de cursos por cargo).
+    if (!empty($ficha['funcao'])) {
+        $cargo = $ficha['funcao'];
+    }
+    // CPF: usa o da ficha só se o token não tiver mandado nenhum.
+    if (empty($cpf) && !empty($ficha['cpf'])) {
+        $cpf = $ficha['cpf'];
+    }
+    // E-mail: a documentação da API não lista esse campo, mas alguns
+    // registros trazem — só usamos como ÚLTIMO recurso, se por algum
+    // motivo o token do Portal não tiver mandado e-mail nenhum.
+    if (empty($email) && !empty($ficha['email'])) {
+        $email = $ficha['email'];
+    }
+}
+
+// Caso extremo: mesmo depois do token do Portal E da ficha do RH,
+// ninguém trouxe e-mail nenhum. A tabela "users" hoje exige e-mail
+// único — usamos o CPF como identificador nesse caso raro, em vez de
+// travar o login (mas isso é mesmo bem incomum: o Portal normalmente
+// sempre manda e-mail no token).
+if (empty($email)) {
+    if (!empty($cpf)) {
+        $email = $cpf . '@sem-email.mse.local';
+    } else {
+        mse_error('Não foi possível identificar a pessoa — nem e-mail nem CPF disponíveis.', 422);
+    }
+}
+
+$primeiroNome = mse_first_name_from_email($email);
 
 $pdo = mse_db();
 

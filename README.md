@@ -324,6 +324,8 @@ Todos (exceto o SSO, que É o login) exigem o header:
 | POST | `/api/progress/update.php` | Atualiza o % assistido. Recebe `{course_id, watched_pct}` |
 | POST | `/api/quiz/submit.php` | Envia resposta. Recebe `{question_id, option_id}`, devolve `{correct: true/false}` |
 | GET | `/api/admin/users_progress.php?page=1` | (admin) Visão geral de quem já concluiu o onboarding |
+| GET | `/api/admin/courses/watchers.php` | (admin) Todos os cursos com contagem de quem assistiu cada um |
+| GET | `/api/admin/courses/watchers.php?course_id=X` | (admin) Lista completa de quem assistiu um curso específico, com **nome completo**, cargo e data de conclusão |
 | POST | `/api/admin/courses/create.php` | (admin) Adiciona um vídeo novo ao catálogo (ou à trilha), com pergunta de quiz opcional |
 | POST | `/api/admin/manage_admins.php` | (admin) Promove ou remove o acesso de admin de outro e-mail — `{email, action: "promote"\|"demote"}` |
 
@@ -408,7 +410,59 @@ crontab -e
   interna) — geralmente configurado no próprio servidor web
   (Nginx/Apache) ou num proxy tipo Cloudflare.
 
-## Adicionando vídeos e outros admins pelo próprio site
+## Enriquecimento com a Ficha Funcional do Hub MSE (RH)
+
+O token do Portal (SSO) é sempre quem **identifica** a pessoa (e-mail,
+nome) — isso já funcionava e continua igual. O que adicionei foi um
+**enriquecimento opcional**: logo depois de validar o token, a Academy
+busca o nome da pessoa na API `ff_infos` do Hub MSE, e se achar,
+completa/corrige o **cargo** com a função oficial do RH (mais confiável
+que o que o Portal eventualmente mande) — isso melhora a recomendação
+de cursos por cargo (ver seção acima).
+
+Fica em `src/PortalFichaApi.php`. Testei 4 cenários (com uma simulação
+local da API, já que não tenho acesso a ela nesse ambiente): API fora
+do ar → login continua funcionando sem travar; cargo vem vazio no token
+→ preenchido pela ficha; cargo genérico no token → **sobrescrito** pelo
+da ficha (fonte oficial); nome não encontrado na ficha → login segue
+normal, sem erro.
+
+**Configuração**: `PORTAL_FICHA_API_BASE` e `PORTAL_FICHA_API_TOKEN`
+no `.env` (a chave é gerada no Hub MSE, botão "Ativar API"). Timeout de
+5 segundos — se a API demorar mais que isso, o login segue sem esperar.
+
+## Botão "Adicionar pessoas" — conexão real front-end + API
+
+Diferente do resto do site (que roda em `localStorage`), o botão
+**"Adicionar pessoas"** no topo da página é a primeira parte da Academy
+conectada de verdade com a API — ele só aparece pra quem a API confirma
+como admin (nunca é decidido só no navegador, senão qualquer um driblava
+isso pelo console).
+
+### Como testar isso no seu computador (sem um Portal de verdade)
+
+Localmente não existe o Portal MSE redirecionando pra cá, então usei um
+script pra gerar um link de teste equivalente:
+
+```bash
+php scripts/generate_test_login.php matheus.batista@mse.com.br
+```
+
+Isso imprime um link tipo `http://localhost/?sso=...` — abre ele no
+navegador (com o servidor do site rodando) que já entra logado como
+essa pessoa. Se ela for admin, o botão aparece sozinho no topo.
+
+⚠️ **Esse script é só pra desenvolvimento** — nunca disponibilize ele
+num servidor de produção (lá o token vem do Portal de verdade, assinado
+com a chave real).
+
+### O que testei (via navegador de verdade, não só lendo o código)
+
+- Admin acessa → botão aparece
+- Colaborador comum acessa → botão **não** aparece
+- Admin abre o modal, digita um e-mail, confirma → a pessoa vira admin **no banco de verdade**
+- Essa pessoa nova, ao acessar pela primeira vez, **já vê o botão também** — confirma a "corrente" de permissão que foi pedida (quem é adicionado também pode adicionar)
+
 
 Depois que `matheus.batista@mse.com.br` roda a migração `005` e vira o
 primeiro admin, ele **não precisa mais mexer no banco na mão** — dá pra
@@ -462,4 +516,3 @@ SSO. Pra usar esse backend de verdade, essa parte do JS precisa:
 2. Trocar as chamadas de `localStorage` por `fetch()` nesses endpoints.
 
 Posso fazer essa integração quando você quiser — é só pedir.
-# mse_academy

@@ -1,0 +1,48 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * SÓ PRA DESENVOLVIMENTO LOCAL — gera um link de login de teste, do jeito
+ * que o Portal MSE geraria de verdade em produção. Sem isso, não tem
+ * como testar o SSO no seu computador (o Portal real não existe aqui).
+ *
+ * NUNCA rode isso em produção — lá o token vem do Portal de verdade.
+ *
+ * Como usar:
+ *   php scripts/generate_test_login.php matheus.batista@mse.com.br
+ *   php scripts/generate_test_login.php outro@mse.com.br "Nome da Pessoa"
+ */
+
+require_once __DIR__ . '/../config/database.php';
+
+$email = $argv[1] ?? null;
+$nome = $argv[2] ?? null;
+
+if (!$email) {
+    echo "Uso: php scripts/generate_test_login.php email@mse.com.br \"Nome (opcional)\"\n";
+    exit(1);
+}
+
+$secret = getenv('PORTAL_SSO_SECRET') ?: '';
+if ($secret === '') {
+    echo "ERRO: PORTAL_SSO_SECRET não está configurado no seu .env\n";
+    exit(1);
+}
+
+function base64url_encode(string $data): string
+{
+    return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+}
+
+$payload = json_encode([
+    'email' => $email,
+    'nome' => $nome ?: $email,
+    'exp' => time() + 300, // 5 minutos pra usar o link
+]);
+$payloadB64 = base64url_encode($payload);
+$signature = hash_hmac('sha256', $payloadB64, $secret);
+$token = $payloadB64 . '.' . $signature;
+
+echo "Token gerado (válido por 5 minutos):\n\n";
+echo "http://localhost/?sso={$token}\n\n";
+echo "Abre esse link no navegador (com o site rodando) pra entrar como {$email}.\n";

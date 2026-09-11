@@ -64,6 +64,20 @@ $stmt = $pdo->prepare(
 $stmt->execute([$user['id'], $questionId, $optionId, $isCorrect ? 1 : 0]);
 
 if ($isCorrect) {
+    // Confere se ESSE curso já estava concluído antes dessa resposta —
+    // sem isso, responder a mesma pergunta certa várias vezes (ex:
+    // clicando rápido, ou reassistindo e respondendo de novo) dava
+    // pontos e "módulo concluído" de novo a cada vez, sem limite.
+    // Testado: 3 respostas certas seguidas na mesma pergunta chegavam
+    // a inflar total_points=30 e modules_completed=3 (deveria ser
+    // 10 e 1). Só soma pontos na PRIMEIRA vez que o curso é concluído.
+    $stmt = $pdo->prepare(
+        'SELECT status FROM user_course_progress WHERE user_id = ? AND course_id = ?'
+    );
+    $stmt->execute([$user['id'], $courseId]);
+    $currentProgress = $stmt->fetch();
+    $alreadyCompleted = $currentProgress && $currentProgress['status'] === 'concluido';
+
     $pdo->beginTransaction();
     try {
         $stmt = $pdo->prepare(
@@ -73,15 +87,17 @@ if ($isCorrect) {
         );
         $stmt->execute([$user['id'], $courseId]);
 
-        $points = 10; // pontuação fixa por módulo — ajuste como quiser
-        $stmt = $pdo->prepare(
-            'INSERT INTO user_stats (user_id, total_points, modules_completed)
-             VALUES (?, ?, 1)
-             ON DUPLICATE KEY UPDATE
-                total_points = total_points + VALUES(total_points),
-                modules_completed = modules_completed + 1'
-        );
-        $stmt->execute([$user['id'], $points]);
+        if (!$alreadyCompleted) {
+            $points = 10; // pontuação fixa por módulo — ajuste como quiser
+            $stmt = $pdo->prepare(
+                'INSERT INTO user_stats (user_id, total_points, modules_completed)
+                 VALUES (?, ?, 1)
+                 ON DUPLICATE KEY UPDATE
+                    total_points = total_points + VALUES(total_points),
+                    modules_completed = modules_completed + 1'
+            );
+            $stmt->execute([$user['id'], $points]);
+        }
 
         $pdo->commit();
     } catch (Throwable $e) {
