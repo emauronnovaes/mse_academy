@@ -189,22 +189,26 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   }
 
   // ---------- Banner de boas-vindas (só aparece na aba Integração) ----------
-  // O nome real deve vir da sessão do portal (SSO/intranet).
-  // Troque a linha abaixo pela integração real, ex: window.MSE_PORTAL_USER?.firstName
-  const userName = new URLSearchParams(location.search).get('nome') || 'Colaborador';
+  // O nome real vem da sessão de login de verdade (SSO ou quick_login,
+  // ver initRealAdminIntegration no final do arquivo) — guardado em
+  // localStorage assim que o login termina. Enquanto isso não roda
+  // ainda (ou se falhar), cai no "Colaborador" de sempre.
+  function updateGreetingBanner(realName){
+    const userName = realName || localStorage.getItem('mse_academy_real_user_name') || new URLSearchParams(location.search).get('nome') || 'Colaborador';
 
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+    document.getElementById('greetingTime').textContent = greeting;
 
-  document.getElementById('greetingTime').textContent = greeting;
-
-  if(hasVisited){
-    document.getElementById('greetingName').innerHTML = `Bem-vindo de volta, <span>${userName}</span>.`;
-    document.getElementById('welcomeSub').textContent = 'Continue de onde parou ou procure um novo tutorial no Portal MSE.';
-  } else {
-    document.getElementById('greetingName').innerHTML = `Bem-vindo, <span>${userName}</span>.`;
-    document.getElementById('welcomeSub').textContent = 'Vamos começar pela sua integração ao Portal MSE.';
+    if(hasVisited){
+      document.getElementById('greetingName').innerHTML = `Bem-vindo de volta, <span>${userName}</span>.`;
+      document.getElementById('welcomeSub').textContent = 'Continue de onde parou ou procure um novo tutorial no Portal MSE.';
+    } else {
+      document.getElementById('greetingName').innerHTML = `Bem-vindo, <span>${userName}</span>.`;
+      document.getElementById('welcomeSub').textContent = 'Vamos começar pela sua integração ao Portal MSE.';
+    }
   }
+  updateGreetingBanner(); // mostra algo já de cara (Colaborador ou nome salvo de uma visita anterior)
 
   // ---------- Abas: Integração / Cursos ----------
   function showView(name){
@@ -1636,6 +1640,9 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
           body: JSON.stringify({ token: ssoToken }),
         });
         setRealSessionToken(data.token);
+        if(data.user && data.user.first_name){
+          localStorage.setItem('mse_academy_real_user_name', data.user.first_name);
+        }
         params.delete('sso');
         const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
         window.history.replaceState({}, '', clean);
@@ -1656,6 +1663,9 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
           method: 'GET',
         });
         setRealSessionToken(data.token);
+        if(data.user && data.user.first_name){
+          localStorage.setItem('mse_academy_real_user_name', data.user.first_name);
+        }
         params.delete('email');
         params.delete('nome');
         const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
@@ -1890,6 +1900,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
 
   document.addEventListener('DOMContentLoaded', async () => {
     await tryRealSsoLogin();
+    updateGreetingBanner(); // atualiza a saudação com o nome real, se o login deu certo
     const isAdmin = await checkIsRealAdmin();
 
     if(isAdmin){
