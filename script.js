@@ -1615,7 +1615,13 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     });
     if(token) headers['Authorization'] = 'Bearer ' + token;
 
-    const res = await fetch(path, Object.assign({}, options, { headers }));
+    const res = await fetch(path, Object.assign({
+      credentials: 'include', // manda cookies mesmo se a Academy estiver
+                               // rodando num contexto diferente (iframe,
+                               // por exemplo) — sem isso, a leitura da
+                               // sessão do Portal (portal_session.php)
+                               // nunca recebe o cookie de sessão.
+    }, options, { headers }));
     const data = await res.json().catch(() => ({}));
     if(!res.ok){
       const err = new Error(data.error || 'Erro na API');
@@ -1812,6 +1818,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       const token = getRealSessionToken();
       const uploadRes = await fetch('api/admin/media/upload.php', {
         method: 'POST',
+        credentials: 'include',
         headers: token ? { 'Authorization': 'Bearer ' + token } : {},
         body: formData,
       });
