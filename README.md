@@ -49,6 +49,28 @@ conteúdo.
 Existem **duas formas** de identificar a pessoa — escolha uma delas
 dependendo do que for mais fácil de implementar do lado do Portal.
 
+#### Opção 0 — Ler a sessão do Portal direto (só se for o MESMO domínio)
+
+Se a Academy for hospedada **dentro do mesmo domínio** do Portal (ex:
+`portalmse.com.br/academy`), o cookie de sessão do Portal já chega
+sozinho em qualquer página desse domínio — sem precisar de link
+especial nem nada digitado na URL. A Academy tenta ler essa sessão
+automaticamente, assim que a página carrega.
+
+Isso fica em `src/PortalSession.php` — como eu não sei o nome exato da
+variável que o Portal usa pra guardar o login (`$_SESSION['email']`?
+`$_SESSION['usuario']['email']`? outro?), tento os formatos mais comuns
+em sequência. **Testei que o mecanismo funciona de verdade** (simulei
+uma sessão real e confirmei que a Academy lê ela e loga a pessoa
+sozinha, sem nada na URL) — mas só vai funcionar em produção **se o
+formato real da sessão do Portal bater com um dos que tentei**. Se não
+bater, use `scripts/diagnostico_sessao_portal.php` pra descobrir o
+formato certo (veja o comentário no topo desse arquivo) e me avise —
+é uma mudança pequena ajustar pro formato certo.
+
+Se isso não achar nada (sessão vazia, ou domínio diferente), a Academy
+cai automaticamente pras opções abaixo, sem quebrar nada.
+
 #### Opção A — Token assinado (mais segura, recomendada)
 
 1. Você define uma chave secreta em `PORTAL_SSO_SECRET` (no `.env`) —
@@ -338,6 +360,7 @@ Todos (exceto o SSO, que É o login) exigem o header:
 | Método | Rota | O que faz |
 |---|---|---|
 | POST | `/api/auth/sso.php` | Login via token assinado (Opção A). Recebe `{token}`, cria/atualiza o usuário, devolve `{token, user, access}` |
+| GET | `/api/auth/portal_session.php` | Login automático lendo a sessão do Portal direto (Opção 0) — só funciona no mesmo domínio |
 | GET | `/api/auth/quick_login.php?email=X&nome=Y` | Login simplificado sem assinatura (Opção B) — ver aviso de segurança na seção acima |
 | POST | `/api/auth/logout.php` | Invalida o token atual |
 | GET | `/api/auth/me.php` | Dados do usuário logado |
