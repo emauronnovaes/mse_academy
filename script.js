@@ -1627,20 +1627,42 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   async function tryRealSsoLogin(){
     const params = new URLSearchParams(window.location.search);
     const ssoToken = params.get('sso');
-    if(!ssoToken) return;
+    const quickEmail = params.get('email');
 
-    try{
-      const data = await apiFetch('/api/auth/sso.php', {
-        method: 'POST',
-        body: JSON.stringify({ token: ssoToken }),
-      });
-      setRealSessionToken(data.token);
-      // limpa o ?sso= da URL, pra não ficar exposto nem reusar sem querer
-      params.delete('sso');
-      const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
-      window.history.replaceState({}, '', clean);
-    }catch(e){
-      console.warn('Login SSO real falhou:', e.message);
+    if(ssoToken){
+      try{
+        const data = await apiFetch('/api/auth/sso.php', {
+          method: 'POST',
+          body: JSON.stringify({ token: ssoToken }),
+        });
+        setRealSessionToken(data.token);
+        params.delete('sso');
+        const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        window.history.replaceState({}, '', clean);
+      }catch(e){
+        console.warn('Login SSO real falhou:', e.message);
+      }
+      return;
+    }
+
+    // Login simplificado — o Portal manda o e-mail (e opcionalmente o
+    // nome) direto na URL, sem token assinado. Ver o aviso de segurança
+    // em api/auth/quick_login.php sobre essa escolha.
+    if(quickEmail){
+      try{
+        const nome = params.get('nome') || '';
+        const query = new URLSearchParams({ email: quickEmail, nome });
+        const data = await apiFetch('/api/auth/quick_login.php?' + query.toString(), {
+          method: 'GET',
+        });
+        setRealSessionToken(data.token);
+        params.delete('email');
+        params.delete('nome');
+        const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        window.history.replaceState({}, '', clean);
+      }catch(e){
+        console.warn('Login simplificado falhou:', e.message);
+      }
     }
   }
 

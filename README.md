@@ -46,6 +46,11 @@ conteúdo.
 
 ### Como funciona
 
+Existem **duas formas** de identificar a pessoa — escolha uma delas
+dependendo do que for mais fácil de implementar do lado do Portal.
+
+#### Opção A — Token assinado (mais segura, recomendada)
+
 1. Você define uma chave secreta em `PORTAL_SSO_SECRET` (no `.env`) —
    a MESMA chave precisa estar configurada no lado do Portal MSE.
 2. Quando a pessoa clica em "MSE Academy" dentro do Portal, o **Portal**
@@ -58,6 +63,26 @@ conteúdo.
    `POST /api/auth/sso.php`, que confere a assinatura, cria ou atualiza
    o usuário automaticamente, e devolve um token de sessão normal da
    Academy (mesmo mecanismo de sempre a partir daí).
+
+#### Opção B — E-mail direto na URL (mais simples, sem assinatura)
+
+Se não for viável gerar um token assinado no Portal agora, o link pode
+simplesmente levar o e-mail (e opcionalmente o nome) da pessoa:
+```
+https://academy.mse.com.br/?email=fulano@mse.com.br&nome=Fulano+de+Tal
+```
+A Academy **confia** nesse e-mail sem verificar assinatura nenhuma —
+ver o aviso de segurança completo em `api/auth/quick_login.php`. Isso só
+é aceitável porque o link fica **dentro do Portal**, atrás do login
+dele — ninguém de fora chega nesse link sem já ter passado pelo Portal
+antes. Se o `nome` vier junto, a Academy usa ele pra buscar o cargo
+oficial na Ficha Funcional (ver seção abaixo); sem nome, só identifica
+pelo e-mail mesmo, sem cargo.
+
+Testei os dois cenários de ponta a ponta (com navegador de verdade):
+e-mail + nome (enriquece com cargo da ficha) e só e-mail (funciona
+igual, sem cargo).
+
 
 ### Gerando o token no lado do Portal (PHP)
 
@@ -312,7 +337,8 @@ Todos (exceto o SSO, que É o login) exigem o header:
 
 | Método | Rota | O que faz |
 |---|---|---|
-| POST | `/api/auth/sso.php` | **Único jeito de entrar.** Recebe `{token}` (assinado pelo Portal), cria/atualiza o usuário, devolve `{token, user, access}` |
+| POST | `/api/auth/sso.php` | Login via token assinado (Opção A). Recebe `{token}`, cria/atualiza o usuário, devolve `{token, user, access}` |
+| GET | `/api/auth/quick_login.php?email=X&nome=Y` | Login simplificado sem assinatura (Opção B) — ver aviso de segurança na seção acima |
 | POST | `/api/auth/logout.php` | Invalida o token atual |
 | GET | `/api/auth/me.php` | Dados do usuário logado |
 | GET | `/api/courses/list.php?type=onboarding` | Lista a trilha obrigatória (igual pra todo mundo) |
