@@ -1629,7 +1629,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   //    domínio) — usado só como RESERVA, depois de checar o token.
   async function tryPortalSessionLogin(){
     try{
-      const data = await apiFetch('/api/auth/portal_session.php');
+      const data = await apiFetch('api/auth/portal_session.php');
       setRealSessionToken(data.token);
       if(data.user && data.user.first_name){
         localStorage.setItem('mse_academy_real_user_name', data.user.first_name);
@@ -1651,7 +1651,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
 
     if(ssoToken){
       try{
-        const data = await apiFetch('/api/auth/sso.php', {
+        const data = await apiFetch('api/auth/sso.php', {
           method: 'POST',
           body: JSON.stringify({ token: ssoToken }),
         });
@@ -1679,7 +1679,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       try{
         const nome = params.get('nome') || '';
         const query = new URLSearchParams({ email: quickEmail, nome });
-        const data = await apiFetch('/api/auth/quick_login.php?' + query.toString(), {
+        const data = await apiFetch('api/auth/quick_login.php?' + query.toString(), {
           method: 'GET',
         });
         setRealSessionToken(data.token);
@@ -1702,7 +1702,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     const token = getRealSessionToken();
     if(!token) return false;
     try{
-      const data = await apiFetch('/api/auth/me.php');
+      const data = await apiFetch('api/auth/me.php');
       return data.user && data.user.role === 'admin';
     }catch(e){
       return false;
@@ -1736,7 +1736,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     submitBtn.textContent = 'Adicionando...';
 
     try{
-      const data = await apiFetch('/api/admin/manage_admins.php', {
+      const data = await apiFetch('api/admin/manage_admins.php', {
         method: 'POST',
         body: JSON.stringify({ email, action: 'promote' }),
       });
@@ -1810,7 +1810,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       formData.append('destination_key', destinationKey);
 
       const token = getRealSessionToken();
-      const uploadRes = await fetch('/api/admin/media/upload.php', {
+      const uploadRes = await fetch('api/admin/media/upload.php', {
         method: 'POST',
         headers: token ? { 'Authorization': 'Bearer ' + token } : {},
         body: formData,
@@ -1837,7 +1837,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
         })).filter(o => o.text);
       }
 
-      const data = await apiFetch('/api/admin/courses/create.php', {
+      const data = await apiFetch('api/admin/courses/create.php', {
         method: 'POST',
         body: JSON.stringify(body),
       });
@@ -1869,7 +1869,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     document.getElementById('watchersModalSubtitle').textContent = 'Clique num vídeo pra ver os nomes de quem já assistiu.';
     body.innerHTML = '<p>Carregando...</p>';
     try{
-      const data = await apiFetch('/api/admin/courses/watchers.php');
+      const data = await apiFetch('api/admin/courses/watchers.php');
       body.innerHTML = '<ul class="watchers-course-list"></ul>';
       const ul = body.querySelector('.watchers-course-list');
       data.courses.forEach(c => {
@@ -1895,7 +1895,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     document.getElementById('watchersModalSubtitle').textContent = courseTitle;
     body.innerHTML = '<p>Carregando...</p>';
     try{
-      const data = await apiFetch('/api/admin/courses/watchers.php?course_id=' + courseId);
+      const data = await apiFetch('api/admin/courses/watchers.php?course_id=' + courseId);
       const rows = data.watchers.map(w => `
         <tr>
           <td>${w.name}</td>

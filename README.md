@@ -462,6 +462,22 @@ crontab -e
   interna) — geralmente configurado no próprio servidor web
   (Nginx/Apache) ou num proxy tipo Cloudflare.
 
+## Caminhos da API são relativos (funciona em qualquer subpasta)
+
+O `script.js` chama a API com caminhos relativos (`api/auth/sso.php`),
+não absolutos (`/api/auth/sso.php`). Isso importa porque, se a Academy
+for acessada através de outro sistema (ex: `super_app_view.php?id_menu=X`
+carregando a Academy por dentro, seja via iframe ou de outro jeito), um
+caminho absoluto assumiria que a Academy está bem na raiz do domínio —
+e se os arquivos estiverem numa subpasta, TODAS as chamadas de API
+dariam 404 silenciosamente (a página carrega normal, mas login/nome/
+acesso nunca funcionam, sem erro visível).
+
+Testei isso de verdade: coloquei a Academy dentro de uma subpasta
+simulada e confirmei que o login funciona igual — só funcionou depois
+de trocar pra caminho relativo (com caminho absoluto, dava 404 mesmo
+com CORS e tudo mais configurado certo).
+
 ## Origens liberadas (CORS) — fixo no código, não no .env
 
 `ACADEMY_ALLOWED_ORIGIN` deixou de existir no `.env` — a lista de
