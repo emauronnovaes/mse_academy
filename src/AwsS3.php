@@ -140,7 +140,7 @@ function mse_s3_list_objects(string $prefix = '', int $maxKeys = 200): array
     foreach ($result['Contents'] ?? [] as $obj) {
         // Ignora "pastas vazias" que o S3 às vezes lista como um objeto
         // de 0 bytes terminando em "/" (não é um arquivo de verdade).
-        if (str_ends_with($obj['Key'], '/') && (int) $obj['Size'] === 0) {
+        if (mse_str_ends_with($obj['Key'], '/') && (int) $obj['Size'] === 0) {
             continue;
         }
         $items[] = [

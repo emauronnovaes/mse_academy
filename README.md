@@ -462,6 +462,22 @@ crontab -e
   interna) — geralmente configurado no próprio servidor web
   (Nginx/Apache) ou num proxy tipo Cloudflare.
 
+## Compatibilidade com PHP mais antigo (7.x)
+
+O código usava algumas funções que só existem a partir do **PHP 8.0**
+(`str_contains`, `str_starts_with`, `str_ends_with`) e um union type de
+retorno (`string|false`, também PHP 8.0+). Se o servidor rodar uma
+versão mais antiga, chamar essas funções quebra com **erro fatal**
+("Call to undefined function"), sem nenhuma mensagem clara — a página
+simplesmente não funciona, com o mesmo sintoma de "nada acontece" que
+qualquer outro problema silencioso.
+
+Troquei todas por versões próprias, compatíveis com PHP 7+ (em
+`config/database.php`: `mse_str_contains()`, `mse_str_starts_with()`,
+`mse_str_ends_with()`). Testei que elas se comportam **exatamente
+igual** às nativas em 10 casos, incluindo strings vazias e outros casos
+de borda.
+
 ## Caminhos da API são relativos (funciona em qualquer subpasta)
 
 O `script.js` chama a API com caminhos relativos (`api/auth/sso.php`),

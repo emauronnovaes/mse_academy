@@ -31,7 +31,7 @@ mse_cors();
 $email = strtolower(trim((string) ($_GET['email'] ?? '')));
 $nome = trim((string) ($_GET['nome'] ?? ''));
 
-if ($email === '' || !str_contains($email, '@')) {
+if ($email === '' || !mse_str_contains($email, '@')) {
     mse_error('Informe um e-mail válido (?email=fulano@mse.com.br).', 422);
 }
 

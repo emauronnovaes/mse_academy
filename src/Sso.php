@@ -24,7 +24,7 @@ declare(strict_types=1);
  * só serve pra abrir a sessão uma vez, não fica reutilizável depois.
  */
 
-function mse_base64url_decode(string $data): string|false
+function mse_base64url_decode(string $data)
 {
     $padded = str_pad(strtr($data, '-_', '+/'), strlen($data) % 4 === 0 ? strlen($data) : strlen($data) + (4 - strlen($data) % 4), '=');
     return base64_decode($padded, true);

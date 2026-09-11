@@ -36,7 +36,7 @@ function mse_cargo_matches_course(PDO $pdo, string $cargo, int $courseId): bool
     $stmt = $pdo->prepare('SELECT keyword FROM course_cargo_keywords WHERE course_id = ?');
     $stmt->execute([$courseId]);
     foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $keyword) {
-        if ($keyword !== '' && str_contains($normalizedCargo, $keyword)) {
+        if ($keyword !== '' && mse_str_contains($normalizedCargo, $keyword)) {
             return true;
         }
     }
