@@ -1625,10 +1625,8 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     return data;
   }
 
-  // 0) PRIMEIRO tenta ler a sessão do Portal direto (sem nada na URL) —
-  //    só funciona se a Academy estiver hospedada no mesmo domínio do
-  //    Portal. Se não achar (404), cai silenciosamente pros métodos de
-  //    baixo (?sso= ou ?email=), sem quebrar nada.
+  // 0) Tenta ler a sessão do Portal direto (só funciona no mesmo
+  //    domínio) — usado só como RESERVA, depois de checar o token.
   async function tryPortalSessionLogin(){
     try{
       const data = await apiFetch('/api/auth/portal_session.php');
@@ -1638,16 +1636,15 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       }
       return true;
     }catch(e){
-      return false; // sem sessão do Portal achada — segue pros outros métodos
+      return false;
     }
   }
 
-  // 1) Se chegou com ?sso=... na URL, faz o login de verdade contra a API
-  //    (isso é o que o Portal faria em produção; localmente, usamos
-  //    scripts/generate_test_login.php pra gerar esse link).
+  // 1) MÉTODO PRINCIPAL: token assinado (?sso=...) na URL — é o que o
+  //    Portal deve gerar e mandar quando a pessoa clica em MSE Academy.
+  //    Localmente, usamos scripts/generate_test_login.php pra gerar
+  //    esse link de teste.
   async function tryRealSsoLogin(){
-    if(await tryPortalSessionLogin()) return; // já resolveu, nem olha o resto
-
     const params = new URLSearchParams(window.location.search);
     const ssoToken = params.get('sso');
     const quickEmail = params.get('email');
@@ -1668,8 +1665,12 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       }catch(e){
         console.warn('Login SSO real falhou:', e.message);
       }
-      return;
+      return; // achou ?sso= — não tenta mais nada depois disso
     }
+
+    // Sem ?sso= na URL — tenta os métodos de reserva, nessa ordem:
+    // sessão do Portal (se mesmo domínio), depois ?email= direto.
+    if(await tryPortalSessionLogin()) return;
 
     // Login simplificado — o Portal manda o e-mail (e opcionalmente o
     // nome) direto na URL, sem token assinado. Ver o aviso de segurança

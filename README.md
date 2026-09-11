@@ -13,9 +13,9 @@ mse-academy-completo/
 └── .htaccess     ← bloqueia .env, /src, /config, /scripts do navegador
 ```
 
-Front-end e API no mesmo domínio = **não precisa mais se preocupar com
-CORS entre os dois** (deixe `ACADEMY_ALLOWED_ORIGIN` em branco no `.env`;
-só preencha se um dia outro site precisar chamar essa API também).
+Front-end e API no mesmo domínio (ou não — a lista de origens liberadas
+fica fixa em `src/Cors.php`, editável e versionada pelo Git, ver seção
+própria mais abaixo).
 
 API em PHP puro (sem framework, sem Composer) + MySQL. Testado de ponta
 a ponta com Apache real (não só o servidor de desenvolvimento do PHP,
@@ -394,8 +394,11 @@ Todos (exceto o SSO, que É o login) exigem o header:
   a tentativa (ver `src/Progress.php`).
 - **SQL Injection** — todas as queries usam prepared statements (PDO),
   nunca concatenação de string.
-- **CORS restrito** — só a origem exata definida em `ACADEMY_ALLOWED_ORIGIN`
-  pode chamar a API (evita outro site fazer requisições autenticadas).
+- **CORS restrito** — só as origens listadas em `mse_origens_permitidas()`
+  (`src/Cors.php`) podem chamar a API (evita outro site fazer requisições
+  autenticadas). Fica fixo no código (versionado pelo Git), não no `.env`
+  — testei que a origem certa recebe o header de liberação e uma origem
+  qualquer não recebe nada (não fica exposto por engano).
 
 ## Aguentando muita gente entrando ao mesmo tempo
 
@@ -458,6 +461,48 @@ crontab -e
   limit geral (por IP) se a API for exposta publicamente (não só na rede
   interna) — geralmente configurado no próprio servidor web
   (Nginx/Apache) ou num proxy tipo Cloudflare.
+
+## Origens liberadas (CORS) — fixo no código, não no .env
+
+`ACADEMY_ALLOWED_ORIGIN` deixou de existir no `.env` — a lista de
+domínios que podem chamar a API agora fica **fixa em `src/Cors.php`**,
+na função `mse_origens_permitidas()`:
+
+```php
+function mse_origens_permitidas(): array
+{
+    return [
+        'https://portalmse.com.br',
+    ];
+}
+```
+
+**Por que mudou**: nem sempre quem tem acesso pra subir código pelo Git
+também tem acesso pra editar o `.env` no servidor de produção. Deixando
+fixo no código, qualquer atualização passa a valer só com um
+`git push`, sem precisar mexer em nada direto no servidor.
+
+**Se precisar adicionar outro domínio** (ex: testar local, ou a Academy
+passar a ser acessada por mais de um endereço), edita essa lista —
+pode ter quantas origens quiser:
+```php
+return [
+    'https://portalmse.com.br',
+    'http://localhost:8000', // exemplo, pra testar local
+];
+```
+
+Testei os dois cenários de verdade (requisição HTTP real, não só a
+lógica): a origem que está na lista recebe o cabeçalho
+`Access-Control-Allow-Origin` liberando; qualquer origem fora da lista
+não recebe nada (o navegador bloqueia sozinho) — e fica registrado no
+log de erro do PHP sempre que isso acontecer, então dá pra achar depois
+mesmo sem abrir o navegador.
+
+Se quiser confirmar visualmente se a origem atual está liberada, existe
+`scripts/diagnostico_cors.php` — abre pelo mesmo link que abre a
+Academy normalmente, e ele mostra se bate ou não (apague esse arquivo
+do servidor depois de usar).
 
 ## Enriquecimento com a Ficha Funcional do Hub MSE (RH)
 
