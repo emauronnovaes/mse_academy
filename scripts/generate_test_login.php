@@ -14,6 +14,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../src/Sso.php';
 
 $email = $argv[1] ?? null;
 $nome = $argv[2] ?? null;
@@ -23,9 +24,9 @@ if (!$email) {
     exit(1);
 }
 
-$secret = getenv('PORTAL_SSO_SECRET') ?: '';
+$secret = mse_portal_sso_secret();
 if ($secret === '') {
-    echo "ERRO: PORTAL_SSO_SECRET não está configurado no seu .env\n";
+    echo "ERRO: a chave em mse_portal_sso_secret() (src/Sso.php) está vazia\n";
     exit(1);
 }
 

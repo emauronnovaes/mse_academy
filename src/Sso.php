@@ -11,7 +11,8 @@ declare(strict_types=1);
  *   https://academy.mse.com.br/?sso=eyJlbWFpbCI6Li4u.9f8a3b...
  *
  * A Academy só confere a assinatura com uma chave secreta que os dois
- * lados combinam (PORTAL_SSO_SECRET no .env) — não precisa chamar o
+ * lados combinam (mse_portal_sso_secret(), logo abaixo) — não precisa
+ * chamar o
  * Portal de volta, e o Portal não precisa expor endpoint nenhum.
  *
  * Formato do token (antes de assinar): payload em JSON, base64url.
@@ -23,6 +24,19 @@ declare(strict_types=1);
  * "exp" (expiração unix) deve ser BEM curto (60–300 segundos) — o token
  * só serve pra abrir a sessão uma vez, não fica reutilizável depois.
  */
+
+/**
+ * Chave secreta compartilhada com o Portal, usada pra assinar/validar o
+ * token do SSO. Fica FIXA aqui no código (não no .env) — mesma lógica
+ * de src/Cors.php: nem sempre quem sobe código pelo Git tem acesso pra
+ * editar o .env no servidor. Se a chave mudar, só editar aqui e subir
+ * pelo Git — os dois lados (Portal e Academy) precisam usar a MESMA
+ * chave, combinada com quem administra o Portal.
+ */
+function mse_portal_sso_secret(): string
+{
+    return '32e44ea1f727606af8e9c91fe930cb829bdd4d4ee8702765e3832bcda08eaa49';
+}
 
 function mse_base64url_decode(string $data)
 {
@@ -38,10 +52,10 @@ function mse_verify_sso_token(string $token): ?array
 {
     $GLOBALS['mse_sso_ultimo_erro'] = null; // reseta a cada chamada
 
-    $secret = getenv('PORTAL_SSO_SECRET') ?: '';
+    $secret = mse_portal_sso_secret();
     if ($secret === '') {
-        $GLOBALS['mse_sso_ultimo_erro'] = 'PORTAL_SSO_SECRET não está configurado no servidor da Academy (.env)';
-        error_log('[mse_verify_sso_token] PORTAL_SSO_SECRET não configurado no .env — recusando tudo.');
+        $GLOBALS['mse_sso_ultimo_erro'] = 'mse_portal_sso_secret() (em src/Sso.php) está retornando string vazia';
+        error_log('[mse_verify_sso_token] mse_portal_sso_secret() vazia — recusando tudo.');
         return null; // sem segredo configurado, recusa tudo (fail-safe)
     }
 

@@ -500,6 +500,33 @@ simulada e confirmei que o login funciona igual — só funcionou depois
 de trocar pra caminho relativo (com caminho absoluto, dava 404 mesmo
 com CORS e tudo mais configurado certo).
 
+## Chave do SSO — fixo no código, não no .env
+
+Mesma lógica do CORS (seção abaixo): `PORTAL_SSO_SECRET` deixou de vir
+do `.env` e agora fica fixa em `src/Sso.php`, na função
+`mse_portal_sso_secret()`:
+
+```php
+function mse_portal_sso_secret(): string
+{
+    return '32e44ea1f727606af8e9c91fe930cb829bdd4d4ee8702765e3832bcda08eaa49';
+}
+```
+
+**Se a chave mudar** (por exemplo, se combinarem uma chave nova com
+quem administra o Portal), só editar esse valor e subir pelo Git — as
+DUAS pontas (Portal e Academy) precisam usar exatamente a mesma chave.
+
+Testei que o login continua funcionando de ponta a ponta mesmo **sem**
+`PORTAL_SSO_SECRET` no `.env` (confirmando que não depende mais dele).
+
+**Mensagens de erro mais específicas**: se o login falhar por causa do
+token, a Academy agora diz exatamente qual dos 5 motivos possíveis é
+(chave diferente dos dois lados, token expirado, formato inválido,
+etc.) — tanto na resposta da API quanto no log do servidor. Isso foi o
+que permitiu descobrir, num caso real, que a causa era a chave
+secreta configurada de um jeito diferente em cada lado.
+
 ## Origens liberadas (CORS) — fixo no código, não no .env
 
 `ACADEMY_ALLOWED_ORIGIN` deixou de existir no `.env` — a lista de
