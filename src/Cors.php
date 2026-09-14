@@ -15,6 +15,7 @@ function mse_origens_permitidas(): array
 {
     return [
         'https://portalmse.com.br',
+        'https://mseacademy.portalmse.com.br', // subdomínio visto no console do navegador
     ];
 }
 

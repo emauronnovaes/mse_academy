@@ -22,7 +22,8 @@ if ($token === '') {
 
 $payload = mse_verify_sso_token($token);
 if ($payload === null) {
-    mse_error('Token do Portal inválido ou expirado. Volte ao Portal e clique em MSE Academy de novo.', 401);
+    $motivo = $GLOBALS['mse_sso_ultimo_erro'] ?? 'motivo desconhecido';
+    mse_error("Token do Portal inválido ou expirado ({$motivo}). Volte ao Portal e clique em MSE Academy de novo.", 401);
 }
 
 $email = strtolower(trim((string) $payload['email']));
