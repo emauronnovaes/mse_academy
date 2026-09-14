@@ -36,7 +36,12 @@ $areaSlug = isset($payload['area_slug']) ? (string) $payload['area_slug'] : null
 // falhar, der timeout, ou não achar ninguém, o login segue normalmente
 // só com o que o token do Portal já trouxe — isso aqui nunca pode
 // travar ninguém de entrar na Academy.
-$ficha = mse_portal_ficha_buscar($nome);
+$ficha = null;
+try {
+    $ficha = mse_portal_ficha_buscar($nome);
+} catch (Throwable $e) {
+    error_log('[sso.php] Enriquecimento via ficha falhou (ignorado): ' . $e->getMessage());
+}
 if ($ficha !== null) {
     // Função/cargo oficial do RH é mais confiável que o que o token do
     // Portal eventualmente mande — priorizamos ela quando disponível

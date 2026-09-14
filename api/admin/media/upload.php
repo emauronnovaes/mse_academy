@@ -41,7 +41,7 @@ if (!in_array($ext, $allowedExtensions, true)) {
 
 // Trava simples contra "../" no destino (não deixa escrever fora da
 // estrutura esperada do bucket usando caminho relativo malicioso).
-if (str_contains($destinationKey, '..')) {
+if (mse_str_contains($destinationKey, '..')) {
     mse_error('destination_key inválido.', 422);
 }
 

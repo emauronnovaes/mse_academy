@@ -14,7 +14,7 @@ function mse_load_env(string $path): void
 
     foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
         $line = trim($line);
-        if ($line === '' || str_starts_with($line, '#')) {
+        if ($line === '' || strpos($line, '#') === 0) {
             continue;
         }
 
@@ -36,6 +36,31 @@ function mse_env(string $key, string $default = ''): string
 {
     $value = getenv($key);
     return $value !== false ? $value : $default;
+}
+
+/**
+ * str_contains() só existe a partir do PHP 8.0 — se o servidor rodar
+ * uma versão mais antiga, chamar a função nativa quebraria com "Call
+ * to undefined function" (erro fatal, sem nenhuma mensagem clara pro
+ * navegador). Essas versões próprias funcionam em qualquer PHP 7+.
+ */
+if (!function_exists('mse_str_contains')) {
+    function mse_str_contains(string $haystack, string $needle): bool
+    {
+        return $needle === '' || strpos($haystack, $needle) !== false;
+    }
+}
+if (!function_exists('mse_str_starts_with')) {
+    function mse_str_starts_with(string $haystack, string $needle): bool
+    {
+        return $needle === '' || strpos($haystack, $needle) === 0;
+    }
+}
+if (!function_exists('mse_str_ends_with')) {
+    function mse_str_ends_with(string $haystack, string $needle): bool
+    {
+        return $needle === '' || substr($haystack, -strlen($needle)) === $needle;
+    }
 }
 
 mse_load_env(__DIR__ . '/../.env');

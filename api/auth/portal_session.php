@@ -36,7 +36,12 @@ $cpf = null;
 $cargo = null;
 
 if ($sessao['nome']) {
-    $ficha = mse_portal_ficha_buscar($sessao['nome']);
+    $ficha = null;
+    try {
+        $ficha = mse_portal_ficha_buscar($sessao['nome']);
+    } catch (Throwable $e) {
+        error_log('[portal_session.php] Enriquecimento via ficha falhou (ignorado): ' . $e->getMessage());
+    }
     if ($ficha !== null) {
         if (!empty($ficha['funcao'])) {
             $cargo = $ficha['funcao'];

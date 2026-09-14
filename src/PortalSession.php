@@ -42,7 +42,7 @@ function mse_tentar_sessao_portal(): ?array
 
     $email = null;
     foreach ($tentativasEmail as $tentativa) {
-        if (!empty($tentativa) && is_string($tentativa) && str_contains($tentativa, '@')) {
+        if (!empty($tentativa) && is_string($tentativa) && mse_str_contains($tentativa, '@')) {
             $email = strtolower(trim($tentativa));
             break;
         }

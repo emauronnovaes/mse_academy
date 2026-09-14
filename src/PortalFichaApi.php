@@ -26,6 +26,16 @@ declare(strict_types=1);
  */
 function mse_portal_ficha_buscar(string $termoBusca): ?array
 {
+    // Se a extensão curl não estiver instalada no PHP do servidor,
+    // chamar curl_init() direto quebraria com erro fatal ("Call to
+    // undefined function"), derrubando TODO o login (já que essa busca
+    // roda em todo método de login, como enriquecimento). Isso é só um
+    // extra — sem curl, simplesmente não enriquece, mas o login segue.
+    if (!function_exists('curl_init')) {
+        error_log('[mse_portal_ficha_buscar] Extensão curl do PHP não está instalada — pulando enriquecimento.');
+        return null;
+    }
+
     $baseUrl = rtrim(mse_env('PORTAL_FICHA_API_BASE', 'https://portalmse.com.br/microservices/hub_mse/api_ficha'), '/');
     $token = mse_env('PORTAL_FICHA_API_TOKEN', '');
 

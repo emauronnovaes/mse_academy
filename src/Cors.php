@@ -2,8 +2,24 @@
 declare(strict_types=1);
 
 /**
- * Configura CORS. Defina ACADEMY_ALLOWED_ORIGIN no .env com a URL EXATA
- * do front-end (ex: https://portal.mseengenharia.com.br).
+ * Lista de origens (protocolo + domínio + porta) de onde a Academy pode
+ * ser acessada. Fica FIXA aqui no código (não no .env) — decisão tomada
+ * porque nem sempre quem consegue subir uma atualização pelo Git tem
+ * acesso pra editar o .env no servidor. Se o domínio mudar algum dia,
+ * é só editar essa lista e subir pelo Git, sem mexer no servidor.
+ *
+ * SEM caminho e SEM barra no final (ex: "https://portalmse.com.br",
+ * não "https://portalmse.com.br/academy/").
+ */
+function mse_origens_permitidas(): array
+{
+    return [
+        'https://portalmse.com.br',
+    ];
+}
+
+/**
+ * Configura CORS.
  *
  * Nunca use "*" aqui — como a API usa login (Authorization: Bearer),
  * liberar qualquer origem permitiria que outro site fizesse chamadas
@@ -11,12 +27,17 @@ declare(strict_types=1);
  */
 function mse_cors(): void
 {
-    $allowedOrigin = getenv('ACADEMY_ALLOWED_ORIGIN') ?: '';
+    $origensPermitidas = mse_origens_permitidas();
     $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 
-    if ($allowedOrigin !== '' && hash_equals($allowedOrigin, $origin)) {
+    if ($origin !== '' && in_array($origin, $origensPermitidas, true)) {
         header("Access-Control-Allow-Origin: {$origin}");
         header('Vary: Origin');
+    } elseif ($origin !== '') {
+        // Fica registrado no log do servidor sempre que uma origem for
+        // recusada — ajuda a diagnosticar sem precisar de nenhuma
+        // ferramenta extra (ver também scripts/diagnostico_cors.php).
+        error_log("[mse_cors] Origem recusada: recebido \"{$origin}\", permitidas: " . implode(', ', $origensPermitidas));
     }
 
     header('Access-Control-Allow-Methods: GET, POST, OPTIONS');

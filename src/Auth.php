@@ -48,7 +48,7 @@ function mse_create_session(int $userId): string
 function mse_first_name_from_email(string $email): string
 {
     $email = trim($email);
-    if (!str_contains($email, '@')) {
+    if (!mse_str_contains($email, '@')) {
         return 'Colaborador'; // não é um e-mail válido, nem tenta adivinhar
     }
     $local = explode('@', $email)[0];

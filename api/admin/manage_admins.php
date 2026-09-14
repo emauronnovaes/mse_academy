@@ -16,7 +16,7 @@ $input = mse_input();
 $email = strtolower(trim((string) ($input['email'] ?? '')));
 $action = (string) ($input['action'] ?? ''); // 'promote' ou 'demote'
 
-if ($email === '' || !str_contains($email, '@')) {
+if ($email === '' || !mse_str_contains($email, '@')) {
     mse_error('Informe um e-mail válido.', 422);
 }
 if (!in_array($action, ['promote', 'demote'], true)) {

@@ -13,9 +13,9 @@ mse-academy-completo/
 └── .htaccess     ← bloqueia .env, /src, /config, /scripts do navegador
 ```
 
-Front-end e API no mesmo domínio = **não precisa mais se preocupar com
-CORS entre os dois** (deixe `ACADEMY_ALLOWED_ORIGIN` em branco no `.env`;
-só preencha se um dia outro site precisar chamar essa API também).
+Front-end e API no mesmo domínio (ou não — a lista de origens liberadas
+fica fixa em `src/Cors.php`, editável e versionada pelo Git, ver seção
+própria mais abaixo).
 
 API em PHP puro (sem framework, sem Composer) + MySQL. Testado de ponta
 a ponta com Apache real (não só o servidor de desenvolvimento do PHP,
@@ -171,6 +171,12 @@ INSERT INTO course_cargo_keywords (course_id, keyword) VALUES (11, 'engenheiro c
 
 ### 1. Instalar o banco
 
+**Opção rápida — 1 comando só** (junta as 11 migrações num arquivo, testado que dá exatamente o mesmo resultado que rodar uma por uma):
+```bash
+mysql -u SEU_USUARIO -p --default-character-set=utf8mb4 < migrations/000_TUDO_JUNTO.sql
+```
+
+**Ou, se preferir rodar uma de cada vez** (por exemplo, pra conferir cada etapa):
 ```bash
 mysql -u SEU_USUARIO -p --default-character-set=utf8mb4 < migrations/001_create_schema.sql
 mysql -u SEU_USUARIO -p --default-character-set=utf8mb4 < migrations/002_sso_login.sql
@@ -394,8 +400,11 @@ Todos (exceto o SSO, que É o login) exigem o header:
   a tentativa (ver `src/Progress.php`).
 - **SQL Injection** — todas as queries usam prepared statements (PDO),
   nunca concatenação de string.
-- **CORS restrito** — só a origem exata definida em `ACADEMY_ALLOWED_ORIGIN`
-  pode chamar a API (evita outro site fazer requisições autenticadas).
+- **CORS restrito** — só as origens listadas em `mse_origens_permitidas()`
+  (`src/Cors.php`) podem chamar a API (evita outro site fazer requisições
+  autenticadas). Fica fixo no código (versionado pelo Git), não no `.env`
+  — testei que a origem certa recebe o header de liberação e uma origem
+  qualquer não recebe nada (não fica exposto por engano).
 
 ## Aguentando muita gente entrando ao mesmo tempo
 
@@ -459,6 +468,80 @@ crontab -e
   interna) — geralmente configurado no próprio servidor web
   (Nginx/Apache) ou num proxy tipo Cloudflare.
 
+## Compatibilidade com PHP mais antigo (7.x)
+
+O código usava algumas funções que só existem a partir do **PHP 8.0**
+(`str_contains`, `str_starts_with`, `str_ends_with`) e um union type de
+retorno (`string|false`, também PHP 8.0+). Se o servidor rodar uma
+versão mais antiga, chamar essas funções quebra com **erro fatal**
+("Call to undefined function"), sem nenhuma mensagem clara — a página
+simplesmente não funciona, com o mesmo sintoma de "nada acontece" que
+qualquer outro problema silencioso.
+
+Troquei todas por versões próprias, compatíveis com PHP 7+ (em
+`config/database.php`: `mse_str_contains()`, `mse_str_starts_with()`,
+`mse_str_ends_with()`). Testei que elas se comportam **exatamente
+igual** às nativas em 10 casos, incluindo strings vazias e outros casos
+de borda.
+
+## Caminhos da API são relativos (funciona em qualquer subpasta)
+
+O `script.js` chama a API com caminhos relativos (`api/auth/sso.php`),
+não absolutos (`/api/auth/sso.php`). Isso importa porque, se a Academy
+for acessada através de outro sistema (ex: `super_app_view.php?id_menu=X`
+carregando a Academy por dentro, seja via iframe ou de outro jeito), um
+caminho absoluto assumiria que a Academy está bem na raiz do domínio —
+e se os arquivos estiverem numa subpasta, TODAS as chamadas de API
+dariam 404 silenciosamente (a página carrega normal, mas login/nome/
+acesso nunca funcionam, sem erro visível).
+
+Testei isso de verdade: coloquei a Academy dentro de uma subpasta
+simulada e confirmei que o login funciona igual — só funcionou depois
+de trocar pra caminho relativo (com caminho absoluto, dava 404 mesmo
+com CORS e tudo mais configurado certo).
+
+## Origens liberadas (CORS) — fixo no código, não no .env
+
+`ACADEMY_ALLOWED_ORIGIN` deixou de existir no `.env` — a lista de
+domínios que podem chamar a API agora fica **fixa em `src/Cors.php`**,
+na função `mse_origens_permitidas()`:
+
+```php
+function mse_origens_permitidas(): array
+{
+    return [
+        'https://portalmse.com.br',
+    ];
+}
+```
+
+**Por que mudou**: nem sempre quem tem acesso pra subir código pelo Git
+também tem acesso pra editar o `.env` no servidor de produção. Deixando
+fixo no código, qualquer atualização passa a valer só com um
+`git push`, sem precisar mexer em nada direto no servidor.
+
+**Se precisar adicionar outro domínio** (ex: testar local, ou a Academy
+passar a ser acessada por mais de um endereço), edita essa lista —
+pode ter quantas origens quiser:
+```php
+return [
+    'https://portalmse.com.br',
+    'http://localhost:8000', // exemplo, pra testar local
+];
+```
+
+Testei os dois cenários de verdade (requisição HTTP real, não só a
+lógica): a origem que está na lista recebe o cabeçalho
+`Access-Control-Allow-Origin` liberando; qualquer origem fora da lista
+não recebe nada (o navegador bloqueia sozinho) — e fica registrado no
+log de erro do PHP sempre que isso acontecer, então dá pra achar depois
+mesmo sem abrir o navegador.
+
+Se quiser confirmar visualmente se a origem atual está liberada, existe
+`scripts/diagnostico_cors.php` — abre pelo mesmo link que abre a
+Academy normalmente, e ele mostra se bate ou não (apague esse arquivo
+do servidor depois de usar).
+
 ## Enriquecimento com a Ficha Funcional do Hub MSE (RH)
 
 O token do Portal (SSO) é sempre quem **identifica** a pessoa (e-mail,
@@ -475,6 +558,17 @@ do ar → login continua funcionando sem travar; cargo vem vazio no token
 → preenchido pela ficha; cargo genérico no token → **sobrescrito** pelo
 da ficha (fonte oficial); nome não encontrado na ficha → login segue
 normal, sem erro.
+
+**Achei e corrigi um bug real**: essa função usa `curl_init()` sem
+nenhuma proteção — se a extensão `curl` do PHP não estiver instalada no
+servidor (comum em hospedagens mais simples), isso quebrava com erro
+fatal **toda vez que qualquer pessoa tentasse logar** (já que esse
+enriquecimento roda em todo método de login). Adicionei uma checagem
+`function_exists('curl_init')` que pula o enriquecimento graciosamente
+se a extensão não existir, e também envolvi as 3 chamadas (em
+`sso.php`, `quick_login.php`, `portal_session.php`) num `try/catch`,
+pra garantir que NENHUM erro imprevisto nessa parte opcional consiga
+derrubar o login.
 
 **Configuração**: `PORTAL_FICHA_API_BASE` e `PORTAL_FICHA_API_TOKEN`
 no `.env` (a chave é gerada no Hub MSE, botão "Ativar API"). Timeout de

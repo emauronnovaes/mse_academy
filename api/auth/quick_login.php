@@ -31,7 +31,7 @@ mse_cors();
 $email = strtolower(trim((string) ($_GET['email'] ?? '')));
 $nome = trim((string) ($_GET['nome'] ?? ''));
 
-if ($email === '' || !str_contains($email, '@')) {
+if ($email === '' || !mse_str_contains($email, '@')) {
     mse_error('Informe um e-mail válido (?email=fulano@mse.com.br).', 422);
 }
 
@@ -45,7 +45,12 @@ $cargo = null;
 // Enriquecimento OPCIONAL com a ficha funcional (mesma lógica do
 // sso.php) — só funciona se tivermos um nome pra buscar.
 if ($nome !== $email) {
-    $ficha = mse_portal_ficha_buscar($nome);
+    $ficha = null;
+    try {
+        $ficha = mse_portal_ficha_buscar($nome);
+    } catch (Throwable $e) {
+        error_log('[quick_login.php] Enriquecimento via ficha falhou (ignorado): ' . $e->getMessage());
+    }
     if ($ficha !== null) {
         if (!empty($ficha['funcao'])) {
             $cargo = $ficha['funcao'];
