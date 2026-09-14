@@ -1633,15 +1633,17 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
 
   // 0) Tenta ler a sessão do Portal direto (só funciona no mesmo
   //    domínio) — usado só como RESERVA, depois de checar o token.
-  async function tryPortalSessionLogin(){
+  async function tryPortalSessionLogin(diagnostico){
     try{
       const data = await apiFetch('api/auth/portal_session.php');
       setRealSessionToken(data.token);
       if(data.user && data.user.first_name){
         localStorage.setItem('mse_academy_real_user_name', data.user.first_name);
       }
+      diagnostico.tentativas.push({ metodo: 'sessão do Portal', resultado: 'sucesso', usuario: data.user });
       return true;
     }catch(e){
+      diagnostico.tentativas.push({ metodo: 'sessão do Portal', resultado: 'falhou', erro: e.message, status: e.status });
       return false;
     }
   }
@@ -1650,10 +1652,12 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   //    Portal deve gerar e mandar quando a pessoa clica em MSE Academy.
   //    Localmente, usamos scripts/generate_test_login.php pra gerar
   //    esse link de teste.
-  async function tryRealSsoLogin(){
+  async function tryRealSsoLogin(diagnostico){
     const params = new URLSearchParams(window.location.search);
     const ssoToken = params.get('sso');
     const quickEmail = params.get('email');
+    diagnostico.temSsoNaUrl = !!ssoToken;
+    diagnostico.temEmailNaUrl = !!quickEmail;
 
     if(ssoToken){
       try{
@@ -1665,10 +1669,12 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
         if(data.user && data.user.first_name){
           localStorage.setItem('mse_academy_real_user_name', data.user.first_name);
         }
+        diagnostico.tentativas.push({ metodo: 'token assinado (?sso=)', resultado: 'sucesso', usuario: data.user });
         params.delete('sso');
         const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
         window.history.replaceState({}, '', clean);
       }catch(e){
+        diagnostico.tentativas.push({ metodo: 'token assinado (?sso=)', resultado: 'falhou', erro: e.message, status: e.status });
         console.warn('Login SSO real falhou:', e.message);
       }
       return; // achou ?sso= — não tenta mais nada depois disso
@@ -1676,7 +1682,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
 
     // Sem ?sso= na URL — tenta os métodos de reserva, nessa ordem:
     // sessão do Portal (se mesmo domínio), depois ?email= direto.
-    if(await tryPortalSessionLogin()) return;
+    if(await tryPortalSessionLogin(diagnostico)) return;
 
     // Login simplificado — o Portal manda o e-mail (e opcionalmente o
     // nome) direto na URL, sem token assinado. Ver o aviso de segurança
@@ -1692,14 +1698,44 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
         if(data.user && data.user.first_name){
           localStorage.setItem('mse_academy_real_user_name', data.user.first_name);
         }
+        diagnostico.tentativas.push({ metodo: 'e-mail direto (?email=)', resultado: 'sucesso', usuario: data.user });
         params.delete('email');
         params.delete('nome');
         const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
         window.history.replaceState({}, '', clean);
       }catch(e){
+        diagnostico.tentativas.push({ metodo: 'e-mail direto (?email=)', resultado: 'falhou', erro: e.message, status: e.status });
         console.warn('Login simplificado falhou:', e.message);
       }
     }
+  }
+
+  // Mostra um painel BEM discreto no canto da tela com o que aconteceu
+  // no login — só pra facilitar diagnóstico sem precisar de F12. Fica
+  // sempre visível de propósito (é só texto pequeno, num canto) —
+  // depois que confirmar que está tudo funcionando, dá pra remover essa
+  // função e a chamada dela no DOMContentLoaded.
+  function mostrarPainelDiagnostico(diagnostico){
+    const caixa = document.createElement('div');
+    caixa.style.cssText = 'position:fixed; bottom:8px; right:8px; z-index:9999; background:#1c1b1a; color:#fff; font:11px monospace; padding:10px 14px; border-radius:8px; max-width:340px; opacity:0.92; max-height:250px; overflow:auto;';
+    let html = '<b>Diagnóstico de login</b><br>';
+    html += 'URL: ' + diagnostico.url.slice(0, 60) + '<br>';
+    html += 'Tinha ?sso= na URL: ' + diagnostico.temSsoNaUrl + '<br>';
+    html += 'Tinha ?email= na URL: ' + diagnostico.temEmailNaUrl + '<br>';
+    html += 'Token salvo no fim: ' + diagnostico.temTokenSalvo + '<br>';
+    html += 'É admin: ' + diagnostico.isAdmin + '<br><br>';
+    diagnostico.tentativas.forEach(t => {
+      html += '<b>' + t.metodo + '</b>: ' + t.resultado;
+      if(t.resultado === 'falhou') html += ' (status ' + t.status + ': ' + t.erro + ')';
+      html += '<br>';
+    });
+    caixa.innerHTML = html;
+    const btnFechar = document.createElement('div');
+    btnFechar.textContent = '✕ fechar';
+    btnFechar.style.cssText = 'text-align:right; cursor:pointer; margin-top:6px; opacity:0.7;';
+    btnFechar.onclick = () => caixa.remove();
+    caixa.appendChild(btnFechar);
+    document.body.appendChild(caixa);
   }
 
   // 2) Confere se a pessoa logada É admin de verdade (perguntando pra
@@ -1926,9 +1962,15 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   }
 
   document.addEventListener('DOMContentLoaded', async () => {
-    await tryRealSsoLogin();
+    const diagnostico = { url: window.location.href, tentativas: [] };
+
+    await tryRealSsoLogin(diagnostico);
     updateGreetingBanner(); // atualiza a saudação com o nome real, se o login deu certo
     const isAdmin = await checkIsRealAdmin();
+    diagnostico.isAdmin = isAdmin;
+    diagnostico.temTokenSalvo = !!getRealSessionToken();
+
+    mostrarPainelDiagnostico(diagnostico);
 
     if(isAdmin){
       const toolbar = document.getElementById('adminToolbar');
