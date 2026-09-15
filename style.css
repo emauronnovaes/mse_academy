@@ -127,7 +127,6 @@
 .fa-truck::before { content: "\f0d1"; }
 .fa-handshake::before { content: "\f2b5"; }
 .fa-book::before { content: "\f02d"; }
-.fa-user-plus::before { content: "\f234"; }
 
 :root{
     --red: #C4212C;
@@ -241,8 +240,27 @@
   .btn-add-people:hover{ background:var(--red-dark); }
 
   .admin-toolbar{
-    display:flex; gap:10px; padding:10px 32px; background:var(--navy-2);
+    display:flex; align-items:center; gap:10px; padding:10px 32px; background:var(--navy-2);
     border-top:1px solid rgba(255,255,255,0.08);
+  }
+  /* Quando minimizado, some com os botões de ação e deixa só a
+     "barrinha" com a seta pra reabrir — ocupa bem menos espaço na tela. */
+  .admin-toolbar.is-minimizado .btn-add-people{
+    display:none;
+  }
+  .admin-toolbar.is-minimizado{
+    padding:6px 32px;
+  }
+  .btn-minimizar-admin{
+    margin-left:auto; background:rgba(255,255,255,0.08); border:none;
+    color:#fff; width:28px; height:28px; border-radius:6px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; font-size:12px;
+    transition:background .15s ease;
+  }
+  .btn-minimizar-admin:hover{ background:rgba(255,255,255,0.16); }
+  .btn-minimizar-admin i{ transition:transform .2s ease; transform:rotate(-90deg); }
+  .admin-toolbar.is-minimizado .btn-minimizar-admin i{
+    transform:rotate(90deg);
   }
 
   .admin-modal-overlay{
@@ -324,6 +342,20 @@
   }
   .watchers-status.concluido{ background:rgba(46,160,90,0.14); color:#1e7a41; }
   .watchers-status.em_andamento{ background:rgba(240,185,11,0.18); color:#8a6300; }
+
+  /* Barra de filtros — usada no "Quem assistiu" (detalhe) e em "Acessos" */
+  .admin-filtros{
+    display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap;
+  }
+  .admin-filtros input[type="text"]{
+    flex:1; min-width:180px; padding:9px 14px; border:1.5px solid var(--line);
+    border-radius:8px; font-size:13.5px; font-family:inherit;
+  }
+  .admin-filtros select{
+    padding:9px 14px; border:1.5px solid var(--line); border-radius:8px;
+    font-size:13.5px; font-family:inherit; background:#fff; cursor:pointer;
+  }
+
   nav.tabs button{
     font-size:14px; font-weight:600; color:rgba(255,255,255,0.65);
     position:relative; padding:10px 4px; white-space:nowrap;

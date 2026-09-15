@@ -1803,7 +1803,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   ];
 
   function fillAreaSelect(){
-    const select = document.getElementById('videoModalArea');
+    const select = document.getElementById('adminVideoModalArea');
     if(!select || select.options.length) return; // já preenchido
     AREAS_CONHECIDAS.forEach(([slug, nome]) => {
       const opt = document.createElement('option');
@@ -1813,18 +1813,32 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     });
   }
 
+  function atualizarVisibilidadeArea(){
+    const type = document.getElementById('videoModalType').value;
+    const areaWrap = document.getElementById('adminVideoModalAreaWrap');
+    const hint = document.getElementById('videoModalHint');
+    if(type === 'onboarding'){
+      areaWrap.style.display = 'none';
+      hint.textContent = 'Vídeo de integração — aparece igual pra todo mundo, não importa a área da pessoa.';
+    } else {
+      areaWrap.style.display = '';
+      hint.textContent = 'O arquivo vai direto pro S3 (bucket privado) e o curso já fica disponível pra quem tiver acesso àquela área.';
+    }
+  }
+
   function openVideoModal(){
     fillAreaSelect();
     document.getElementById('videoModalOverlay').hidden = false;
     document.getElementById('videoModalFeedback').hidden = true;
+    atualizarVisibilidadeArea();
   }
   function closeVideoModal(){
     document.getElementById('videoModalOverlay').hidden = true;
   }
 
   async function submitAddVideo(){
-    const areaSlug = document.getElementById('videoModalArea').value;
     const type = document.getElementById('videoModalType').value;
+    const areaSlug = type === 'onboarding' ? '' : document.getElementById('adminVideoModalArea').value;
     const titulo = document.getElementById('videoModalTitulo').value.trim();
     const descricao = document.getElementById('videoModalDescricao').value.trim();
     const duracao = parseInt(document.getElementById('videoModalDuracao').value, 10) || 5;
@@ -1933,29 +1947,118 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     }
   }
 
-  async function loadWatchersDetail(courseId, courseTitle){
+  async function loadWatchersDetail(courseId, courseTitle, nomeFiltro, areaFiltro){
+    nomeFiltro = nomeFiltro || '';
+    areaFiltro = areaFiltro || '';
     const body = document.getElementById('watchersModalBody');
     document.getElementById('watchersModalSubtitle').textContent = courseTitle;
     body.innerHTML = '<p>Carregando...</p>';
     try{
-      const data = await apiFetch('api/admin/courses/watchers.php?course_id=' + courseId);
+      const query = new URLSearchParams({ course_id: courseId, nome: nomeFiltro, area: areaFiltro });
+      const data = await apiFetch('api/admin/courses/watchers.php?' + query.toString());
+
+      const opcoesArea = (data.areas || []).map(a =>
+        `<option value="${a.slug}" ${a.slug === areaFiltro ? 'selected' : ''}>${a.name}</option>`
+      ).join('');
+
       const rows = data.watchers.map(w => `
         <tr>
           <td>${w.name}</td>
+          <td>${w.area_name || '—'}</td>
           <td>${w.cargo || '—'}</td>
           <td><span class="watchers-status ${w.status}">${w.status === 'concluido' ? 'Concluído' : 'Em andamento'}</span></td>
           <td>${w.completed_at ? new Date(w.completed_at).toLocaleDateString('pt-BR') : '—'}</td>
         </tr>
       `).join('');
+
       body.innerHTML = `
         <button type="button" class="watchers-back-btn" id="watchersBackBtn">← Voltar pra lista de vídeos</button>
-        ${data.watchers.length === 0 ? '<p>Ninguém assistiu esse vídeo ainda.</p>' : `
+        <div class="admin-filtros">
+          <input type="text" id="watchersFiltroNome" placeholder="Buscar por nome..." value="${nomeFiltro.replace(/"/g, '&quot;')}">
+          <select id="watchersFiltroArea">
+            <option value="">Todos os departamentos</option>
+            ${opcoesArea}
+          </select>
+        </div>
+        ${data.watchers.length === 0 ? '<p>Ninguém encontrado com esse filtro.</p>' : `
         <table class="watchers-table">
-          <thead><tr><th>Nome</th><th>Cargo</th><th>Status</th><th>Concluído em</th></tr></thead>
+          <thead><tr><th>Nome</th><th>Departamento</th><th>Cargo</th><th>Status</th><th>Concluído em</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>`}
       `;
       document.getElementById('watchersBackBtn').addEventListener('click', loadWatchersOverview);
+
+      let debounceWatchers = null;
+      document.getElementById('watchersFiltroNome').addEventListener('input', (e) => {
+        clearTimeout(debounceWatchers);
+        const valor = e.target.value;
+        debounceWatchers = setTimeout(() => loadWatchersDetail(courseId, courseTitle, valor, areaFiltro), 400);
+      });
+      document.getElementById('watchersFiltroArea').addEventListener('change', (e) => {
+        loadWatchersDetail(courseId, courseTitle, nomeFiltro, e.target.value);
+      });
+    }catch(e){
+      body.innerHTML = `<p>Não foi possível carregar: ${e.message}</p>`;
+    }
+  }
+
+  // ---------- Modal de "Acessos" ----------
+  function openAcessosModal(){
+    document.getElementById('acessosModalOverlay').hidden = false;
+    document.getElementById('acessosFiltroNome').value = '';
+    loadAcessos();
+  }
+  function closeAcessosModal(){
+    document.getElementById('acessosModalOverlay').hidden = true;
+  }
+
+  async function loadAcessos(){
+    const body = document.getElementById('acessosModalBody');
+    const nomeFiltro = document.getElementById('acessosFiltroNome').value.trim();
+    const areaSelect = document.getElementById('acessosFiltroArea');
+    const areaFiltro = areaSelect.value;
+
+    body.innerHTML = '<p>Carregando...</p>';
+    try{
+      const query = new URLSearchParams({ nome: nomeFiltro, area: areaFiltro });
+      const data = await apiFetch('api/admin/users_progress.php?' + query.toString());
+
+      // Preenche o <select> de área só na primeira vez (senão perde a
+      // seleção atual toda vez que recarrega a lista).
+      if(areaSelect.options.length <= 1){
+        (data.areas || []).forEach(a => {
+          const opt = document.createElement('option');
+          opt.value = a.slug;
+          opt.textContent = a.name;
+          areaSelect.appendChild(opt);
+        });
+      }
+
+      document.getElementById('acessosModalSubtitle').textContent =
+        `${data.total_cursos_disponiveis} cursos disponíveis no catálogo · ${data.total_onboarding_modulos} módulos de integração`;
+
+      if(data.users.length === 0){
+        body.innerHTML = '<p>Ninguém encontrado com esse filtro.</p>';
+        return;
+      }
+
+      const rows = data.users.map(u => `
+        <tr>
+          <td>${u.name}</td>
+          <td>${u.area_name || '—'}</td>
+          <td>${u.cargo || '—'}</td>
+          <td>${u.distinct_access_count}</td>
+          <td>${u.modules_done} de ${u.total_onboarding_modules}${u.completed ? ' ✓' : ''}</td>
+          <td>${u.last_access_date ? new Date(u.last_access_date).toLocaleDateString('pt-BR') : '—'}</td>
+        </tr>
+      `).join('');
+
+      body.innerHTML = `
+        <table class="watchers-table">
+          <thead><tr><th>Nome</th><th>Departamento</th><th>Cargo</th><th>Acessos</th><th>Integração</th><th>Último acesso</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
     }catch(e){
       body.innerHTML = `<p>Não foi possível carregar: ${e.message}</p>`;
     }
@@ -1975,11 +2078,24 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     if(isAdmin){
       const toolbar = document.getElementById('adminToolbar');
       if(toolbar) toolbar.hidden = false;
-      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnQuemAssistiu'].forEach(id => {
+      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnQuemAssistiu', 'btnAcessos'].forEach(id => {
         const btn = document.getElementById(id);
         if(btn) btn.hidden = false;
       });
+      // Lembra se a pessoa tinha minimizado da última vez que usou —
+      // não fica reabrindo sozinho toda hora sem necessidade.
+      if(localStorage.getItem('mse_academy_admin_toolbar_minimizada') === '1'){
+        toolbar.classList.add('is-minimizado');
+      }
     }
+
+    const btnMinimizar = document.getElementById('btnMinimizarAdmin');
+    if(btnMinimizar) btnMinimizar.addEventListener('click', () => {
+      const toolbar = document.getElementById('adminToolbar');
+      const agoraMinimizado = toolbar.classList.toggle('is-minimizado');
+      localStorage.setItem('mse_academy_admin_toolbar_minimizada', agoraMinimizado ? '1' : '0');
+      btnMinimizar.setAttribute('title', agoraMinimizado ? 'Expandir' : 'Minimizar');
+    });
 
     const btnAdd = document.getElementById('btnAdicionarPessoas');
     if(btnAdd) btnAdd.addEventListener('click', openAdminModal);
@@ -1994,10 +2110,12 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
 
     const btnVideo = document.getElementById('btnAdicionarVideo');
     if(btnVideo) btnVideo.addEventListener('click', openVideoModal);
-    const btnVideoClose = document.getElementById('videoModalClose');
+    const btnVideoClose = document.getElementById('adminVideoModalClose');
     if(btnVideoClose) btnVideoClose.addEventListener('click', closeVideoModal);
     const btnVideoSubmit = document.getElementById('videoModalSubmit');
     if(btnVideoSubmit) btnVideoSubmit.addEventListener('click', submitAddVideo);
+    const videoTypeSelect = document.getElementById('videoModalType');
+    if(videoTypeSelect) videoTypeSelect.addEventListener('change', atualizarVisibilidadeArea);
     const videoOverlay = document.getElementById('videoModalOverlay');
     if(videoOverlay) videoOverlay.addEventListener('click', (e) => {
       if(e.target === videoOverlay) closeVideoModal();
@@ -2011,6 +2129,25 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     if(watchersOverlay) watchersOverlay.addEventListener('click', (e) => {
       if(e.target === watchersOverlay) closeWatchersModal();
     });
+
+    const btnAcessos = document.getElementById('btnAcessos');
+    if(btnAcessos) btnAcessos.addEventListener('click', openAcessosModal);
+    const btnAcessosClose = document.getElementById('acessosModalClose');
+    if(btnAcessosClose) btnAcessosClose.addEventListener('click', closeAcessosModal);
+    const acessosOverlay = document.getElementById('acessosModalOverlay');
+    if(acessosOverlay) acessosOverlay.addEventListener('click', (e) => {
+      if(e.target === acessosOverlay) closeAcessosModal();
+    });
+    const filtroNome = document.getElementById('acessosFiltroNome');
+    const filtroArea = document.getElementById('acessosFiltroArea');
+    // Debounce simples no campo de texto — não busca a cada tecla, só
+    // depois de meio segundo sem digitar, pra não sobrecarregar a API.
+    let debounceAcessos = null;
+    if(filtroNome) filtroNome.addEventListener('input', () => {
+      clearTimeout(debounceAcessos);
+      debounceAcessos = setTimeout(loadAcessos, 400);
+    });
+    if(filtroArea) filtroArea.addEventListener('change', loadAcessos);
 
     const btnSubmit = document.getElementById('adminModalSubmit');
     if(btnSubmit) btnSubmit.addEventListener('click', submitAddPerson);

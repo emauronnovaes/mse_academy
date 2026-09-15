@@ -39,6 +39,12 @@
     <button type="button" id="btnQuemAssistiu" class="btn-add-people btn-quem-assistiu" hidden>
       <i class="fa-solid fa-chart-line" aria-hidden="true"></i> Quem assistiu
     </button>
+    <button type="button" id="btnAcessos" class="btn-add-people btn-acessos" hidden>
+      <i class="fa-solid fa-user" aria-hidden="true"></i> Acessos
+    </button>
+    <button type="button" id="btnMinimizarAdmin" class="btn-minimizar-admin" title="Minimizar" aria-label="Minimizar barra de admin">
+      <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+    </button>
   </div>
 </header>
 
@@ -60,20 +66,22 @@
 <!-- Modal de adicionar vídeo — upload direto pro S3 + cria o curso -->
 <div class="admin-modal-overlay" id="videoModalOverlay" hidden>
   <div class="admin-modal admin-modal-wide" role="dialog" aria-modal="true" aria-labelledby="videoModalTitle">
-    <button type="button" class="admin-modal-close" id="videoModalClose" aria-label="Fechar">
+    <button type="button" class="admin-modal-close" id="adminVideoModalClose" aria-label="Fechar">
       <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
     </button>
-    <h3 id="videoModalTitle">Adicionar vídeo</h3>
-    <p>O arquivo vai direto pro S3 (bucket privado) e o curso já fica disponível pra quem tiver acesso àquela área.</p>
-
-    <label class="admin-field-label">Área</label>
-    <select id="videoModalArea"></select>
+    <h3 id="adminVideoModalTitle">Adicionar vídeo</h3>
+    <p id="videoModalHint">O arquivo vai direto pro S3 (bucket privado).</p>
 
     <label class="admin-field-label">Tipo</label>
     <select id="videoModalType">
       <option value="curso">Curso (catálogo)</option>
       <option value="onboarding">Integração (trilha obrigatória)</option>
     </select>
+
+    <div id="adminVideoModalAreaWrap">
+      <label class="admin-field-label">Área</label>
+      <select id="adminVideoModalArea"></select>
+    </div>
 
     <label class="admin-field-label">Título</label>
     <input type="text" id="videoModalTitulo" placeholder="Ex: Como solicitar adiantamento">
@@ -119,6 +127,29 @@
     <h3 id="watchersModalTitle">Quem assistiu</h3>
     <p id="watchersModalSubtitle">Clique num vídeo pra ver os nomes de quem já assistiu.</p>
     <div id="watchersModalBody"></div>
+  </div>
+</div>
+
+<!-- Tela de "Acessos" — quem já entrou na Academy, quantas vezes, e
+     quantos módulos de integração já concluiu. Números absolutos (não
+     porcentagem — não temos o total real de colaboradores do Portal
+     pra calcular uma % de cobertura de verdade). -->
+<div class="admin-modal-overlay" id="acessosModalOverlay" hidden>
+  <div class="admin-modal admin-modal-wide" role="dialog" aria-modal="true" aria-labelledby="acessosModalTitle">
+    <button type="button" class="admin-modal-close" id="acessosModalClose" aria-label="Fechar">
+      <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
+    </button>
+    <h3 id="acessosModalTitle">Acessos</h3>
+    <p id="acessosModalSubtitle">Quem já acessou a Academy, quantas vezes, e quanto já concluiu.</p>
+
+    <div class="admin-filtros">
+      <input type="text" id="acessosFiltroNome" placeholder="Buscar por nome...">
+      <select id="acessosFiltroArea">
+        <option value="">Todos os departamentos</option>
+      </select>
+    </div>
+
+    <div id="acessosModalBody"></div>
   </div>
 </div>
 

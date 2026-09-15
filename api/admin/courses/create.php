@@ -28,11 +28,15 @@ $orderIndex = $input['order_index'] ?? null; // null = vai pro final da fila aut
 // Validação — os mesmos erros que travariam o front-end depois,
 // só que aqui, antes de gravar qualquer coisa errada no banco.
 // ------------------------------------------------------------
-if ($areaSlug === '') {
-    mse_error('Informe area_slug (ex: "financeiro", "ti", "obras").', 422);
-}
 if (!in_array($type, ['curso', 'onboarding'], true)) {
     mse_error('type precisa ser "curso" ou "onboarding".', 422);
+}
+// Vídeos de integração (onboarding) aparecem igual pra todo mundo,
+// não importa a área da pessoa — por isso não exigimos área pra eles.
+// Só o catálogo (type='curso') precisa de uma área pra recomendação
+// funcionar.
+if ($type === 'curso' && $areaSlug === '') {
+    mse_error('Informe area_slug (ex: "financeiro", "ti", "obras").', 422);
 }
 if ($title === '') {
     mse_error('Informe o título do vídeo.', 422);
@@ -58,13 +62,16 @@ if ($durationMinutes < 0 || $durationMinutes > 600) {
 
 $pdo = mse_db();
 
-$stmt = $pdo->prepare('SELECT id FROM areas WHERE slug = ?');
-$stmt->execute([$areaSlug]);
-$area = $stmt->fetch();
-if (!$area) {
-    mse_error("Área \"{$areaSlug}\" não existe. Veja os slugs válidos em GET /api/courses/list.php ou na tabela areas.", 422);
+$areaId = null;
+if ($areaSlug !== '') {
+    $stmt = $pdo->prepare('SELECT id FROM areas WHERE slug = ?');
+    $stmt->execute([$areaSlug]);
+    $area = $stmt->fetch();
+    if (!$area) {
+        mse_error("Área \"{$areaSlug}\" não existe. Veja os slugs válidos em GET /api/courses/list.php ou na tabela areas.", 422);
+    }
+    $areaId = (int) $area['id'];
 }
-$areaId = (int) $area['id'];
 
 // Pergunta do quiz é opcional na criação — dá pra criar o vídeo primeiro
 // e adicionar a pergunta depois, mas se vier, valida ela inteira também

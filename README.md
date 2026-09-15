@@ -258,6 +258,24 @@ forma oficialmente publicada pela própria AWS de instalar o SDK **sem
 precisar do Composer**: https://github.com/aws/aws-sdk-php/releases
 (baixe o `aws.phar` da versão mais recente).
 
+**Requisito de servidor — extensão `simplexml` do PHP**: o SDK precisa
+dela pra processar respostas de erro da AWS. Sem essa extensão, upload
+e listagem de vídeo quebram com "Class SimpleXMLElement not found"
+(achei esse erro de verdade testando, numa instalação de PHP sem essa
+extensão habilitada). Se acontecer isso no servidor de vocês, é só
+instalar (`apt install php8.3-xml` ou equivalente da versão de PHP que
+estiver usando) e reiniciar o PHP/Apache.
+
+**Bug real que achei e corrigi testando de verdade**: as 3 funções de
+S3 (`mse_s3_upload_file`, `mse_s3_list_objects`, `mse_s3_presigned_url`)
+só capturavam `AwsException` — mas o SDK pode lançar **outros tipos** de
+exceção (por exemplo, do parser interno de resposta), que não são
+subclasses dessa. Sem um catch mais amplo (`Throwable`), isso virava
+erro fatal do PHP (página em branco, ou "Unexpected end of JSON input"
+no front-end) em vez de uma mensagem de erro clara. Testei o upload de
+vídeo de ponta a ponta pelo navegador antes e depois da correção,
+confirmando a diferença.
+
 Se o seu servidor **tem Composer** disponível, é mais fácil usar ele —
 já deixei o `composer.json` pronto no projeto:
 ```bash
@@ -378,7 +396,7 @@ Todos (exceto o SSO, que É o login) exigem o header:
 | GET | `/api/progress/list.php` | Progresso do usuário logado em todos os cursos |
 | POST | `/api/progress/update.php` | Atualiza o % assistido. Recebe `{course_id, watched_pct}` |
 | POST | `/api/quiz/submit.php` | Envia resposta. Recebe `{question_id, option_id}`, devolve `{correct: true/false}` |
-| GET | `/api/admin/users_progress.php?page=1` | (admin) Visão geral de quem já concluiu o onboarding |
+| GET | `/api/admin/users_progress.php?nome=X&area=slug` | (admin) Visão de acessos — nome, departamento, cargo, contagem de acessos e progresso de integração (números absolutos, sem porcentagem). Filtros opcionais por nome e área |
 | GET | `/api/admin/courses/watchers.php` | (admin) Todos os cursos com contagem de quem assistiu cada um |
 | GET | `/api/admin/courses/watchers.php?course_id=X` | (admin) Lista completa de quem assistiu um curso específico, com **nome completo**, cargo e data de conclusão |
 | POST | `/api/admin/courses/create.php` | (admin) Adiciona um vídeo novo ao catálogo (ou à trilha), com pergunta de quiz opcional |

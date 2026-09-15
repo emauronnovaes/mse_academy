@@ -22,7 +22,7 @@ $stmt = $pdo->prepare(
             c.duration_minutes, c.type,
             a.slug AS area_slug, a.name AS area_name
      FROM courses c
-     JOIN areas a ON a.id = c.area_id
+     LEFT JOIN areas a ON a.id = c.area_id
      WHERE c.id = ? AND c.is_published = 1
      LIMIT 1'
 );
@@ -46,7 +46,7 @@ $videoUrl = null;
 if ($course['video_source'] === 's3' && $course['video_key']) {
     try {
         $videoUrl = mse_s3_presigned_url($course['video_key'], 1800);
-    } catch (RuntimeException $e) {
+    } catch (Throwable $e) {
         // AWS mal configurado no servidor — não derruba a página toda,
         // só devolve sem vídeo e loga pra alguém do time de infra ver.
         error_log('[mse_s3_presigned_url] ' . $e->getMessage());

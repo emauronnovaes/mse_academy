@@ -47,7 +47,7 @@ if (mse_str_contains($destinationKey, '..')) {
 
 try {
     $savedKey = mse_s3_upload_file($_FILES['video']['tmp_name'], $destinationKey);
-} catch (RuntimeException $e) {
+} catch (Throwable $e) {
     mse_error($e->getMessage(), 502);
 }
 

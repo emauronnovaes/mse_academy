@@ -18,7 +18,7 @@ $pdo = mse_db();
 $sql = "SELECT c.id, c.title, c.description, c.youtube_id, c.duration_minutes,
                c.order_index, c.type, c.area_id, a.slug AS area_slug, a.name AS area_name
         FROM courses c
-        JOIN areas a ON a.id = c.area_id
+        LEFT JOIN areas a ON a.id = c.area_id
         WHERE c.is_published = 1";
 $params = [];
 
@@ -56,7 +56,7 @@ if (!$areaSlug && $scope === 'recommended' && $type !== 'onboarding') {
 
 foreach ($courses as &$course) {
     $course['id'] = (int) $course['id'];
-    $course['area_id'] = (int) $course['area_id'];
+    $course['area_id'] = $course['area_id'] !== null ? (int) $course['area_id'] : null;
     $course['duration_minutes'] = (int) $course['duration_minutes'];
     $course['order_index'] = (int) $course['order_index'];
 }

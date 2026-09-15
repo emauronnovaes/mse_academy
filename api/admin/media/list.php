@@ -13,7 +13,7 @@ $prefix = trim((string) ($_GET['prefix'] ?? ''));
 
 try {
     $items = mse_s3_list_objects($prefix);
-} catch (RuntimeException $e) {
+} catch (Throwable $e) {
     mse_error($e->getMessage(), 502);
 }
 

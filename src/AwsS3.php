@@ -60,14 +60,21 @@ function mse_s3_presigned_url(string $objectKey, int $expiresSeconds = 1800): st
         throw new RuntimeException('AWS_S3_BUCKET não configurado no .env');
     }
 
-    $client = mse_s3_client();
-    $command = $client->getCommand('GetObject', [
-        'Bucket' => $bucket,
-        'Key' => ltrim($objectKey, '/'),
-    ]);
-    $request = $client->createPresignedRequest($command, "+{$expiresSeconds} seconds");
-
-    return (string) $request->getUri();
+    try {
+        $client = mse_s3_client();
+        $command = $client->getCommand('GetObject', [
+            'Bucket' => $bucket,
+            'Key' => ltrim($objectKey, '/'),
+        ]);
+        $request = $client->createPresignedRequest($command, "+{$expiresSeconds} seconds");
+        return (string) $request->getUri();
+    } catch (Throwable $e) {
+        // Mesma lição aprendida testando o upload: o SDK pode lançar
+        // vários tipos de exceção diferentes (não só AwsException) —
+        // capturamos tudo aqui e convertemos numa RuntimeException só,
+        // pra quem chama essa função de fora sempre saber o que esperar.
+        throw new RuntimeException('Falha ao gerar URL assinada (' . get_class($e) . '): ' . $e->getMessage());
+    }
 }
 
 /**
@@ -105,6 +112,14 @@ function mse_s3_upload_file(string $localTmpPath, string $destinationKey): strin
         // caminho isso fica vazio, então caímos pra getMessage() (do PHP),
         // que sempre tem alguma informação útil pra diagnosticar.
         throw new RuntimeException('Falha ao enviar pro S3: ' . ($e->getAwsErrorMessage() ?: $e->getMessage()));
+    } catch (Throwable $e) {
+        // Achado testando de verdade: o SDK pode lançar OUTROS tipos de
+        // exceção além de AwsException (ex: erro no parser da resposta,
+        // quando as credenciais/bucket são inválidos e a AWS nem chega a
+        // devolver um XML de erro estruturado) — sem esse catch genérico,
+        // isso vira um erro fatal do PHP (página em branco pro usuário,
+        // sem nenhuma mensagem, em vez do JSON de erro esperado).
+        throw new RuntimeException('Falha ao enviar pro S3 (' . get_class($e) . '): ' . $e->getMessage());
     }
 
     return $destinationKey;
@@ -134,6 +149,8 @@ function mse_s3_list_objects(string $prefix = '', int $maxKeys = 200): array
         ]);
     } catch (AwsException $e) {
         throw new RuntimeException('Falha ao listar o bucket: ' . ($e->getAwsErrorMessage() ?: $e->getMessage()));
+    } catch (Throwable $e) {
+        throw new RuntimeException('Falha ao listar o bucket (' . get_class($e) . '): ' . $e->getMessage());
     }
 
     $items = [];

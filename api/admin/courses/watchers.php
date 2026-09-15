@@ -14,6 +14,7 @@ $courseId = isset($_GET['course_id']) ? (int) $_GET['course_id'] : null;
 if ($courseId) {
     // Detalhe de UM vídeo específico: quem assistiu, com nome completo,
     // e-mail, cargo e quando concluiu — ordenado por mais recente primeiro.
+    // Aceita filtro por nome (busca parcial) e por área/departamento.
     $stmt = $pdo->prepare(
         'SELECT c.id, c.title, c.type
          FROM courses c WHERE c.id = ? LIMIT 1'
@@ -24,15 +25,37 @@ if ($courseId) {
         mse_error('Curso não encontrado.', 404);
     }
 
+    $nomeFiltro = trim((string) ($_GET['nome'] ?? ''));
+    $areaFiltro = trim((string) ($_GET['area'] ?? ''));
+
+    $where = ['p.course_id = :course_id', 'p.status <> "nao_iniciado"'];
+    $params = [':course_id' => $courseId];
+    if ($nomeFiltro !== '') {
+        $where[] = 'u.name LIKE :nome';
+        $params[':nome'] = '%' . $nomeFiltro . '%';
+    }
+    if ($areaFiltro !== '') {
+        $where[] = 'ua.slug = :area';
+        $params[':area'] = $areaFiltro;
+    }
+    $whereSql = implode(' AND ', $where);
+
     $stmt = $pdo->prepare(
-        'SELECT u.name, u.email, u.cargo, p.status, p.watched_pct, p.completed_at
+        "SELECT u.name, u.email, u.cargo, ua.name AS area_name, p.status, p.watched_pct, p.completed_at
          FROM user_course_progress p
          JOIN users u ON u.id = p.user_id
-         WHERE p.course_id = ? AND p.status <> "nao_iniciado"
-         ORDER BY p.completed_at IS NULL, p.completed_at DESC, u.name ASC'
+         LEFT JOIN areas ua ON ua.id = u.area_id
+         WHERE {$whereSql}
+         ORDER BY p.completed_at IS NULL, p.completed_at DESC, u.name ASC"
     );
-    $stmt->execute([$courseId]);
+    foreach ($params as $key => $value) {
+        $stmt->bindValue($key, $value);
+    }
+    $stmt->execute();
     $watchers = $stmt->fetchAll();
+
+    // Lista de áreas — pra preencher o <select> do filtro no front-end.
+    $areas = $pdo->query('SELECT slug, name FROM areas ORDER BY name ASC')->fetchAll();
 
     mse_json([
         'course' => ['id' => (int) $course['id'], 'title' => $course['title'], 'type' => $course['type']],
@@ -41,12 +64,14 @@ if ($courseId) {
                 'name' => $w['name'],           // nome completo
                 'email' => $w['email'],
                 'cargo' => $w['cargo'],
+                'area_name' => $w['area_name'],
                 'status' => $w['status'],
                 'watched_pct' => (float) $w['watched_pct'],
                 'completed_at' => $w['completed_at'],
             ];
         }, $watchers),
         'total' => count($watchers),
+        'areas' => $areas,
     ]);
 } else {
     // Visão geral: todos os vídeos, com a contagem de quem assistiu cada um.
@@ -55,7 +80,7 @@ if ($courseId) {
                 COUNT(CASE WHEN p.status = "concluido" THEN 1 END) AS total_concluido,
                 COUNT(CASE WHEN p.status = "em_andamento" THEN 1 END) AS total_em_andamento
          FROM courses c
-         JOIN areas a ON a.id = c.area_id
+         LEFT JOIN areas a ON a.id = c.area_id
          LEFT JOIN user_course_progress p ON p.course_id = c.id
          GROUP BY c.id, c.title, c.type, a.name
          ORDER BY c.type, c.order_index'

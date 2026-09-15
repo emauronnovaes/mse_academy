@@ -1,7 +1,7 @@
 -- ============================================================
 -- MSE Academy — TODAS as migrações num arquivo só
 -- ============================================================
--- Isso é a junção exata dos arquivos 001 até 011, na ordem certa,
+-- Isso é a junção exata dos arquivos 001 até 012, na ordem certa,
 -- só pra facilitar rodar tudo de uma vez (reduz o risco de esquecer
 -- algum arquivo no meio do caminho).
 --
@@ -9,9 +9,9 @@
 --   mysql -u SEU_USUARIO -p --default-character-set=utf8mb4 < 000_TUDO_JUNTO.sql
 --
 -- Isso é EQUIVALENTE a rodar, na ordem, cada um dos arquivos
--- 001_create_schema.sql até 011_quiz_catalogo.sql — se preferir rodar
--- separado (por exemplo, pra conferir cada etapa), os arquivos
--- originais continuam aqui normalmente, nada foi removido.
+-- 001_create_schema.sql até 012_area_opcional_onboarding.sql — se
+-- preferir rodar separado (por exemplo, pra conferir cada etapa), os
+-- arquivos originais continuam aqui normalmente, nada foi removido.
 -- ============================================================
 
 
@@ -671,4 +671,29 @@ UNION ALL SELECT q.id, 'Nada, é só um registro solto', 0, 3 FROM quiz_question
 UNION ALL SELECT q.id, 'Qualquer colaborador autorizado, pelo portal', 1, 1 FROM quiz_questions q JOIN courses c ON c.id=q.course_id WHERE c.title='Antecipação de pagamento a fornecedor'
 UNION ALL SELECT q.id, 'Só o fornecedor, por telefone', 0, 2 FROM quiz_questions q JOIN courses c ON c.id=q.course_id WHERE c.title='Antecipação de pagamento a fornecedor'
 UNION ALL SELECT q.id, 'Ninguém, isso não existe', 0, 3 FROM quiz_questions q JOIN courses c ON c.id=q.course_id WHERE c.title='Antecipação de pagamento a fornecedor';
+
+
+-- ============================================================
+-- Início de: 012_area_opcional_onboarding.sql
+-- ============================================================
+-- ============================================================
+-- MSE Academy — Vídeos de integração não têm área específica
+-- ============================================================
+-- Os módulos de integração (type='onboarding') aparecem igual pra
+-- TODO MUNDO, não importa a área da pessoa — então não faz sentido
+-- pedir uma área na hora de cadastrar esses vídeos. Só os cursos do
+-- catálogo (type='curso') continuam exigindo área.
+--
+-- Como aplicar:
+--   mysql -u SEU_USUARIO -p mse_academy < 012_area_opcional_onboarding.sql
+-- ============================================================
+
+USE mse_academy;
+
+ALTER TABLE courses MODIFY COLUMN area_id INT UNSIGNED NULL;
+
+-- Os 4 módulos de integração que já existem deixam de ter área
+-- específica (antes tinham uma área "genérica" só porque a coluna
+-- exigia alguma coisa) — passam a valer pra todo mundo de verdade.
+UPDATE courses SET area_id = NULL WHERE type = 'onboarding';
 
