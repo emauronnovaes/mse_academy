@@ -1607,6 +1607,10 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   function setRealSessionToken(token){
     localStorage.setItem(REAL_SESSION_KEY, token);
   }
+  function clearRealSession(){
+    localStorage.removeItem(REAL_SESSION_KEY);
+    localStorage.removeItem('mse_academy_real_user_name');
+  }
 
   async function apiFetch(path, options = {}){
     const token = getRealSessionToken();
@@ -1655,11 +1659,15 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   async function tryRealSsoLogin(diagnostico){
     const params = new URLSearchParams(window.location.search);
     const ssoToken = params.get('sso');
-    const quickEmail = params.get('email');
     diagnostico.temSsoNaUrl = !!ssoToken;
-    diagnostico.temEmailNaUrl = !!quickEmail;
 
     if(ssoToken){
+      // Remove credencial da barra/histórico antes de qualquer chamada.
+      params.delete('sso');
+      const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+      window.history.replaceState({}, '', clean);
+      clearRealSession();
+
       try{
         const data = await apiFetch('api/auth/sso.php', {
           method: 'POST',
@@ -1670,9 +1678,6 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
           localStorage.setItem('mse_academy_real_user_name', data.user.first_name);
         }
         diagnostico.tentativas.push({ metodo: 'token assinado (?sso=)', resultado: 'sucesso', usuario: data.user });
-        params.delete('sso');
-        const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
-        window.history.replaceState({}, '', clean);
       }catch(e){
         diagnostico.tentativas.push({ metodo: 'token assinado (?sso=)', resultado: 'falhou', erro: e.message, status: e.status });
         console.warn('Login SSO real falhou:', e.message);
@@ -1680,10 +1685,9 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       return; // achou ?sso= — não tenta mais nada depois disso
     }
 
-    // Sem ?sso= na URL — tenta o método de reserva (sessão do Portal
-    // por cookie compartilhado, se mesmo domínio). O login direto por
-    // e-mail (?email=) foi desativado por segurança — o único jeito
-    // confiável de entrar é pelo token assinado do Portal.
+    // Sem token novo, preserva sessão Academy já existente. A sessão PHP
+    // compartilhada continua disponível apenas como fallback controlado.
+    if(getRealSessionToken()) return;
     await tryPortalSessionLogin(diagnostico);
   }
 
@@ -1698,7 +1702,6 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     let html = '<b>Diagnóstico de login</b><br>';
     html += 'URL: ' + diagnostico.url.slice(0, 60) + '<br>';
     html += 'Tinha ?sso= na URL: ' + diagnostico.temSsoNaUrl + '<br>';
-    html += 'Tinha ?email= na URL: ' + diagnostico.temEmailNaUrl + '<br>';
     html += 'Token salvo no fim: ' + diagnostico.temTokenSalvo + '<br>';
     html += 'É admin: ' + diagnostico.isAdmin + '<br><br>';
     diagnostico.tentativas.forEach(t => {
@@ -2050,7 +2053,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     diagnostico.isAdmin = isAdmin;
     diagnostico.temTokenSalvo = !!getRealSessionToken();
 
-    mostrarPainelDiagnostico(diagnostico);
+    // mostrarPainelDiagnostico(diagnostico); // desativado — só reativar se precisar depurar de novo
 
     if(isAdmin){
       const toolbar = document.getElementById('adminToolbar');

@@ -39,7 +39,7 @@ $payload = json_encode([
     'nonce' => bin2hex(random_bytes(16)),
 ]);
 $payloadB64 = mse_base64url_encode($payload);
-$signature = hash_hmac('sha256', $payloadB64, $secret);
+$signature = mse_base64url_encode(hash_hmac('sha256', $payloadB64, $secret, true));
 $token = $payloadB64 . '.' . $signature;
 
 echo "Token gerado (válido por 2 minutos, uso único):\n\n";
