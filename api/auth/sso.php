@@ -26,12 +26,28 @@ if ($payload === null) {
     mse_error("Token do Portal inválido ou expirado ({$motivo}). Volte ao Portal e clique em MSE Academy de novo.", 401);
 }
 
-$email = strtolower(trim((string) $payload['email']));
-$cpf = isset($payload['cpf']) ? preg_replace('/\D/', '', (string) $payload['cpf']) : null;
-$nome = (string) ($payload['nome'] ?? $email);
-$cargo = isset($payload['cargo']) ? (string) $payload['cargo'] : null;
-$areaSlug = isset($payload['area_slug']) ? (string) $payload['area_slug'] : null;
+// O campo "email" do payload nem sempre é um e-mail de verdade — o
+// Portal às vezes manda o CPF ali (já confirmado em produção). Extrai
+// os dois corretamente, sem assumir que "email" é sempre email.
+$identifier = strtolower(trim((string) $payload['email']));
+$identifierCpf = preg_replace('/\D+/', '', $identifier);
+$email = filter_var($identifier, FILTER_VALIDATE_EMAIL) !== false ? $identifier : '';
 
+$payloadCpf = preg_replace('/\D+/', '', (string) ($payload['cpf'] ?? ''));
+$cpf = strlen((string) $payloadCpf) === 11
+    ? $payloadCpf
+    : (strlen((string) $identifierCpf) === 11 ? $identifierCpf : null);
+
+$nome = trim((string) ($payload['nome'] ?? ''));
+if ($nome === '') {
+    $nome = $email !== '' ? $email : (string) $cpf;
+}
+$cargo = isset($payload['cargo']) && trim((string) $payload['cargo']) !== ''
+    ? trim((string) $payload['cargo'])
+    : null;
+$areaSlug = isset($payload['area_slug']) && trim((string) $payload['area_slug']) !== ''
+    ? trim((string) $payload['area_slug'])
+    : null;
 // Enriquecimento OPCIONAL com a ficha funcional oficial do RH (API
 // ff_infos do Hub MSE) — busca pelo nome que já veio no token. Se a API
 // falhar, der timeout, ou não achar ninguém, o login segue normalmente
@@ -106,8 +122,8 @@ $stmt = $pdo->prepare(
        name = VALUES(name),
        first_name = VALUES(first_name),
        cpf = COALESCE(VALUES(cpf), cpf),
-       cargo = VALUES(cargo),
-       area_id = VALUES(area_id),
+       cargo = COALESCE(VALUES(cargo), cargo),
+       area_id = COALESCE(VALUES(area_id), area_id),
        active = 1,
        id = LAST_INSERT_ID(id)"
 );

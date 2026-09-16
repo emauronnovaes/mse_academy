@@ -30,20 +30,18 @@ if ($secret === '') {
     exit(1);
 }
 
-function base64url_encode(string $data): string
-{
-    return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
-}
-
+$now = time();
 $payload = json_encode([
     'email' => $email,
     'nome' => $nome ?: $email,
-    'exp' => time() + 300, // 5 minutos pra usar o link
+    'iat' => $now,
+    'exp' => $now + 120, // 2 minutos — dentro do limite de 300s exigido
+    'nonce' => bin2hex(random_bytes(16)),
 ]);
-$payloadB64 = base64url_encode($payload);
+$payloadB64 = mse_base64url_encode($payload);
 $signature = hash_hmac('sha256', $payloadB64, $secret);
 $token = $payloadB64 . '.' . $signature;
 
-echo "Token gerado (válido por 5 minutos):\n\n";
+echo "Token gerado (válido por 2 minutos, uso único):\n\n";
 echo "http://localhost/?sso={$token}\n\n";
 echo "Abre esse link no navegador (com o site rodando) pra entrar como {$email}.\n";

@@ -1680,34 +1680,11 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       return; // achou ?sso= — não tenta mais nada depois disso
     }
 
-    // Sem ?sso= na URL — tenta os métodos de reserva, nessa ordem:
-    // sessão do Portal (se mesmo domínio), depois ?email= direto.
-    if(await tryPortalSessionLogin(diagnostico)) return;
-
-    // Login simplificado — o Portal manda o e-mail (e opcionalmente o
-    // nome) direto na URL, sem token assinado. Ver o aviso de segurança
-    // em api/auth/quick_login.php sobre essa escolha.
-    if(quickEmail){
-      try{
-        const nome = params.get('nome') || '';
-        const query = new URLSearchParams({ email: quickEmail, nome });
-        const data = await apiFetch('api/auth/quick_login.php?' + query.toString(), {
-          method: 'GET',
-        });
-        setRealSessionToken(data.token);
-        if(data.user && data.user.first_name){
-          localStorage.setItem('mse_academy_real_user_name', data.user.first_name);
-        }
-        diagnostico.tentativas.push({ metodo: 'e-mail direto (?email=)', resultado: 'sucesso', usuario: data.user });
-        params.delete('email');
-        params.delete('nome');
-        const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
-        window.history.replaceState({}, '', clean);
-      }catch(e){
-        diagnostico.tentativas.push({ metodo: 'e-mail direto (?email=)', resultado: 'falhou', erro: e.message, status: e.status });
-        console.warn('Login simplificado falhou:', e.message);
-      }
-    }
+    // Sem ?sso= na URL — tenta o método de reserva (sessão do Portal
+    // por cookie compartilhado, se mesmo domínio). O login direto por
+    // e-mail (?email=) foi desativado por segurança — o único jeito
+    // confiável de entrar é pelo token assinado do Portal.
+    await tryPortalSessionLogin(diagnostico);
   }
 
   // Mostra um painel BEM discreto no canto da tela com o que aconteceu
