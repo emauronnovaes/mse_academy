@@ -2126,18 +2126,20 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
 
     function aplicarEstadoAdminToolbar(minimizado){
       const toolbar = document.getElementById('adminToolbar');
-      const btnReabrir = document.getElementById('btnReabrirAdmin');
-      if(!toolbar || !btnReabrir) return;
+      const btnMin = document.getElementById('btnMinimizarAdmin');
+      if(!toolbar) return;
       toolbar.classList.toggle('is-minimizado', minimizado);
-      btnReabrir.hidden = !minimizado;
+      if(btnMin) btnMin.setAttribute('title', minimizado ? 'Expandir' : 'Minimizar');
       localStorage.setItem('mse_academy_admin_toolbar_minimizada', minimizado ? '1' : '0');
     }
 
+    // Mesma seta faz os dois sentidos — minimiza se estiver expandido,
+    // reabre se estiver minimizado.
     const btnMinimizar = document.getElementById('btnMinimizarAdmin');
-    if(btnMinimizar) btnMinimizar.addEventListener('click', () => aplicarEstadoAdminToolbar(true));
-
-    const btnReabrir = document.getElementById('btnReabrirAdmin');
-    if(btnReabrir) btnReabrir.addEventListener('click', () => aplicarEstadoAdminToolbar(false));
+    if(btnMinimizar) btnMinimizar.addEventListener('click', () => {
+      const toolbar = document.getElementById('adminToolbar');
+      aplicarEstadoAdminToolbar(!toolbar.classList.contains('is-minimizado'));
+    });
 
     const btnAdd = document.getElementById('btnAdicionarPessoas');
     if(btnAdd) btnAdd.addEventListener('click', openAdminModal);
