@@ -173,20 +173,28 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   const store = getStorage();
   const hasVisited = store.getItem('mse_academy_visited') === '1';
 
-  // ---------- Contador de "Colaboradores atendidos" ----------
-  // BASE_COLABORADORES representa o histórico antes deste contador existir.
-  // Em produção, troque esse bloco por uma chamada ao backend/analytics do portal,
-  // que já deve saber o número real de logins únicos.
-  const BASE_COLABORADORES = 1240;
-  let newLoginCount = parseInt(store.getItem('mse_academy_new_logins') || '0', 10);
-  if(!hasVisited){
-    newLoginCount += 1;
-    store.setItem('mse_academy_new_logins', String(newLoginCount));
-  }
-  const statColaboradoresEl = document.getElementById('statColaboradores');
-  if(statColaboradoresEl){
-    statColaboradoresEl.dataset.count = String(BASE_COLABORADORES + newLoginCount);
-  }
+  // ---------- Estatísticas reais da home (colaboradores, tutoriais, áreas) ----------
+  // Busca do backend (api/stats.php, endpoint público) em vez de usar
+  // números fixos — antes disso, os 3 valores começam em 0 no HTML.
+  (async function carregarEstatisticasReais(){
+    try{
+      const res = await fetch('api/stats.php');
+      const data = await res.json();
+      const mapa = {
+        statColaboradores: data.colaboradores_atendidos,
+        statTutoriais: data.tutoriais_disponiveis,
+        statAreas: data.areas_cobertas,
+      };
+      Object.keys(mapa).forEach(id => {
+        const el = document.getElementById(id);
+        if(el && typeof mapa[id] === 'number') el.dataset.count = String(mapa[id]);
+      });
+    }catch(e){
+      console.warn('Não consegui carregar as estatísticas reais:', e.message);
+      // Sem dado real disponível, os contadores ficam em 0 — melhor
+      // mostrar 0 de verdade do que inventar um número.
+    }
+  })();
 
   // ---------- Banner de boas-vindas (só aparece na aba Integração) ----------
   // O nome real vem da sessão de login de verdade (SSO ou quick_login,
@@ -1802,8 +1810,29 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       hint.textContent = 'Vídeo de integração — aparece igual pra todo mundo, não importa a área da pessoa.';
     } else {
       areaWrap.style.display = '';
-      hint.textContent = 'O arquivo vai direto pro S3 (bucket privado) e o curso já fica disponível pra quem tiver acesso àquela área.';
+      hint.textContent = 'O curso já fica disponível pra quem tiver acesso àquela área assim que salvar.';
     }
+  }
+
+  function atualizarVisibilidadeOrigemVideo(){
+    const origem = document.getElementById('videoModalOrigem').value;
+    document.getElementById('videoModalYoutubeWrap').hidden = origem !== 'youtube';
+    document.getElementById('videoModalArquivoWrap').hidden = origem !== 's3';
+  }
+
+  // Aceita tanto o link inteiro do YouTube (várias formas: youtube.com/watch?v=,
+  // youtu.be/, /embed/) quanto o ID puro de 11 caracteres, já digitado direto.
+  function extrairYoutubeId(entrada){
+    entrada = entrada.trim();
+    if(/^[A-Za-z0-9_-]{11}$/.test(entrada)) return entrada; // já é só o ID
+    const padroes = [
+      /(?:youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtu\.be\/|youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})/,
+    ];
+    for(const padrao of padroes){
+      const m = entrada.match(padrao);
+      if(m) return m[1];
+    }
+    return null;
   }
 
   function openVideoModal(){
@@ -1811,6 +1840,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     document.getElementById('videoModalOverlay').hidden = false;
     document.getElementById('videoModalFeedback').hidden = true;
     atualizarVisibilidadeArea();
+    atualizarVisibilidadeOrigemVideo();
   }
   function closeVideoModal(){
     document.getElementById('videoModalOverlay').hidden = true;
@@ -1822,50 +1852,75 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     const titulo = document.getElementById('videoModalTitulo').value.trim();
     const descricao = document.getElementById('videoModalDescricao').value.trim();
     const duracao = parseInt(document.getElementById('videoModalDuracao').value, 10) || 5;
-    const arquivo = document.getElementById('videoModalArquivo').files[0];
+    const origem = document.getElementById('videoModalOrigem').value;
+    const arquivo = origem === 's3' ? document.getElementById('videoModalArquivo').files[0] : null;
+    const youtubeEntrada = document.getElementById('videoModalYoutubeUrl').value.trim();
     const pergunta = document.getElementById('videoModalPergunta').value.trim();
     const feedback = document.getElementById('videoModalFeedback');
     const submitBtn = document.getElementById('videoModalSubmit');
 
-    if(!titulo || !arquivo){
+    if(!titulo){
       feedback.hidden = false;
       feedback.className = 'admin-modal-feedback erro';
-      feedback.textContent = 'Preencha o título e escolha um arquivo de vídeo.';
+      feedback.textContent = 'Preencha o título.';
       return;
+    }
+    if(origem === 's3' && !arquivo){
+      feedback.hidden = false;
+      feedback.className = 'admin-modal-feedback erro';
+      feedback.textContent = 'Escolha um arquivo de vídeo.';
+      return;
+    }
+    let youtubeId = null;
+    if(origem === 'youtube'){
+      youtubeId = extrairYoutubeId(youtubeEntrada);
+      if(!youtubeId){
+        feedback.hidden = false;
+        feedback.className = 'admin-modal-feedback erro';
+        feedback.textContent = 'Não consegui identificar o vídeo nesse link do YouTube. Cola o link completo (ex: https://youtube.com/watch?v=...) ou só o código de 11 caracteres.';
+        return;
+      }
     }
 
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Enviando vídeo...';
     feedback.hidden = true;
 
     try{
-      // 1) Upload do arquivo pro S3
-      const destinationKey = `${type === 'onboarding' ? 'onboarding' : 'cursos'}/${Date.now()}-${arquivo.name.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
-      const formData = new FormData();
-      formData.append('video', arquivo);
-      formData.append('destination_key', destinationKey);
-
-      const token = getRealSessionToken();
-      const uploadRes = await fetch('api/admin/media/upload.php', {
-        method: 'POST',
-        credentials: 'include',
-        headers: token ? { 'Authorization': 'Bearer ' + token } : {},
-        body: formData,
-      });
-      const uploadData = await uploadRes.json();
-      if(!uploadRes.ok) throw new Error(uploadData.error || 'Falha no upload do vídeo.');
-
-      // 2) Cria o curso, já com o video_key que acabou de subir
-      submitBtn.textContent = 'Criando o curso...';
       const body = {
         area_slug: areaSlug,
         type,
         title: titulo,
         description: descricao,
-        video_source: 's3',
-        video_key: uploadData.video_key || destinationKey,
         duration_minutes: duracao,
       };
+
+      if(origem === 'youtube'){
+        body.video_source = 'youtube';
+        body.youtube_id = youtubeId;
+      } else {
+        // 1) Upload do arquivo pro S3
+        submitBtn.textContent = 'Enviando vídeo...';
+        const destinationKey = `${type === 'onboarding' ? 'onboarding' : 'cursos'}/${Date.now()}-${arquivo.name.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
+        const formData = new FormData();
+        formData.append('video', arquivo);
+        formData.append('destination_key', destinationKey);
+
+        const token = getRealSessionToken();
+        const uploadRes = await fetch('api/admin/media/upload.php', {
+          method: 'POST',
+          credentials: 'include',
+          headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+          body: formData,
+        });
+        const uploadData = await uploadRes.json();
+        if(!uploadRes.ok) throw new Error(uploadData.error || 'Falha no upload do vídeo.');
+
+        body.video_source = 's3';
+        body.video_key = uploadData.video_key || destinationKey;
+      }
+
+      // 2) Cria o curso
+      submitBtn.textContent = 'Criando o curso...';
       if(pergunta){
         body.quiz_question = pergunta;
         body.quiz_options = [0, 1, 2].map(i => ({
@@ -2065,17 +2120,24 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       // Lembra se a pessoa tinha minimizado da última vez que usou —
       // não fica reabrindo sozinho toda hora sem necessidade.
       if(localStorage.getItem('mse_academy_admin_toolbar_minimizada') === '1'){
-        toolbar.classList.add('is-minimizado');
+        aplicarEstadoAdminToolbar(true);
       }
     }
 
-    const btnMinimizar = document.getElementById('btnMinimizarAdmin');
-    if(btnMinimizar) btnMinimizar.addEventListener('click', () => {
+    function aplicarEstadoAdminToolbar(minimizado){
       const toolbar = document.getElementById('adminToolbar');
-      const agoraMinimizado = toolbar.classList.toggle('is-minimizado');
-      localStorage.setItem('mse_academy_admin_toolbar_minimizada', agoraMinimizado ? '1' : '0');
-      btnMinimizar.setAttribute('title', agoraMinimizado ? 'Expandir' : 'Minimizar');
-    });
+      const btnReabrir = document.getElementById('btnReabrirAdmin');
+      if(!toolbar || !btnReabrir) return;
+      toolbar.classList.toggle('is-minimizado', minimizado);
+      btnReabrir.hidden = !minimizado;
+      localStorage.setItem('mse_academy_admin_toolbar_minimizada', minimizado ? '1' : '0');
+    }
+
+    const btnMinimizar = document.getElementById('btnMinimizarAdmin');
+    if(btnMinimizar) btnMinimizar.addEventListener('click', () => aplicarEstadoAdminToolbar(true));
+
+    const btnReabrir = document.getElementById('btnReabrirAdmin');
+    if(btnReabrir) btnReabrir.addEventListener('click', () => aplicarEstadoAdminToolbar(false));
 
     const btnAdd = document.getElementById('btnAdicionarPessoas');
     if(btnAdd) btnAdd.addEventListener('click', openAdminModal);
@@ -2096,6 +2158,9 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     if(btnVideoSubmit) btnVideoSubmit.addEventListener('click', submitAddVideo);
     const videoTypeSelect = document.getElementById('videoModalType');
     if(videoTypeSelect) videoTypeSelect.addEventListener('change', atualizarVisibilidadeArea);
+
+    const videoOrigemSelect = document.getElementById('videoModalOrigem');
+    if(videoOrigemSelect) videoOrigemSelect.addEventListener('change', atualizarVisibilidadeOrigemVideo);
     const videoOverlay = document.getElementById('videoModalOverlay');
     if(videoOverlay) videoOverlay.addEventListener('click', (e) => {
       if(e.target === videoOverlay) closeVideoModal();

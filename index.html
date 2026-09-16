@@ -46,6 +46,9 @@
       <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
     </button>
   </div>
+  <button type="button" id="btnReabrirAdmin" class="btn-reabrir-admin" title="Mostrar ferramentas de admin" hidden>
+    <i class="fa-solid fa-user" aria-hidden="true"></i>
+  </button>
 </header>
 
 <!-- Modal de promover admin — só aparece pra quem já é admin (checado
@@ -92,8 +95,21 @@
     <label class="admin-field-label">Duração (minutos)</label>
     <input type="number" id="videoModalDuracao" min="1" max="120" value="5">
 
-    <label class="admin-field-label">Arquivo de vídeo (.mp4, .webm ou .mov)</label>
-    <input type="file" id="videoModalArquivo" accept=".mp4,.webm,.mov">
+    <label class="admin-field-label">De onde vem o vídeo?</label>
+    <select id="videoModalOrigem">
+      <option value="youtube">Link do YouTube (mais rápido, não precisa baixar)</option>
+      <option value="s3">Enviar um arquivo (.mp4, .webm ou .mov)</option>
+    </select>
+
+    <div id="videoModalYoutubeWrap">
+      <label class="admin-field-label">Link ou ID do vídeo no YouTube</label>
+      <input type="text" id="videoModalYoutubeUrl" placeholder="Ex: https://youtube.com/watch?v=dQw4w9WgXcQ">
+    </div>
+
+    <div id="videoModalArquivoWrap" hidden>
+      <label class="admin-field-label">Arquivo de vídeo (.mp4, .webm ou .mov)</label>
+      <input type="file" id="videoModalArquivo" accept=".mp4,.webm,.mov">
+    </div>
 
     <div class="admin-quiz-fields">
       <label class="admin-field-label">Pergunta do quiz (opcional)</label>
@@ -404,20 +420,16 @@
 <section class="stats">
   <div class="wrap">
     <div class="stat">
-      <div class="num" id="statColaboradores" data-count="1240">0</div>
+      <div class="num" id="statColaboradores" data-count="0">0</div>
       <div class="label">Colaboradores atendidos</div>
     </div>
     <div class="stat">
-      <div class="num" data-count="86">0</div>
+      <div class="num" id="statTutoriais" data-count="0">0</div>
       <div class="label">Tutoriais disponíveis</div>
     </div>
     <div class="stat">
-      <div class="num" data-count="14">0</div>
+      <div class="num" id="statAreas" data-count="0">0</div>
       <div class="label">Áreas do portal cobertas</div>
-    </div>
-    <div class="stat">
-      <div class="num" data-count="97">0</div>
-      <div class="label">% de dúvidas resolvidas sem chamado</div>
     </div>
   </div>
 </section>
