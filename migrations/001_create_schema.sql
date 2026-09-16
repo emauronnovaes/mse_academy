@@ -78,7 +78,7 @@ CREATE TABLE login_attempts (
 -- ------------------------------------------------------------
 CREATE TABLE courses (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  area_id INT UNSIGNED NOT NULL,
+  area_id INT UNSIGNED NULL, -- NULL pros cursos de "onboarding" (integração), que são universais
   type ENUM('onboarding','curso') NOT NULL DEFAULT 'curso',
   title VARCHAR(200) NOT NULL,
   description TEXT NULL,

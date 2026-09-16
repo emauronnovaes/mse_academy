@@ -486,6 +486,33 @@ crontab -e
   interna) — geralmente configurado no próprio servidor web
   (Nginx/Apache) ou num proxy tipo Cloudflare.
 
+## Bug real corrigido — não dava pra criar vídeo de Integração
+
+A tabela `courses` tinha a coluna `area_id` como **obrigatória**
+(`NOT NULL`) desde a criação original — mas cursos do tipo
+`onboarding` (Integração) nunca devem ter área (são universais,
+aparecem igual pra todo mundo). Isso nunca tinha dado erro porque os 4
+módulos originais foram inseridos direto via SQL (migração 006),
+pulando essa validação. O bug só apareceu quando alguém tentou criar
+um vídeo de Integração pela própria interface — o formulário manda
+`area_id = NULL` de propósito pra esse tipo, e o banco recusava com:
+```
+SQLSTATE[23000]: Integrity constraint violation: 1048
+Column 'area_id' cannot be null
+```
+
+Corrigido em `migrations/012_area_id_nullable.sql` (já incluída no
+`000_TUDO_JUNTO.sql`). **Se o banco de produção já existir**, precisa
+rodar essa migração nova nele — só rodar `000_TUDO_JUNTO.sql` de novo
+não faz nada (as migrações antigas não rodam de novo), então rode só a
+`012` isoladamente:
+```bash
+mysql -u SEU_USUARIO -p mse_academy < migrations/012_area_id_nullable.sql
+```
+
+Testei os dois caminhos depois da correção: criar vídeo de Integração
+(sem área) e criar Curso do catálogo (com área) — os dois funcionando.
+
 ## Compatibilidade com PHP mais antigo (7.x)
 
 O código usava algumas funções que só existem a partir do **PHP 8.0**

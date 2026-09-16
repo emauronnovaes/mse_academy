@@ -9,9 +9,9 @@
 --   mysql -u SEU_USUARIO -p --default-character-set=utf8mb4 < 000_TUDO_JUNTO.sql
 --
 -- Isso é EQUIVALENTE a rodar, na ordem, cada um dos arquivos
--- 001_create_schema.sql até 012_area_opcional_onboarding.sql — se
--- preferir rodar separado (por exemplo, pra conferir cada etapa), os
--- arquivos originais continuam aqui normalmente, nada foi removido.
+-- 001_create_schema.sql até 012_area_id_nullable.sql — se preferir rodar
+-- separado (por exemplo, pra conferir cada etapa), os arquivos
+-- originais continuam aqui normalmente, nada foi removido.
 -- ============================================================
 
 
@@ -98,7 +98,7 @@ CREATE TABLE login_attempts (
 -- ------------------------------------------------------------
 CREATE TABLE courses (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  area_id INT UNSIGNED NOT NULL,
+  area_id INT UNSIGNED NULL, -- NULL pros cursos de "onboarding" (integração), que são universais
   type ENUM('onboarding','curso') NOT NULL DEFAULT 'curso',
   title VARCHAR(200) NOT NULL,
   description TEXT NULL,
@@ -674,26 +674,27 @@ UNION ALL SELECT q.id, 'Ninguém, isso não existe', 0, 3 FROM quiz_questions q 
 
 
 -- ============================================================
--- Início de: 012_area_opcional_onboarding.sql
+-- Início de: 012_area_id_nullable.sql
 -- ============================================================
 -- ============================================================
--- MSE Academy — Vídeos de integração não têm área específica
--- ============================================================
--- Os módulos de integração (type='onboarding') aparecem igual pra
--- TODO MUNDO, não importa a área da pessoa — então não faz sentido
--- pedir uma área na hora de cadastrar esses vídeos. Só os cursos do
--- catálogo (type='curso') continuam exigindo área.
+-- Corrige um bug estrutural desde a criação da tabela: area_id em
+-- "courses" estava como NOT NULL, mas cursos do tipo "onboarding"
+-- (integração) nunca devem ter área — são universais, aparecem igual
+-- pra todo mundo, não importa a área da pessoa (ver README, seção de
+-- vídeos de integração).
 --
--- Como aplicar:
---   mysql -u SEU_USUARIO -p mse_academy < 012_area_opcional_onboarding.sql
+-- Isso NUNCA tinha dado erro antes porque a migração 006 (vídeos reais
+-- da MSE Engenharia) inseriu os 4 módulos de onboarding via SQL direto,
+-- sem passar pelo INSERT normal validando isso. O bug só apareceu
+-- agora que alguém tentou criar um vídeo de integração pela própria
+-- interface (api/admin/courses/create.php), que corretamente manda
+-- area_id = NULL pra esse tipo — e o banco recusava com:
+--   SQLSTATE[23000]: Integrity constraint violation: 1048
+--   Column 'area_id' cannot be null
 -- ============================================================
 
 USE mse_academy;
 
-ALTER TABLE courses MODIFY COLUMN area_id INT UNSIGNED NULL;
-
--- Os 4 módulos de integração que já existem deixam de ter área
--- específica (antes tinham uma área "genérica" só porque a coluna
--- exigia alguma coisa) — passam a valer pra todo mundo de verdade.
-UPDATE courses SET area_id = NULL WHERE type = 'onboarding';
+ALTER TABLE courses
+  MODIFY COLUMN area_id INT UNSIGNED NULL;
 
