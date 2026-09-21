@@ -5,3 +5,18 @@
 # Scripts em /scripts são só pra rodar via linha de comando (php scripts/x.php),
 # nunca devem ser acessáveis pelo navegador.
 RedirectMatch 404 ^/scripts/
+
+# Depois de subir uma atualização, o navegador continuava usando o
+# script.js/style.css antigos que tinha guardado — a pessoa recarregava
+# a página e não via nada mudar (foi o que aconteceu com as áreas novas
+# não aparecendo no seletor de vídeo).
+#
+# "no-cache" NÃO quer dizer "não guarde": quer dizer "guarde, mas
+# pergunte ao servidor antes de usar". Se o arquivo não mudou, o
+# servidor responde 304 e o navegador reaproveita o que já tem — ou
+# seja, continua rápido, mas nunca serve versão velha.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css|html)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+</IfModule>
