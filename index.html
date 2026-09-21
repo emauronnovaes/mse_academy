@@ -42,6 +42,9 @@
     <button type="button" id="btnAcessos" class="btn-add-people btn-acessos" hidden>
       <i class="fa-solid fa-user" aria-hidden="true"></i> Acessos
     </button>
+    <button type="button" id="btnGerenciarAulas" class="btn-add-people btn-gerenciar-aulas" hidden>
+      <i class="fa-solid fa-list-check" aria-hidden="true"></i> Gerenciar aulas
+    </button>
     <button type="button" id="btnMinimizarAdmin" class="btn-minimizar-admin" title="Minimizar" aria-label="Minimizar barra de admin">
       <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
     </button>
@@ -140,6 +143,32 @@
     <h3 id="watchersModalTitle">Quem assistiu</h3>
     <p id="watchersModalSubtitle">Clique num vídeo pra ver os nomes de quem já assistiu.</p>
     <div id="watchersModalBody"></div>
+  </div>
+</div>
+
+<!-- Painel de envios — fica fora do modal de propósito: assim dá pra
+     fechar o modal e continuar acompanhando o progresso, e enfileirar
+     vários vídeos seguidos sem esperar cada um terminar. -->
+<div class="uploads-painel" id="uploadsPainel" hidden>
+  <div class="uploads-painel-topo">
+    <span id="uploadsPainelTitulo">Enviando vídeos</span>
+    <button type="button" class="uploads-painel-fechar" id="uploadsPainelFechar" aria-label="Ocultar painel">
+      <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+    </button>
+  </div>
+  <div class="uploads-painel-lista" id="uploadsPainelLista"></div>
+</div>
+
+<!-- Gerenciar aulas — arquivar (reversível, preserva o histórico de quem
+     assistiu) e excluir de vez (irreversível, apaga o histórico junto). -->
+<div class="admin-modal-overlay" id="aulasModalOverlay" hidden>
+  <div class="admin-modal admin-modal-wide" role="dialog" aria-modal="true" aria-labelledby="aulasModalTitle">
+    <button type="button" class="admin-modal-close" id="aulasModalClose" aria-label="Fechar">
+      <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
+    </button>
+    <h3 id="aulasModalTitle">Gerenciar aulas</h3>
+    <p id="aulasModalSubtitle">Arquivar tira a aula do ar sem perder nada e pode ser desfeito. Excluir apaga também o registro de quem assistiu.</p>
+    <div id="aulasModalBody"></div>
   </div>
 </div>
 

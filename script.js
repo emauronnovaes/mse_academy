@@ -1784,21 +1784,26 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   }
 
   // ---------- Modal de adicionar vídeo ----------
-  const AREAS_CONHECIDAS = [
-    ['dp', 'Departamento Pessoal'], ['financeiro', 'Financeiro'], ['ti', 'TI'],
-    ['obras', 'Obras'], ['suprimentos', 'Suprimentos'], ['comercial', 'Comercial'],
-    ['seguranca-trabalho', 'Segurança do Trabalho'], ['qualidade', 'Qualidade'],
-  ];
-
-  function fillAreaSelect(){
+  // As áreas vêm do banco, não de uma lista fixa aqui — assim qualquer
+  // área cadastrada aparece sozinha, sem precisar mexer no JavaScript.
+  async function fillAreaSelect(){
     const select = document.getElementById('adminVideoModalArea');
     if(!select || select.options.length) return; // já preenchido
-    AREAS_CONHECIDAS.forEach(([slug, nome]) => {
+    try{
+      const data = await apiFetch('api/areas/list.php');
+      data.areas.forEach(a => {
+        const opt = document.createElement('option');
+        opt.value = a.slug;
+        opt.textContent = a.name;
+        select.appendChild(opt);
+      });
+    }catch(e){
+      // Sem isso o seletor ficaria vazio sem explicação nenhuma.
       const opt = document.createElement('option');
-      opt.value = slug;
-      opt.textContent = nome;
+      opt.textContent = 'Não consegui carregar as áreas: ' + e.message;
+      opt.disabled = true;
       select.appendChild(opt);
-    });
+    }
   }
 
   function atualizarVisibilidadeArea(){
@@ -1871,6 +1876,15 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       feedback.textContent = 'Escolha um arquivo de vídeo.';
       return;
     }
+    // Conferido aqui, antes de enfileirar: se a área faltar, o erro só
+    // apareceria ao criar o curso — depois do vídeo inteiro já ter
+    // subido, jogando fora os minutos de envio.
+    if(type !== 'onboarding' && !areaSlug){
+      feedback.hidden = false;
+      feedback.className = 'admin-modal-feedback erro';
+      feedback.textContent = 'Escolha a área do curso.';
+      return;
+    }
     let youtubeId = null;
     if(origem === 'youtube'){
       youtubeId = extrairYoutubeId(youtubeEntrada);
@@ -1897,30 +1911,8 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       if(origem === 'youtube'){
         body.video_source = 'youtube';
         body.youtube_id = youtubeId;
-      } else {
-        // 1) Upload do arquivo pro S3
-        submitBtn.textContent = 'Enviando vídeo...';
-        const destinationKey = `${type === 'onboarding' ? 'onboarding' : 'cursos'}/${Date.now()}-${arquivo.name.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
-        const formData = new FormData();
-        formData.append('video', arquivo);
-        formData.append('destination_key', destinationKey);
-
-        const token = getRealSessionToken();
-        const uploadRes = await fetch('api/admin/media/upload.php', {
-          method: 'POST',
-          credentials: 'include',
-          headers: token ? { 'Authorization': 'Bearer ' + token } : {},
-          body: formData,
-        });
-        const uploadData = await uploadRes.json();
-        if(!uploadRes.ok) throw new Error(uploadData.error || 'Falha no upload do vídeo.');
-
-        body.video_source = 's3';
-        body.video_key = uploadData.video_key || destinationKey;
       }
 
-      // 2) Cria o curso
-      submitBtn.textContent = 'Criando o curso...';
       if(pergunta){
         body.quiz_question = pergunta;
         body.quiz_options = [0, 1, 2].map(i => ({
@@ -1929,14 +1921,27 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
         })).filter(o => o.text);
       }
 
-      const data = await apiFetch('api/admin/courses/create.php', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
-
-      feedback.hidden = false;
-      feedback.className = 'admin-modal-feedback ok';
-      feedback.textContent = `Vídeo "${titulo}" adicionado com sucesso!`;
+      if(origem === 's3'){
+        // Vai pra fila em vez de travar o modal: o envio continua no
+        // painel e o formulário já fica livre pro próximo vídeo.
+        enfileirarUpload(arquivo, body, titulo);
+        feedback.hidden = false;
+        feedback.className = 'admin-modal-feedback ok';
+        feedback.textContent = `"${titulo}" entrou na fila de envio. Pode fechar esta janela e adicionar outro — o envio continua no painel do canto.`;
+        document.getElementById('videoModalTitulo').value = '';
+        document.getElementById('videoModalDescricao').value = '';
+        document.getElementById('videoModalArquivo').value = '';
+        document.getElementById('videoModalPergunta').value = '';
+        [0, 1, 2].forEach(i => { document.getElementById('videoModalOpcao' + i).value = ''; });
+      } else {
+        await apiFetch('api/admin/courses/create.php', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+        feedback.hidden = false;
+        feedback.className = 'admin-modal-feedback ok';
+        feedback.textContent = `Vídeo "${titulo}" adicionado com sucesso!`;
+      }
     }catch(e){
       feedback.hidden = false;
       feedback.className = 'admin-modal-feedback erro';
@@ -1944,6 +1949,290 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     }finally{
       submitBtn.disabled = false;
       submitBtn.textContent = 'Adicionar vídeo';
+    }
+  }
+
+  // ---------- Fila de envio de vídeos ----------
+  // O envio roda aqui fora do modal de propósito: fechar o modal não
+  // interrompe nada, e dá pra enfileirar vários vídeos seguidos. O que
+  // NÃO dá é fechar a aba — aí o navegador para de mandar os bytes.
+  const filaUploads = [];
+  let uploadEmAndamento = false;
+
+  function formatarMB(bytes){
+    return (bytes / 1048576).toFixed(0) + ' MB';
+  }
+
+  function formatarTempo(segundos){
+    if(!isFinite(segundos) || segundos < 0) return '';
+    if(segundos < 60) return Math.round(segundos) + 's restantes';
+    return Math.round(segundos / 60) + ' min restantes';
+  }
+
+  function renderPainelUploads(){
+    const painel = document.getElementById('uploadsPainel');
+    const lista = document.getElementById('uploadsPainelLista');
+    if(!painel || !lista) return;
+
+    if(!filaUploads.length){ painel.hidden = true; return; }
+    painel.hidden = false;
+
+    const ativos = filaUploads.filter(j => j.status === 'enviando' || j.status === 'aguardando').length;
+    document.getElementById('uploadsPainelTitulo').textContent =
+      ativos ? `Enviando vídeos (${ativos})` : 'Envios concluídos';
+
+    lista.innerHTML = '';
+    filaUploads.forEach(job => {
+      const item = document.createElement('div');
+      item.className = 'uploads-item estado-' + job.status;
+
+      let detalhe = '';
+      if(job.status === 'aguardando') detalhe = 'na fila';
+      else if(job.status === 'enviando') detalhe = `${job.pct}% · ${formatarMB(job.enviado)} de ${formatarMB(job.total)} · ${formatarTempo(job.restante)}`;
+      else if(job.status === 'concluido') detalhe = 'concluído';
+      else if(job.status === 'cancelado') detalhe = 'cancelado';
+      else if(job.status === 'erro') detalhe = job.erro || 'falhou';
+
+      item.innerHTML = `
+        <div class="uploads-item-linha">
+          <span class="uploads-item-nome">${job.titulo}</span>
+          ${job.status === 'enviando' || job.status === 'aguardando'
+            ? '<button type="button" class="uploads-item-cancelar" aria-label="Cancelar">&times;</button>'
+            : '<button type="button" class="uploads-item-cancelar" aria-label="Remover da lista">&times;</button>'}
+        </div>
+        <div class="uploads-item-barra"><div class="uploads-item-barra-fill" style="width:${job.pct || 0}%"></div></div>
+        <div class="uploads-item-detalhe">${detalhe}</div>
+      `;
+      item.querySelector('.uploads-item-cancelar').addEventListener('click', () => {
+        if(job.status === 'enviando' || job.status === 'aguardando'){
+          job.cancelar = true;
+          job.status = 'cancelado';
+        } else {
+          const i = filaUploads.indexOf(job);
+          if(i >= 0) filaUploads.splice(i, 1);
+        }
+        renderPainelUploads();
+      });
+      lista.appendChild(item);
+    });
+  }
+
+  // Manda o arquivo em pedaços de ~5MB. Cada pedaço é uma requisição
+  // pequena e independente — é isso que permite arquivo grande passar
+  // sem o servidor engasgar, e é o que dá o progresso real.
+  async function enviarEmPedacos(job){
+    const token = getRealSessionToken();
+    const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+    const base = 'api/admin/media/upload_chunk.php';
+
+    const resIni = await fetch(`${base}?acao=iniciar`, {
+      method: 'POST', credentials: 'include',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+      body: JSON.stringify({ destination_key: job.key }),
+    });
+    const ini = await resIni.json();
+    if(!resIni.ok) throw new Error(ini.error || 'Não consegui iniciar o envio.');
+
+    const tamParte = ini.tamanho_parte;
+    const total = job.arquivo.size;
+    const qtd = Math.ceil(total / tamParte);
+    const partes = [];
+    const inicio = Date.now();
+
+    for(let i = 0; i < qtd; i++){
+      if(job.cancelar){
+        await fetch(`${base}?acao=cancelar`, {
+          method: 'POST', credentials: 'include',
+          headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+          body: JSON.stringify({ destination_key: job.key, upload_id: ini.upload_id }),
+        }).catch(() => {});
+        throw new Error('cancelado');
+      }
+
+      const pedaco = job.arquivo.slice(i * tamParte, Math.min((i + 1) * tamParte, total));
+      const url = `${base}?acao=parte&upload_id=${encodeURIComponent(ini.upload_id)}`
+        + `&key=${encodeURIComponent(job.key)}&parte=${i + 1}`;
+
+      const res = await fetch(url, {
+        method: 'POST', credentials: 'include',
+        headers: Object.assign({ 'Content-Type': 'application/octet-stream' }, headers),
+        body: pedaco,
+      });
+      const r = await res.json();
+      if(!res.ok) throw new Error(r.error || `Falhou no pedaço ${i + 1} de ${qtd}.`);
+      partes.push({ parte: r.parte, etag: r.etag });
+
+      job.enviado = Math.min((i + 1) * tamParte, total);
+      job.pct = Math.round(job.enviado / total * 100);
+      const decorrido = (Date.now() - inicio) / 1000;
+      job.restante = decorrido / job.enviado * (total - job.enviado);
+      renderPainelUploads();
+    }
+
+    const resFim = await fetch(`${base}?acao=finalizar`, {
+      method: 'POST', credentials: 'include',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+      body: JSON.stringify({ destination_key: job.key, upload_id: ini.upload_id, partes }),
+    });
+    const fim = await resFim.json();
+    if(!resFim.ok) throw new Error(fim.error || 'Não consegui finalizar o envio.');
+    return fim.video_key;
+  }
+
+  // Um de cada vez de propósito: dois envios paralelos dividiriam a
+  // mesma banda de upload e os dois ficariam lentos, sem ganho nenhum.
+  async function processarFila(){
+    if(uploadEmAndamento) return;
+    const job = filaUploads.find(j => j.status === 'aguardando');
+    if(!job) return;
+
+    uploadEmAndamento = true;
+    job.status = 'enviando';
+    renderPainelUploads();
+
+    try{
+      const videoKey = await enviarEmPedacos(job);
+      await apiFetch('api/admin/courses/create.php', {
+        method: 'POST',
+        body: JSON.stringify(Object.assign({}, job.dados, { video_source: 's3', video_key: videoKey })),
+      });
+      job.status = 'concluido';
+      job.pct = 100;
+    }catch(e){
+      job.status = e.message === 'cancelado' ? 'cancelado' : 'erro';
+      job.erro = e.message;
+    }finally{
+      uploadEmAndamento = false;
+      renderPainelUploads();
+      processarFila();
+    }
+  }
+
+  function enfileirarUpload(arquivo, dados, titulo){
+    const nomeLimpo = arquivo.name.replace(/[^a-zA-Z0-9.-]/g, '-');
+    const pasta = dados.type === 'onboarding' ? 'onboarding' : 'cursos';
+    filaUploads.push({
+      arquivo, dados, titulo,
+      key: `${pasta}/${Date.now()}-${nomeLimpo}`,
+      status: 'aguardando', pct: 0, enviado: 0, total: arquivo.size, restante: Infinity,
+      cancelar: false,
+    });
+    renderPainelUploads();
+    processarFila();
+  }
+
+  // Fechar a aba no meio do envio perde o que faltava — o navegador
+  // simplesmente para de mandar os bytes. Avisa antes.
+  window.addEventListener('beforeunload', (e) => {
+    if(filaUploads.some(j => j.status === 'enviando' || j.status === 'aguardando')){
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+
+  // ---------- Modal de "gerenciar aulas" ----------
+  function openAulasModal(){
+    document.getElementById('aulasModalOverlay').hidden = false;
+    loadAulas();
+  }
+  function closeAulasModal(){
+    document.getElementById('aulasModalOverlay').hidden = true;
+  }
+
+  async function loadAulas(){
+    const body = document.getElementById('aulasModalBody');
+    body.innerHTML = '<p>Carregando...</p>';
+    try{
+      const data = await apiFetch('api/admin/courses/watchers.php');
+      body.innerHTML = '<ul class="aulas-list"></ul>';
+      const ul = body.querySelector('.aulas-list');
+      data.courses.forEach(c => {
+        const arquivada = c.is_published === 0;
+        const li = document.createElement('li');
+        li.className = 'aulas-item' + (arquivada ? ' is-arquivada' : '');
+        li.innerHTML = `
+          <div class="aulas-info">
+            <div class="aulas-title">${c.title}${arquivada ? ' <span class="aulas-badge">arquivada</span>' : ''}</div>
+            <div class="aulas-meta">${c.area_name || 'Sem área'} · ${c.type === 'onboarding' ? 'Integração' : 'Catálogo'} · <b>${c.total_concluido}</b> concluíram</div>
+          </div>
+          <div class="aulas-acoes">
+            <button type="button" class="aulas-btn aulas-btn-arquivar">${arquivada ? 'Republicar' : 'Arquivar'}</button>
+            <button type="button" class="aulas-btn aulas-btn-excluir">Excluir</button>
+          </div>
+        `;
+        li.querySelector('.aulas-btn-arquivar').addEventListener('click', () => arquivarAula(c.id, arquivada));
+        li.querySelector('.aulas-btn-excluir').addEventListener('click', () => excluirAula(c.id));
+        ul.appendChild(li);
+      });
+    }catch(e){
+      body.innerHTML = `<p>Não foi possível carregar: ${e.message}</p>`;
+    }
+  }
+
+  async function arquivarAula(courseId, estaArquivada){
+    try{
+      const data = await apiFetch('api/admin/courses/archive.php', {
+        method: 'POST',
+        body: JSON.stringify({ course_id: courseId, published: estaArquivada ? 1 : 0 }),
+      });
+      alert(data.message);
+      loadAulas();
+    }catch(e){
+      alert('Não deu certo: ' + e.message);
+    }
+  }
+
+  // Duas etapas de propósito: a primeira chamada volta 409 com o tamanho
+  // do estrago (quantas pessoas perdem o histórico), e só depois pedimos
+  // o título digitado. Não usa apiFetch porque ele descarta o corpo da
+  // resposta de erro, que é justamente onde vem o impacto.
+  async function excluirAula(courseId){
+    try{
+      const token = getRealSessionToken();
+      const headers = { 'Content-Type': 'application/json' };
+      if(token) headers['Authorization'] = 'Bearer ' + token;
+
+      const res = await fetch('api/admin/courses/delete.php', {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify({ course_id: courseId }),
+      });
+      const info = await res.json();
+
+      if(res.status !== 409){
+        alert(info.error || 'Não consegui checar essa aula.');
+        return;
+      }
+
+      const imp = info.impacto;
+      const aviso = `EXCLUSÃO DEFINITIVA\n\n"${imp.titulo}"\n\n`
+        + `Isso vai apagar para sempre:\n`
+        + `· ${imp.colaboradores_com_progresso} registro(s) de quem assistiu\n`
+        + `· ${imp.respostas_de_quiz} resposta(s) de quiz\n\n`
+        + `Esse histórico não volta. Se a ideia é só tirar do ar, cancele e use "Arquivar".\n\n`
+        + `Para confirmar, digite o título exato da aula:`;
+
+      const digitado = prompt(aviso, '');
+      if(digitado === null) return;
+
+      const resDel = await fetch('api/admin/courses/delete.php', {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify({ course_id: courseId, confirmacao: digitado }),
+      });
+      const resultado = await resDel.json();
+
+      if(!resDel.ok){
+        alert(resultado.error || 'Não foi possível excluir.');
+        return;
+      }
+      alert(`${resultado.message}\n\n${resultado.removido.registros_de_progresso_apagados} registro(s) de progresso apagados.`
+        + (resultado.video_mantido_no_s3 ? `\n\nO arquivo do vídeo continua no S3: ${resultado.video_mantido_no_s3}` : ''));
+      loadAulas();
+    }catch(e){
+      alert('Não deu certo: ' + e.message);
     }
   }
 
@@ -2113,7 +2402,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     if(isAdmin){
       const toolbar = document.getElementById('adminToolbar');
       if(toolbar) toolbar.hidden = false;
-      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnQuemAssistiu', 'btnAcessos'].forEach(id => {
+      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnQuemAssistiu', 'btnAcessos', 'btnGerenciarAulas'].forEach(id => {
         const btn = document.getElementById(id);
         if(btn) btn.hidden = false;
       });
@@ -2175,6 +2464,20 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     const watchersOverlay = document.getElementById('watchersModalOverlay');
     if(watchersOverlay) watchersOverlay.addEventListener('click', (e) => {
       if(e.target === watchersOverlay) closeWatchersModal();
+    });
+
+    const btnUploadsFechar = document.getElementById('uploadsPainelFechar');
+    if(btnUploadsFechar) btnUploadsFechar.addEventListener('click', () => {
+      document.getElementById('uploadsPainel').classList.toggle('is-oculto');
+    });
+
+    const btnAulas = document.getElementById('btnGerenciarAulas');
+    if(btnAulas) btnAulas.addEventListener('click', openAulasModal);
+    const btnAulasClose = document.getElementById('aulasModalClose');
+    if(btnAulasClose) btnAulasClose.addEventListener('click', closeAulasModal);
+    const aulasOverlay = document.getElementById('aulasModalOverlay');
+    if(aulasOverlay) aulasOverlay.addEventListener('click', (e) => {
+      if(e.target === aulasOverlay) closeAulasModal();
     });
 
     const btnAcessos = document.getElementById('btnAcessos');

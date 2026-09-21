@@ -76,13 +76,13 @@ if ($courseId) {
 } else {
     // Visão geral: todos os vídeos, com a contagem de quem assistiu cada um.
     $stmt = $pdo->query(
-        'SELECT c.id, c.title, c.type, a.name AS area_name,
+        'SELECT c.id, c.title, c.type, c.is_published, a.name AS area_name,
                 COUNT(CASE WHEN p.status = "concluido" THEN 1 END) AS total_concluido,
                 COUNT(CASE WHEN p.status = "em_andamento" THEN 1 END) AS total_em_andamento
          FROM courses c
          LEFT JOIN areas a ON a.id = c.area_id
          LEFT JOIN user_course_progress p ON p.course_id = c.id
-         GROUP BY c.id, c.title, c.type, a.name
+         GROUP BY c.id, c.title, c.type, c.is_published, a.name
          ORDER BY c.type, c.order_index'
     );
     $courses = $stmt->fetchAll();
@@ -94,6 +94,7 @@ if ($courseId) {
                 'title' => $c['title'],
                 'type' => $c['type'],
                 'area_name' => $c['area_name'],
+                'is_published' => (int) $c['is_published'],
                 'total_concluido' => (int) $c['total_concluido'],
                 'total_em_andamento' => (int) $c['total_em_andamento'],
             ];
