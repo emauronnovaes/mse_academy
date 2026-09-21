@@ -22,6 +22,29 @@ require_once __DIR__ . '/../lib/aws.phar';
 use Aws\S3\S3Client;
 use Aws\Exception\AwsException;
 
+/**
+ * O .env de produção foi preenchido com os nomes que o AWS CLI usa por
+ * padrão (AWS_DEFAULT_REGION, AWS_BUCKET_NAME), não os que este projeto
+ * lê (AWS_REGION, AWS_S3_BUCKET) — engano razoável, mas fazia o upload
+ * falhar com "não configurado" mesmo com tudo preenchido.
+ *
+ * Em vez de depender de alguém com acesso SSH pra renomear a variável
+ * no servidor, o código aceita os dois nomes: tenta o certo primeiro,
+ * cai pro nome antigo se precisar. Se um dia o .env de produção for
+ * corrigido, continua funcionando igual — não é preciso reverter isso.
+ */
+function mse_aws_region(): string
+{
+    $v = trim(mse_env('AWS_REGION'));
+    return $v !== '' ? $v : trim(mse_env('AWS_DEFAULT_REGION', 'us-east-1'));
+}
+
+function mse_aws_bucket(): string
+{
+    $v = trim(mse_env('AWS_S3_BUCKET'));
+    return $v !== '' ? $v : trim(mse_env('AWS_BUCKET_NAME'));
+}
+
 /** Cria (uma vez só, reaproveitando) o cliente S3 configurado com as credenciais do .env. */
 function mse_s3_client(): S3Client
 {
@@ -32,7 +55,7 @@ function mse_s3_client(): S3Client
 
     $accessKey = trim(mse_env('AWS_ACCESS_KEY_ID'));
     $secretKey = trim(mse_env('AWS_SECRET_ACCESS_KEY'));
-    $region = trim(mse_env('AWS_REGION', 'us-east-1'));
+    $region = mse_aws_region();
 
     if ($accessKey === '' || $secretKey === '') {
         throw new RuntimeException(
@@ -55,7 +78,7 @@ function mse_s3_client(): S3Client
 /** @return string a URL assinada, pronta pra usar no <video src="..."> */
 function mse_s3_presigned_url(string $objectKey, int $expiresSeconds = 1800): string
 {
-    $bucket = trim(mse_env('AWS_S3_BUCKET'));
+    $bucket = mse_aws_bucket();
     if ($bucket === '') {
         throw new RuntimeException('AWS_S3_BUCKET não configurado no .env');
     }
@@ -87,7 +110,7 @@ function mse_s3_presigned_url(string $objectKey, int $expiresSeconds = 1800): st
  */
 function mse_s3_upload_file(string $localTmpPath, string $destinationKey): string
 {
-    $bucket = trim(mse_env('AWS_S3_BUCKET'));
+    $bucket = mse_aws_bucket();
     if ($bucket === '') {
         throw new RuntimeException('AWS_S3_BUCKET não configurado no .env');
     }
@@ -134,7 +157,7 @@ function mse_s3_upload_file(string $localTmpPath, string $destinationKey): strin
  */
 function mse_s3_list_objects(string $prefix = '', int $maxKeys = 200): array
 {
-    $bucket = trim(mse_env('AWS_S3_BUCKET'));
+    $bucket = mse_aws_bucket();
     if ($bucket === '') {
         throw new RuntimeException('AWS_S3_BUCKET não configurado no .env');
     }

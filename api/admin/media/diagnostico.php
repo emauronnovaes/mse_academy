@@ -18,6 +18,11 @@ mse_require_admin();
  * vez de AWS_REGION é o engano mais comum), .env no lugar errado, ou
  * valor preenchido mas inválido. Sem isso o diagnóstico vira tentativa
  * e erro no servidor de produção.
+ *
+ * mse_aws_region()/mse_aws_bucket() (em src/AwsS3.php) aceitam os nomes
+ * errados como fallback — então "preenchida: false" aqui não quer dizer
+ * mais que o envio vai falhar, só que o nome CERTO está vazio. O que
+ * decide se funciona é o campo "efetivo".
  */
 
 $esperadas = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION', 'AWS_S3_BUCKET'];
@@ -51,10 +56,18 @@ foreach ($enganosComuns as $nome) {
 
 $envPath = realpath(__DIR__ . '/../../../.env');
 
+// O que o sistema realmente vai usar, já considerando o fallback pros
+// nomes errados — é isso, não a linha "AWS_REGION"/"AWS_S3_BUCKET"
+// isolada acima, que decide se o upload funciona.
+$efetivo = [
+    'regiao' => mse_aws_region(),
+    'bucket' => mse_aws_bucket(),
+];
+
 $conexao = ['testada' => false];
 if ($relatorio['AWS_ACCESS_KEY_ID']['preenchida']
     && $relatorio['AWS_SECRET_ACCESS_KEY']['preenchida']
-    && $relatorio['AWS_S3_BUCKET']['preenchida']) {
+    && $efetivo['bucket'] !== '') {
     try {
         $qtd = count(mse_s3_list_objects('', 1));
         $conexao = ['testada' => true, 'ok' => true, 'detalhe' => 'Bucket acessível.'];
@@ -71,6 +84,7 @@ mse_json([
     ],
     'variaveis' => $relatorio,
     'nomes_errados_encontrados' => $encontradosPorEngano,
+    'efetivo' => $efetivo,
     'conexao_s3' => $conexao,
     'php_version' => PHP_VERSION,
 ]);
