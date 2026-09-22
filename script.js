@@ -2634,10 +2634,12 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
             <div class="aulas-meta">${c.area_name || 'Sem área'} · ${c.type === 'onboarding' ? 'Integração' : 'Catálogo'} · <b>${c.total_concluido}</b> concluíram</div>
           </div>
           <div class="aulas-acoes">
+            <button type="button" class="aulas-btn aulas-btn-renomear">Renomear</button>
             <button type="button" class="aulas-btn aulas-btn-arquivar">${arquivada ? 'Republicar' : 'Arquivar'}</button>
             <button type="button" class="aulas-btn aulas-btn-excluir">Excluir</button>
           </div>
         `;
+        li.querySelector('.aulas-btn-renomear').addEventListener('click', () => renomearAula(c.id, c.title));
         li.querySelector('.aulas-btn-arquivar').addEventListener('click', () => arquivarAula(c.id, arquivada));
         li.querySelector('.aulas-btn-excluir').addEventListener('click', () => excluirAula(c.id));
         ul.appendChild(li);
@@ -2659,6 +2661,29 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       if(!document.getElementById('areaModal').hidden) refreshCourseScreen();
     }catch(e){
       console.warn('[conteudo] não consegui recarregar a tela:', e.message);
+    }
+  }
+
+  // Só troca o texto: não mexe em vídeo, área nem quiz, e não recria a
+  // linha — então o histórico de quem já assistiu aquela aula continua
+  // valendo, e quem estiver no meio da trilha não perde o progresso.
+  async function renomearAula(courseId, tituloAtual){
+    const novo = prompt('Novo nome da aula:', tituloAtual);
+    if(novo === null) return;
+    if(!novo.trim()){
+      alert('O nome não pode ficar vazio.');
+      return;
+    }
+    if(novo.trim() === tituloAtual) return;
+    try{
+      await apiFetch('api/admin/courses/update.php', {
+        method: 'POST',
+        body: JSON.stringify({ course_id: courseId, title: novo.trim() }),
+      });
+      loadAulas();
+      recarregarTelaConteudo(); // o nome muda na trilha sem recarregar a página
+    }catch(e){
+      alert('Não deu certo: ' + e.message);
     }
   }
 
