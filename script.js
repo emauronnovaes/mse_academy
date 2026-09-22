@@ -899,10 +899,13 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           videoId: detalhe.youtube_id,
           playerVars: isRewatch
             ? { rel: 0, modestbranding: 1 }
-            // fs:1 permite tela cheia; a barra do YouTube continua
-            // escondida por controls:0, então nem em tela cheia dá pra
-            // arrastar o vídeo.
-            : { controls: 0, disablekb: 1, rel: 0, modestbranding: 1, fs: 1 },
+            // fs:0 tira o botão de tela cheia DO YOUTUBE. Com ele, quem
+            // ia pra tela cheia era o player, e aí o YouTube mostrava a
+            // barra dele — dava pra ver e arrastar o vídeo. O botão de
+            // tela cheia da Academy continua funcionando: ele expande a
+            // moldura inteira, não o player, então controls:0 continua
+            // valendo e a barra não aparece.
+            : { controls: 0, disablekb: 1, rel: 0, modestbranding: 1, fs: 0 },
           events: {
             onStateChange: (e) => {
               if(e.data === YT.PlayerState.ENDED) onbSetWatchPct(mod, 1);
