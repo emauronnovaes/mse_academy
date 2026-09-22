@@ -1756,6 +1756,16 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       const wrap = videoModalBodyEl.querySelector('.vid-player-wrap');
       if(!wrap) return;
 
+      // Playlist também pode ser cadastrada no catálogo, não só na
+      // trilha. Sem este caso o id da playlist era tratado como id de
+      // vídeo e o player abria quebrado.
+      if(detalhe.video_source === 'playlist'){
+        wrap.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/videoseries?list=${encodeURIComponent(detalhe.youtube_id)}&rel=0"
+          title="${course.title}" allow="accelerometer; encrypted-media; picture-in-picture" allowfullscreen
+          style="width:100%;height:100%;border:0"></iframe>`;
+        return;
+      }
+
       if(detalhe.video_url){
         wrap.innerHTML = `<video src="${detalhe.video_url}" controls playsinline style="width:100%;border-radius:12px"></video>`;
         const v = wrap.querySelector('video');
@@ -2171,7 +2181,21 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     }
   }
 
+  // O tipo vem marcado como "Curso (catálogo)" por ser a primeira opção,
+  // e quem quer publicar na trilha costuma não reparar nisso — a aula
+  // some pro catálogo e a pessoa fica procurando na trilha. Este aviso
+  // diz, em uma linha, onde ela vai aparecer.
+  function atualizarOndeAparece(){
+    const alvo = document.getElementById('videoModalOndeAparece');
+    if(!alvo) return;
+    const type = document.getElementById('videoModalType').value;
+    alvo.innerHTML = type === 'onboarding'
+      ? 'Vai aparecer na <strong>trilha de Integração</strong>, que todo colaborador percorre.'
+      : 'Vai aparecer no <strong>catálogo</strong>, dentro da área escolhida — <strong>não</strong> na trilha de Integração.';
+  }
+
   function atualizarVisibilidadeArea(){
+    atualizarOndeAparece();
     const type = document.getElementById('videoModalType').value;
     const areaWrap = document.getElementById('adminVideoModalAreaWrap');
     const hint = document.getElementById('videoModalHint');
