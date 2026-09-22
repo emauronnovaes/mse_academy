@@ -2270,9 +2270,24 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     if(origem === 'youtube'){
       youtubeId = extrairYoutubeId(youtubeEntrada);
       if(!youtubeId){
+        // Link de playlist colado no campo de vídeo é o engano mais
+        // provável aqui — a mensagem antiga só dizia "não consegui
+        // identificar o vídeo", sem indicar que existe a opção certa
+        // logo acima.
+        const idPlaylist = extrairPlaylistId(youtubeEntrada);
+        if(idPlaylist){
+          document.getElementById('videoModalOrigem').value = 'playlist';
+          document.getElementById('videoModalPlaylistUrl').value = youtubeEntrada;
+          document.getElementById('videoModalYoutubeUrl').value = '';
+          atualizarVisibilidadeOrigemVideo();
+          feedback.hidden = false;
+          feedback.className = 'admin-modal-feedback ok';
+          feedback.textContent = 'Esse link é de uma playlist, não de um vídeo. Já troquei para "Playlist do YouTube" e movi o link pro campo certo — confira e clique em Adicionar de novo.';
+          return;
+        }
         feedback.hidden = false;
         feedback.className = 'admin-modal-feedback erro';
-        feedback.textContent = 'Não consegui identificar o vídeo nesse link do YouTube. Cola o link completo (ex: https://youtube.com/watch?v=...) ou só o código de 11 caracteres.';
+        feedback.textContent = 'Não consegui identificar o vídeo nesse link do YouTube. Cola o link completo (ex: https://youtube.com/watch?v=...) ou só o código de 11 caracteres. Se for uma playlist, escolha "Playlist do YouTube" em "De onde vem o vídeo?".';
         return;
       }
     }
