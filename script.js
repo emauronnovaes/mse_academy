@@ -1845,6 +1845,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     player: null,
     quizAnswered: false,
     lastFocusedEl: null,
+    travaTimer: null, // vigia a posição do vídeo do YouTube na 1ª vez
   };
 
   function openVideoModal(course){
@@ -1888,11 +1889,26 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         return;
       }
 
+      // Na primeira vez a pessoa não pode adiantar o vídeo; depois de já
+      // ter concluído, pode pular à vontade — quem volta pra rever um
+      // trecho não deveria ter que assistir tudo de novo.
+      const jaConcluiu = catalogProgress.completed.includes(course.id);
+      let maxAssistido = jaConcluiu ? 1 : 0;
+
       if(detalhe.video_url){
         wrap.innerHTML = `<video src="${detalhe.video_url}" controls playsinline style="width:100%;border-radius:12px"></video>`;
         const v = wrap.querySelector('video');
+        // Os controles ficam visíveis mesmo travado, pra dar pra VOLTAR.
+        // O que é bloqueado é só avançar além do que já foi visto.
+        v.addEventListener('seeking', () => {
+          if(jaConcluiu || !v.duration) return;
+          const limite = maxAssistido * v.duration + 1; // 1s de folga
+          if(v.currentTime > limite) v.currentTime = limite;
+        });
         v.addEventListener('timeupdate', () => {
-          if(v.duration) enviarProgresso(course.id, v.currentTime / v.duration);
+          if(!v.duration) return;
+          maxAssistido = Math.max(maxAssistido, v.currentTime / v.duration);
+          enviarProgresso(course.id, v.currentTime / v.duration);
         });
         v.addEventListener('ended', () => { enviarProgresso(course.id, 1); showBonusQuiz(); });
         return;
@@ -1903,13 +1919,30 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         return;
       }
 
-      // Controles normais do YouTube liberados — aqui, ao contrário da trilha
-      // de integração, não existe bloqueio nenhum (a pessoa pode pular à vontade).
+      // Controles ficam visíveis nos dois casos (pra poder voltar); o que
+      // muda é o bloqueio de adiantar, aplicado só na primeira vez.
       loadYouTubeApi().then(() => {
         modalState.player = new YT.Player('catalog-yt-player', {
           videoId: detalhe.youtube_id,
           playerVars: { controls: 1, modestbranding: 1, rel: 0, fs: 1 },
           events: {
+            onReady: () => {
+              if(jaConcluiu) return;
+              // O player do YouTube não avisa quando a posição muda, então
+              // a checagem é de segundo em segundo, igual à da trilha.
+              clearInterval(modalState.travaTimer);
+              modalState.travaTimer = setInterval(() => {
+                const p = modalState.player;
+                if(!p || typeof p.getDuration !== 'function') return;
+                const total = p.getDuration();
+                if(total <= 0) return;
+                const atual = p.getCurrentTime();
+                const limite = maxAssistido * total + 2; // 2s de folga
+                if(atual > limite){ p.seekTo(limite, true); return; }
+                maxAssistido = Math.max(maxAssistido, atual / total);
+                enviarProgresso(course.id, atual / total);
+              }, 1000);
+            },
             onStateChange: (e) => {
               if(e.data === YT.PlayerState.ENDED){ enviarProgresso(course.id, 1); showBonusQuiz(); }
             }
@@ -2015,6 +2048,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   function closeVideoModal(){
     if(videoModalEl.hidden) return;
+    clearInterval(modalState.travaTimer); // senão segue rodando sobre um player destruído
+    modalState.travaTimer = null;
     if(modalState.player && typeof modalState.player.destroy === 'function'){
       modalState.player.destroy();
     }
