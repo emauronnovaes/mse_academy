@@ -11,7 +11,7 @@
      Sem ele, o Chrome reaproveita o arquivo que já tem e a pessoa
      recarrega a página sem ver mudança nenhuma. AO SUBIR UMA ALTERAÇÃO
      EM style.css OU script.js, TROQUE A DATA ABAIXO (nos dois). -->
-<link rel="stylesheet" href="style.css?v=20260922t">
+<link rel="stylesheet" href="style.css?v=20260922u">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -220,11 +220,12 @@
 <section class="welcome-banner">
   <!-- Vídeo de fundo com autoplay. Precisa ser mudo pra o navegador deixar
        tocar sozinho — é regra de todos os navegadores, não dá pra contornar.
-       TROQUE o "src" abaixo pelo vídeo real (ex: videos/boas-vindas.mp4). -->
-  <video class="welcome-video" autoplay muted loop playsinline aria-hidden="true">
-    <source src="videos/boas-vindas.mp4" type="video/mp4">
-    <source src="videos/boas-vindas.webm" type="video/webm">
-  </video>
+       O caminho fica em data-src, não em src: assim o navegador NÃO baixa o
+       vídeo junto com a página. Quem carrega é o script.js, depois que a
+       tela já está utilizável. Enquanto isso aparece o degradê do banner,
+       que é o mesmo fundo de sempre. Trocar o vídeo = trocar o data-src. -->
+  <video class="welcome-video" autoplay muted loop playsinline aria-hidden="true"
+         preload="none" data-src="videos/boas-vindas.mp4"></video>
   <div class="welcome-overlay"></div>
   <div class="wrap">
     <div class="welcome-eyebrow" id="greetingTime">Bom dia</div>
@@ -562,7 +563,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20260922t"></script>
+<script src="script.js?v=20260922u"></script>
 
 </body>
 </html>
