@@ -802,15 +802,24 @@
   .onb-path-track{ position:relative; width:100%; height:100%; }
 
   .onb-cables-svg{ position:absolute; inset:0; width:100%; height:100%; z-index:0; }
-  .onb-cable{ fill:none; stroke-linecap:round; }
+  /* O viewBox é 100x100 esticado num retângulo alto (preserveAspectRatio
+     none), então a escala é diferente na horizontal e na vertical — 2.8x
+     contra 7x, e a vertical cresce junto com a trilha. Sem
+     non-scaling-stroke a espessura era multiplicada por isso, e o
+     filter:blur virava um borrão vermelho esticado pra cima. Com ele, a
+     espessura passa a ser em pixels de tela, independente da deformação. */
+  .onb-cable{ fill:none; stroke-linecap:round; vector-effect:non-scaling-stroke; }
   .onb-cable-off{
     stroke:var(--concrete); stroke-width:3.5;
   }
+  /* O brilho agora é um traço largo e translúcido por baixo do fio, em
+     vez de um desfoque — desfoque em SVG é aplicado no espaço deformado
+     do viewBox, e era isso que esticava. */
   .onb-cable-glow{
-    stroke-width:7; opacity:0.4; filter:blur(2.5px);
+    stroke-width:9; opacity:0.22;
   }
   .onb-cable-core{
-    stroke-width:2;
+    stroke-width:3;
   }
 
   .onb-node{
