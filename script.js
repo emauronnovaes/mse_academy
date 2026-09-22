@@ -264,6 +264,31 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   // com o que o admin cadastrava: vídeo enviado pelo painel nunca
   // aparecia, e o relatório "Quem assistiu" ficava sempre zerado porque
   // o progresso só existia no localStorage de cada navegador.
+  // Enquanto ninguém abriu a aula, só existe o arredondamento que o
+  // admin digitou ("3 min"). Depois da primeira abertura passa a mostrar
+  // o tempo exato do vídeo.
+  function formatarDuracao(segundos, minutosFallback){
+    if(!segundos || segundos < 1) return (minutosFallback || 0) + ' min';
+    const m = Math.floor(segundos / 60);
+    const s = Math.round(segundos % 60);
+    if(m === 0) return s + ' s';
+    return `${m} min ${String(s).padStart(2, '0')} s`;
+  }
+
+  // O servidor não tem como descobrir a duração sozinho (precisaria
+  // baixar o vídeo do S3 ou consultar a API do YouTube), mas o player já
+  // sabe assim que carrega. Só a primeira gravação vale.
+  async function registrarDuracao(courseId, segundos){
+    if(!segundos || !isFinite(segundos) || segundos < 1) return;
+    const aula = ONBOARDING.concat(courses).find(c => c.id === courseId);
+    if(aula && aula.duracaoSegundos) return; // já conhecida
+    try {
+      await apiPost('api/courses/duracao.php', { course_id: courseId, segundos: Math.round(segundos) });
+      if(aula) aula.duracaoSegundos = Math.round(segundos);
+    } catch(e){
+      console.warn('[duracao] não consegui registrar:', e.message);
+    }
+  }
   let conteudoCarregado = false;
   const detalheCache = new Map();
 
@@ -743,7 +768,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
           <div class="onb-badge">${badgeContent}</div>
           <div>
             <h4>${mod.title}</h4>
-            <p>${mod.desc} · ${mod.minutes} min</p>
+            <p>${mod.desc} · ${formatarDuracao(mod.duracaoSegundos, mod.minutes)}</p>
           </div>
           <span class="onb-status">${statusLabel}</span>
         </div>
@@ -852,7 +877,10 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
         onbYtTimer = setInterval(() => {
           if(typeof player.getDuration !== 'function') return;
           const total = player.getDuration();
-          if(total > 0) onbSetWatchPct(mod, player.getCurrentTime() / total);
+          if(total > 0){
+            registrarDuracao(mod.id, total);
+            onbSetWatchPct(mod, player.getCurrentTime() / total);
+          }
         }, 1000);
       });
       return;
@@ -900,6 +928,8 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       if(!videoEl.ended) playBtn.classList.remove('is-hidden');
     });
     videoEl.addEventListener('play', () => playBtn.classList.add('is-hidden'));
+    // O <video> só conhece a duração depois de ler os metadados.
+    videoEl.addEventListener('loadedmetadata', () => registrarDuracao(mod.id, videoEl.duration));
     videoEl.addEventListener('timeupdate', () => {
       if(!videoEl.duration) return;
       onbSetWatchPct(mod, videoEl.currentTime / videoEl.duration);
@@ -1115,6 +1145,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       title: c.title,
       desc: c.description || '',
       minutes: c.duration_minutes,
+      duracaoSegundos: c.duration_seconds,
       youtubeId: c.youtube_id,
       temQuiz: !!c.tem_quiz,
       obrigatorio: c.obrigatorio !== false,
@@ -1128,7 +1159,8 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       label: c.area_name || '',
       title: c.title,
       desc: c.description || '',
-      time: (c.duration_minutes || 0) + ' min',
+      time: formatarDuracao(c.duration_seconds, c.duration_minutes),
+      duracaoSegundos: c.duration_seconds,
       youtubeId: c.youtube_id,
       questions: [],
     }));
@@ -2291,6 +2323,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   // NÃO dá é fechar a aba — aí o navegador para de mandar os bytes.
   const filaUploads = [];
   let uploadEmAndamento = false;
+
 
   function formatarMB(bytes){
     return (bytes / 1048576).toFixed(0) + ' MB';
