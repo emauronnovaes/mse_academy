@@ -959,7 +959,12 @@
     border-width:7px 9px 7px 0; border-color:transparent #fff transparent transparent;
     filter:drop-shadow(-2px 0 2px rgba(28,27,26,0.06));
   }
-  .onb-node-label-standalone.is-label-left{ transform:translate(calc(-50% - 128px), -50%); text-align:right; }
+  /* Alinhado à esquerda mesmo com o balão à esquerda da casa: com
+     text-align:right, todo título que quebrava em mais de uma linha
+     ficava com a margem esquerda irregular ("Orgulho de fazer / parte
+     do / crescimento do / Brasil"), e a leitura tropeçava a cada linha.
+     A borda irregular agora fica do lado direito, onde incomoda menos. */
+  .onb-node-label-standalone.is-label-left{ transform:translate(calc(-50% - 128px), -50%); text-align:left; }
   .onb-node-label-standalone.is-label-left::after{
     content:''; position:absolute; top:50%; right:-7px; transform:translateY(-50%);
     width:0; height:0; border-style:solid;
