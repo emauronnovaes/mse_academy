@@ -919,10 +919,18 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         onbYtTimer = setInterval(() => {
           if(typeof player.getDuration !== 'function') return;
           const total = player.getDuration();
-          if(total > 0){
-            registrarDuracao(mod.id, total);
-            onbSetWatchPct(mod, player.getCurrentTime() / total);
+          if(total <= 0) return;
+          registrarDuracao(mod.id, total);
+
+          // Mesma trava do vídeo enviado: em tela cheia o YouTube mostra
+          // a própria barra, e sem isso dava pra arrastar até o fim.
+          const atual = player.getCurrentTime();
+          const limite = onbMaxWatchedPct * total + 2; // 2s de folga (a consulta é de 1 em 1s)
+          if(atual > limite){
+            player.seekTo(limite, true);
+            return;
           }
+          onbSetWatchPct(mod, atual / total);
         }, 1000);
       });
       return;
@@ -957,6 +965,17 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(isRewatch){
       return; // controles nativos cuidam de tudo — não precisa rastrear progresso
     }
+
+    // Esconder os controles não basta pra travar o avanço: em tela cheia
+    // o navegador mostra os próprios controles, e aí dava pra arrastar a
+    // barra e pular o vídeo. Aqui a regra é aplicada no relógio do vídeo,
+    // então vale de qualquer jeito que a pessoa tente adiantar. Voltar
+    // continua liberado — o limite é só pra frente.
+    videoEl.addEventListener('seeking', () => {
+      if(!videoEl.duration) return;
+      const limite = onbMaxWatchedPct * videoEl.duration + 1; // 1s de folga
+      if(videoEl.currentTime > limite) videoEl.currentTime = limite;
+    });
 
     // Sem controles nativos nesse modo (trava avançar a barra) — um botão
     // de play próprio, e a barra de progresso é só visual (não clicável),
