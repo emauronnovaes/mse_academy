@@ -63,8 +63,23 @@ function mse_cargo_matches_course(PDO $pdo, string $cargo, int $courseId): bool
  */
 function mse_aulas_da_trilha(PDO $pdo, int $userId): array
 {
+    // O código chega pelo Git antes da migração ser rodada à mão no
+    // servidor. Sem esta checagem, a consulta morre com "Unknown column"
+    // e a trilha inteira some da tela do colaborador. Enquanto a
+    // migração não roda, vale o comportamento antigo: todo mundo vê
+    // todas as aulas, todas obrigatórias.
+    $colunas = [];
+    foreach ($pdo->query('SHOW COLUMNS FROM courses') as $col) {
+        $colunas[$col['Field']] = true;
+    }
+    $temSorteio = isset($colunas['grupo_sorteio'])
+        && $pdo->query("SHOW TABLES LIKE 'user_sorteio_aula'")->fetch() !== false;
+    $temObrigatorio = isset($colunas['obrigatorio']);
+
     $stmt = $pdo->query(
-        "SELECT id, grupo_sorteio, obrigatorio, order_index
+        "SELECT id, order_index,
+                " . ($temSorteio ? 'grupo_sorteio' : 'NULL AS grupo_sorteio') . ",
+                " . ($temObrigatorio ? 'obrigatorio' : '1 AS obrigatorio') . "
          FROM courses
          WHERE type = 'onboarding' AND is_published = 1
          ORDER BY order_index ASC, id ASC"

@@ -17,9 +17,16 @@ if ($courseId <= 0) {
 
 $pdo = mse_db();
 
+// Mesmo motivo do list.php: a migração pode ainda não ter sido rodada
+// no servidor, e selecionar a coluna nova derrubaria a aula inteira.
+$temDuracaoSegundos = false;
+foreach ($pdo->query('SHOW COLUMNS FROM courses') as $col) {
+    if ($col['Field'] === 'duration_seconds') { $temDuracaoSegundos = true; break; }
+}
+
 $stmt = $pdo->prepare(
     'SELECT c.id, c.title, c.description, c.youtube_id, c.video_source, c.video_key,
-            c.duration_minutes, c.duration_seconds, c.type,
+            c.duration_minutes, ' . ($temDuracaoSegundos ? 'c.duration_seconds' : 'NULL AS duration_seconds') . ', c.type,
             a.slug AS area_slug, a.name AS area_name
      FROM courses c
      LEFT JOIN areas a ON a.id = c.area_id

@@ -15,11 +15,25 @@ $scope = $_GET['scope'] ?? 'recommended'; // 'recommended' (padrão) ou 'all'
 
 $pdo = mse_db();
 
+// O código é publicado pelo Git, mas as migrações são rodadas à mão no
+// servidor — sempre existe uma janela em que o código já chegou e o
+// banco ainda não mudou. Selecionar uma coluna que ainda não existe
+// derruba a consulta inteira com erro 500, e a trilha aparece vazia
+// pro colaborador. Por isso conferimos antes o que existe de fato.
+$colunas = [];
+foreach ($pdo->query('SHOW COLUMNS FROM courses') as $col) {
+    $colunas[$col['Field']] = true;
+}
+$temObrigatorio = isset($colunas['obrigatorio']);
+$temDuracaoSegundos = isset($colunas['duration_seconds']);
+
 // tem_quiz evita que o front precise buscar o detalhe de cada aula só
 // pra saber se ela tem pergunta — informação que ele precisa já na
 // listagem, pra decidir se a conclusão vem de assistir ou de responder.
-$sql = "SELECT c.id, c.title, c.description, c.youtube_id, c.video_source, c.duration_minutes, c.duration_seconds,
-               c.order_index, c.type, c.area_id, c.obrigatorio, a.slug AS area_slug, a.name AS area_name,
+$sql = "SELECT c.id, c.title, c.description, c.youtube_id, c.video_source, c.duration_minutes,
+               " . ($temDuracaoSegundos ? 'c.duration_seconds,' : 'NULL AS duration_seconds,') . "
+               " . ($temObrigatorio ? 'c.obrigatorio,' : '1 AS obrigatorio,') . "
+               c.order_index, c.type, c.area_id, a.slug AS area_slug, a.name AS area_name,
                EXISTS(SELECT 1 FROM quiz_questions q WHERE q.course_id = c.id) AS tem_quiz
         FROM courses c
         LEFT JOIN areas a ON a.id = c.area_id

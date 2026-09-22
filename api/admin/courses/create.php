@@ -130,10 +130,27 @@ if ($orderIndex === null) {
 $pdo->beginTransaction();
 try {
     $stmt = $pdo->prepare(
-        'INSERT INTO courses (area_id, type, grupo_sorteio, obrigatorio, title, description, video_source, youtube_id, video_key, duration_minutes, order_index, is_published)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
-    );
-    $stmt->execute([$areaId, $type, $grupoSorteio ?: null, $obrigatorio, $title, $description, $videoSource, $youtubeId, $videoKey ?: null, $durationMinutes, $orderIndex]);
+    // Enquanto a migração não roda no servidor, grava sem as colunas
+    // novas em vez de recusar o cadastro inteiro.
+    $colunas = [];
+    foreach ($pdo->query('SHOW COLUMNS FROM courses') as $col) {
+        $colunas[$col['Field']] = true;
+    }
+    $temNovas = isset($colunas['grupo_sorteio']) && isset($colunas['obrigatorio']);
+
+    if ($temNovas) {
+        $stmt = $pdo->prepare(
+            'INSERT INTO courses (area_id, type, grupo_sorteio, obrigatorio, title, description, video_source, youtube_id, video_key, duration_minutes, order_index, is_published)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
+        );
+        $stmt->execute([$areaId, $type, $grupoSorteio ?: null, $obrigatorio, $title, $description, $videoSource, $youtubeId, $videoKey ?: null, $durationMinutes, $orderIndex]);
+    } else {
+        $stmt = $pdo->prepare(
+            'INSERT INTO courses (area_id, type, title, description, video_source, youtube_id, video_key, duration_minutes, order_index, is_published)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
+        );
+        $stmt->execute([$areaId, $type, $title, $description, $videoSource, $youtubeId, $videoKey ?: null, $durationMinutes, $orderIndex]);
+    }
     $courseId = (int) $pdo->lastInsertId();
 
     $questionId = null;
