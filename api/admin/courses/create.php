@@ -18,7 +18,12 @@ $areaSlug = trim((string) ($input['area_slug'] ?? ''));
 $type = (string) ($input['type'] ?? 'curso'); // 'curso' (catálogo) ou 'onboarding' (trilha obrigatória)
 $title = trim((string) ($input['title'] ?? ''));
 $description = trim((string) ($input['description'] ?? ''));
-$videoSource = (string) ($input['video_source'] ?? 'youtube'); // 'youtube' ou 's3'
+$videoSource = (string) ($input['video_source'] ?? 'youtube'); // 'youtube', 's3' ou 'playlist'
+// Aulas do mesmo grupo_sorteio são alternativas: cada pessoa vê só uma.
+$grupoSorteio = trim((string) ($input['grupo_sorteio'] ?? ''));
+// Aula opcional aparece na trilha mas não trava o avanço nem é exigida
+// pra abrir o baú.
+$obrigatorio = array_key_exists('obrigatorio', $input) ? (int) (bool) $input['obrigatorio'] : 1;
 $youtubeId = trim((string) ($input['youtube_id'] ?? ''));
 $videoKey = trim((string) ($input['video_key'] ?? ''));
 $durationMinutes = (int) ($input['duration_minutes'] ?? 0);
@@ -41,13 +46,23 @@ if ($type === 'curso' && $areaSlug === '') {
 if ($title === '') {
     mse_error('Informe o título do vídeo.', 422);
 }
-if (!in_array($videoSource, ['youtube', 's3'], true)) {
-    mse_error('video_source precisa ser "youtube" ou "s3".', 422);
+if (!in_array($videoSource, ['youtube', 's3', 'playlist'], true)) {
+    mse_error('video_source precisa ser "youtube", "s3" ou "playlist".', 422);
 }
 if ($videoSource === 'youtube') {
     if ($youtubeId === '' || !preg_match('/^[A-Za-z0-9_-]{11}$/', $youtubeId)) {
         mse_error('youtube_id inválido — precisa ter exatamente 11 caracteres (o trecho depois de "v=" na URL do YouTube).', 422);
     }
+} elseif ($videoSource === 'playlist') {
+    // Id de playlist é mais longo e variável (começa com PL, UU, OL...),
+    // por isso não dá pra usar a mesma validação de 11 caracteres.
+    if ($youtubeId === '' || !preg_match('/^[A-Za-z0-9_-]{12,64}$/', $youtubeId)) {
+        mse_error('Id da playlist inválido — é o trecho depois de "list=" na URL do YouTube.', 422);
+    }
+    // A Academy não controla o que é assistido dentro de uma playlist,
+    // então esse tipo de aula nasce opcional: não faria sentido travar a
+    // trilha esperando uma conclusão que nunca vai ser registrada.
+    $obrigatorio = 0;
 } else {
     // video_source === 's3' — o vídeo já foi enviado antes via
     // /api/admin/media/upload.php, aqui só recebemos o caminho dele.
@@ -115,10 +130,10 @@ if ($orderIndex === null) {
 $pdo->beginTransaction();
 try {
     $stmt = $pdo->prepare(
-        'INSERT INTO courses (area_id, type, title, description, video_source, youtube_id, video_key, duration_minutes, order_index, is_published)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
+        'INSERT INTO courses (area_id, type, grupo_sorteio, obrigatorio, title, description, video_source, youtube_id, video_key, duration_minutes, order_index, is_published)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
     );
-    $stmt->execute([$areaId, $type, $title, $description, $videoSource, $youtubeId, $videoKey ?: null, $durationMinutes, $orderIndex]);
+    $stmt->execute([$areaId, $type, $grupoSorteio ?: null, $obrigatorio, $title, $description, $videoSource, $youtubeId, $videoKey ?: null, $durationMinutes, $orderIndex]);
     $courseId = (int) $pdo->lastInsertId();
 
     $questionId = null;

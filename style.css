@@ -1077,6 +1077,12 @@
   }
   .vid-play-btn:hover{ background:rgba(0,0,0,0.7); transform:translate(-50%,-50%) scale(1.05); }
   .vid-play-btn.is-hidden{ opacity:0; pointer-events:none; }
+  .onb-node-opcional{
+    display:block; margin-top:2px;
+    font-size:10px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase;
+    color:var(--steel); opacity:0.85;
+  }
+
   .vid-fullscreen-btn{
     position:absolute; right:10px; bottom:14px; z-index:11;
     width:34px; height:34px; border-radius:8px; cursor:pointer;

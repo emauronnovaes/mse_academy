@@ -51,6 +51,75 @@ function mse_cargo_matches_course(PDO $pdo, string $cargo, int $courseId): bool
  *   para esse usuário. Essa checagem roda no servidor a cada chamada —
  *   não dá pra burlar mandando o course_id "errado" direto pela API.
  */
+/**
+ * Resolve quais aulas da trilha ESTA pessoa deve ver.
+ *
+ * Aula sem grupo_sorteio todo mundo vê. Aulas que compartilham o mesmo
+ * grupo_sorteio são alternativas entre si: só uma é sorteada por pessoa,
+ * e a escolha fica gravada — sortear a cada acesso faria a pessoa cair
+ * num vídeo diferente toda vez, jogando fora o progresso do anterior.
+ *
+ * @return array<int, array{id:int, obrigatorio:int, order_index:int}>
+ */
+function mse_aulas_da_trilha(PDO $pdo, int $userId): array
+{
+    $stmt = $pdo->query(
+        "SELECT id, grupo_sorteio, obrigatorio, order_index
+         FROM courses
+         WHERE type = 'onboarding' AND is_published = 1
+         ORDER BY order_index ASC, id ASC"
+    );
+    $todas = $stmt->fetchAll();
+
+    $semGrupo = [];
+    $porGrupo = [];
+    foreach ($todas as $c) {
+        if ($c['grupo_sorteio'] === null || $c['grupo_sorteio'] === '') {
+            $semGrupo[] = $c;
+        } else {
+            $porGrupo[$c['grupo_sorteio']][] = $c;
+        }
+    }
+
+    $escolhidas = $semGrupo;
+
+    foreach ($porGrupo as $grupo => $alternativas) {
+        $idsValidos = array_column($alternativas, 'id');
+
+        $stmt = $pdo->prepare('SELECT course_id FROM user_sorteio_aula WHERE user_id = ? AND grupo = ?');
+        $stmt->execute([$userId, $grupo]);
+        $jaSorteado = $stmt->fetchColumn();
+
+        // Se a aula sorteada foi apagada ou despublicada depois, sorteia
+        // de novo em vez de deixar a pessoa sem nada naquele grupo.
+        if ($jaSorteado && in_array((int) $jaSorteado, $idsValidos, true)) {
+            $escolhidoId = (int) $jaSorteado;
+        } else {
+            $escolhidoId = $idsValidos[random_int(0, count($idsValidos) - 1)];
+            $stmt = $pdo->prepare(
+                'INSERT INTO user_sorteio_aula (user_id, grupo, course_id) VALUES (?, ?, ?)
+                 ON DUPLICATE KEY UPDATE course_id = VALUES(course_id)'
+            );
+            $stmt->execute([$userId, $grupo, $escolhidoId]);
+        }
+
+        foreach ($alternativas as $alt) {
+            if ((int) $alt['id'] === $escolhidoId) {
+                $escolhidas[] = $alt;
+                break;
+            }
+        }
+    }
+
+    usort($escolhidas, static fn($a, $b) => [$a['order_index'], $a['id']] <=> [$b['order_index'], $b['id']]);
+
+    return array_map(static fn($c) => [
+        'id' => (int) $c['id'],
+        'obrigatorio' => (int) $c['obrigatorio'],
+        'order_index' => (int) $c['order_index'],
+    ], $escolhidas);
+}
+
 function mse_course_is_unlocked(PDO $pdo, int $userId, int $courseId): bool
 {
     $stmt = $pdo->prepare('SELECT type, order_index FROM courses WHERE id = ?');
@@ -64,11 +133,16 @@ function mse_course_is_unlocked(PDO $pdo, int $userId, int $courseId): bool
         return true;
     }
 
-    $stmt = $pdo->prepare(
-        "SELECT id FROM courses WHERE type = 'onboarding' AND order_index < ?"
-    );
-    $stmt->execute([$course['order_index']]);
-    $previousIds = array_column($stmt->fetchAll(), 'id');
+    // Só contam as aulas que ESTA pessoa vê, e só as obrigatórias. Sem
+    // isso, as alternativas não sorteadas (que ela nunca vai ver) e as
+    // opcionais travariam a trilha inteira pra sempre.
+    $minhas = mse_aulas_da_trilha($pdo, $userId);
+    $previousIds = [];
+    foreach ($minhas as $aula) {
+        if ($aula['order_index'] < (int) $course['order_index'] && $aula['obrigatorio'] === 1) {
+            $previousIds[] = $aula['id'];
+        }
+    }
 
     if (empty($previousIds)) {
         return true; // é o primeiro módulo da trilha

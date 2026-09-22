@@ -359,8 +359,10 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   let onbYtTimer = null; // consulta a posição do player do YouTube (ele não avisa sozinho)
 
   function onbCurrentIndex(){
-    // primeiro módulo ainda não concluído
-    const idx = ONBOARDING.findIndex(m => !onbProgress.completed.includes(m.id));
+    // Primeiro módulo OBRIGATÓRIO ainda não concluído. Aula opcional
+    // (playlist, extras) não pode segurar a trilha — senão bastaria
+    // ignorar uma pra nunca chegar ao fim.
+    const idx = ONBOARDING.findIndex(m => m.obrigatorio !== false && !onbProgress.completed.includes(m.id));
     return idx === -1 ? ONBOARDING.length : idx;
   }
 
@@ -660,6 +662,14 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       label.style.left = pos.x + '%';
       label.style.top = pos.y + '%';
       label.textContent = title;
+      // Deixa claro que dá pra pular — sem isso a pessoa trava achando
+      // que precisa concluir a playlist pra seguir.
+      if(!isChestNode && mod.obrigatorio === false){
+        const extra = document.createElement('span');
+        extra.className = 'onb-node-opcional';
+        extra.textContent = 'opcional';
+        label.appendChild(extra);
+      }
       tilesLayer.appendChild(label);
 
       // Mesma lógica: a bolha "Continuar" também fica fora do botão, por
@@ -769,6 +779,25 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
 
     // video_url é a URL assinada do S3; quando a aula é do YouTube ela
     // vem nula e o id do vídeo é usado no lugar.
+    // Playlist do YouTube: a Academy não controla o que é visto lá
+    // dentro, então é sempre conteúdo extra — sem trava, sem barra de
+    // progresso e sem pergunta.
+    if(detalhe.video_source === 'playlist'){
+      body.innerHTML = `
+        <div class="vid-hint"><i class="fa-solid fa-circle-play" aria-hidden="true"></i> Conteúdo extra — assista os vídeos que quiser, na ordem que preferir. Não é necessário pra concluir a integração.</div>
+        <div class="vid-player-wrap">
+          <iframe src="https://www.youtube-nocookie.com/embed/videoseries?list=${encodeURIComponent(detalhe.youtube_id)}&rel=0"
+                  title="${mod.title}" allow="accelerometer; encrypted-media; picture-in-picture" allowfullscreen
+                  style="width:100%;height:100%;border:0"></iframe>
+          <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
+            <i class="fa-solid fa-display" aria-hidden="true"></i>
+          </button>
+        </div>
+      `;
+      ligarBotaoTelaCheia(body);
+      return;
+    }
+
     const videoSrc = detalhe.video_url;
     if(!videoSrc){
       if(!detalhe.youtube_id){
@@ -1088,6 +1117,8 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       minutes: c.duration_minutes,
       youtubeId: c.youtube_id,
       temQuiz: !!c.tem_quiz,
+      obrigatorio: c.obrigatorio !== false,
+      videoSource: c.video_source,
       questions: [], // preenchido ao abrir o módulo (vem do detail.php)
     }));
 
