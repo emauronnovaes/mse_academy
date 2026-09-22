@@ -716,13 +716,13 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     onbMaxWatchedPct = 0;
     ultimoPctEnviado = -1; // senão o módulo seguinte herdaria o % do anterior
 
-    body.innerHTML = '<div class="vid-hint"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Carregando o vídeo...</div>';
+    body.innerHTML = '<div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Carregando o vídeo...</div>';
 
     let detalhe;
     try {
       detalhe = await carregarDetalheCurso(mod.id);
     } catch(e){
-      body.innerHTML = `<div class="vid-hint"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Não foi possível carregar este módulo: ${e.message}</div>`;
+      body.innerHTML = `<div class="vid-hint"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> Não foi possível carregar este módulo: ${e.message}</div>`;
       return;
     }
 
@@ -737,7 +737,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     if(!videoSrc){
       body.innerHTML = detalhe.youtube_id
         ? `<div class="vid-player-wrap"><iframe id="onb-yt-${mod.id}" src="https://www.youtube-nocookie.com/embed/${detalhe.youtube_id}?rel=0" title="${mod.title}" allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowfullscreen style="width:100%;aspect-ratio:16/9;border:0;border-radius:12px"></iframe></div><div class="quiz-box" id="quiz-box-${mod.id}" hidden></div>`
-        : `<div class="vid-hint"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Este módulo ainda não tem vídeo cadastrado.</div>`;
+        : `<div class="vid-hint"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> Este módulo ainda não tem vídeo cadastrado.</div>`;
       if(detalhe.youtube_id) revealQuiz(mod); // sem <video> não há como medir o quanto foi assistido
       return;
     }
@@ -869,7 +869,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     } catch(e){
       feedbackEl.hidden = false;
       feedbackEl.className = 'quiz-feedback bad';
-      feedbackEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${e.message}`;
+      feedbackEl.innerHTML = `<i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> ${e.message}`;
       allOptions.forEach(o => o.disabled = false);
       return;
     }
@@ -1566,7 +1566,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       }
 
       if(!detalhe.youtube_id){
-        wrap.innerHTML = '<div class="vid-hint"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Esta aula ainda não tem vídeo cadastrado.</div>';
+        wrap.innerHTML = '<div class="vid-hint"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> Esta aula ainda não tem vídeo cadastrado.</div>';
         return;
       }
 
@@ -1585,7 +1585,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       });
     }).catch(e => {
       const wrap = videoModalBodyEl.querySelector('.vid-player-wrap');
-      if(wrap) wrap.innerHTML = `<div class="vid-hint"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Não foi possível carregar: ${e.message}</div>`;
+      if(wrap) wrap.innerHTML = `<div class="vid-hint"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> Não foi possível carregar: ${e.message}</div>`;
     });
 
     // mesmo motivo do outro setTimeout: evita que a tecla Enter que abriu
@@ -1641,7 +1641,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     } catch(e){
       feedbackEl.hidden = false;
       feedbackEl.className = 'quiz-feedback bad';
-      feedbackEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${e.message}`;
+      feedbackEl.innerHTML = `<i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> ${e.message}`;
       allOptions.forEach(o => o.disabled = false);
       return;
     }
@@ -2262,6 +2262,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       });
       job.status = 'concluido';
       job.pct = 100;
+      recarregarTelaConteudo(); // a aula nova já aparece sem recarregar a página
     }catch(e){
       job.status = e.message === 'cancelado' ? 'cancelado' : 'erro';
       job.erro = e.message;
@@ -2333,6 +2334,21 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     }
   }
 
+  // Arquivar ou excluir mexe no que o colaborador vê, mas a trilha e o
+  // catálogo já estavam carregados em memória — sem recarregar, a aula
+  // continuava na tela como se nada tivesse acontecido.
+  async function recarregarTelaConteudo(){
+    try{
+      detalheCache.clear(); // senão a aula apagada volta do cache ao abrir
+      await carregarConteudo();
+      renderOnboarding();
+      renderProgressPanel();
+      if(!document.getElementById('areaModal').hidden) refreshCourseScreen();
+    }catch(e){
+      console.warn('[conteudo] não consegui recarregar a tela:', e.message);
+    }
+  }
+
   async function arquivarAula(courseId, estaArquivada){
     try{
       const data = await apiFetch('api/admin/courses/archive.php', {
@@ -2341,6 +2357,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       });
       alert(data.message);
       loadAulas();
+      recarregarTelaConteudo();
     }catch(e){
       alert('Não deu certo: ' + e.message);
     }
@@ -2395,6 +2412,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       alert(`${resultado.message}\n\n${resultado.removido.registros_de_progresso_apagados} registro(s) de progresso apagados.`
         + (resultado.video_mantido_no_s3 ? `\n\nO arquivo do vídeo continua no S3: ${resultado.video_mantido_no_s3}` : ''));
       loadAulas();
+      recarregarTelaConteudo();
     }catch(e){
       alert('Não deu certo: ' + e.message);
     }
