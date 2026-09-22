@@ -17,6 +17,65 @@ declare(strict_types=1);
  */
 
 /**
+ * Acha a área da Academy que corresponde ao setor vindo do RH.
+ *
+ * O RH escreve o setor livremente ("Tecnologia da Informação", "T.I.",
+ * "financeiro"), então comparar texto exato não funcionaria. Aqui a
+ * comparação ignora acento, maiúscula, pontuação e espaço sobrando, e
+ * tenta tanto o nome quanto o slug da área.
+ *
+ * Devolve null quando não há correspondência — nesse caso a área da
+ * pessoa fica como estava, em vez de ser apagada por um palpite errado.
+ */
+function mse_area_id_por_setor(PDO $pdo, ?string $setor): ?int
+{
+    $setor = trim((string) $setor);
+    if ($setor === '') {
+        return null;
+    }
+
+    $normalizar = static function (string $t): string {
+        $t = mb_strtolower($t, 'UTF-8');
+        // Tira acentos sem depender da extensão intl, que nem todo
+        // servidor tem instalada.
+        $t = strtr($t, [
+            'á'=>'a','à'=>'a','ã'=>'a','â'=>'a','ä'=>'a',
+            'é'=>'e','ê'=>'e','è'=>'e','ë'=>'e',
+            'í'=>'i','î'=>'i','ì'=>'i','ï'=>'i',
+            'ó'=>'o','õ'=>'o','ô'=>'o','ò'=>'o','ö'=>'o',
+            'ú'=>'u','û'=>'u','ù'=>'u','ü'=>'u',
+            'ç'=>'c',
+        ]);
+        // Qualquer coisa que não seja letra ou número vira espaço, e
+        // espaços repetidos viram um só: "T.I." e "TI" passam a bater.
+        $t = preg_replace('/[^a-z0-9]+/', ' ', $t);
+        return trim($t);
+    };
+
+    $alvo = $normalizar($setor);
+    if ($alvo === '') {
+        return null;
+    }
+    // Sem espaço nenhum: é o que faz "T.I." casar com "TI", já que a
+    // pontuação vira espaço na normalização.
+    $alvoCompacto = str_replace(' ', '', $alvo);
+
+    foreach ($pdo->query('SELECT id, slug, name FROM areas') as $area) {
+        $nome = $normalizar($area['name']);
+        $slug = $normalizar($area['slug']);
+        if ($nome === $alvo || $slug === $alvo) {
+            return (int) $area['id'];
+        }
+        if (str_replace(' ', '', $nome) === $alvoCompacto || str_replace(' ', '', $slug) === $alvoCompacto) {
+            return (int) $area['id'];
+        }
+    }
+
+    error_log("[mse_area_id_por_setor] Setor \"{$setor}\" não corresponde a nenhuma área cadastrada.");
+    return null;
+}
+
+/**
  * Busca a ficha funcional pelo nome (ou CPF). Devolve o PRIMEIRO
  * resultado encontrado, ou null se não achar nada ou a API falhar —
  * uma falha aqui NUNCA deve impedir o login (é só um enriquecimento

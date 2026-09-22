@@ -96,6 +96,17 @@ if ($areaSlug !== null) {
     $areaId = $area ? (int) $area['id'] : null;
 }
 
+// Setor oficial do RH. Mesma lógica já usada pro cargo: o dado do RH
+// manda mais que o do token, porque é onde a informação é mantida de
+// verdade. Só substitui quando o setor casa com uma área cadastrada —
+// um setor desconhecido não pode apagar a área que a pessoa já tinha.
+if ($ficha !== null && !empty($ficha['obras_departamento'])) {
+    $areaDoRh = mse_area_id_por_setor($pdo, $ficha['obras_departamento']);
+    if ($areaDoRh !== null) {
+        $areaId = $areaDoRh;
+    }
+}
+
 $stmt = $pdo->prepare(
     "INSERT INTO users (name, first_name, email, cpf, cargo, area_id, role, provisioned_via)
      VALUES (?, ?, ?, ?, ?, ?, 'colaborador', 'sso')

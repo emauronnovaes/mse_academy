@@ -35,6 +35,11 @@ $nome = $sessao['nome'] ?: $email;
 $cpf = null;
 $cargo = null;
 
+$primeiroNome = mse_first_name_from_email($email);
+
+$pdo = mse_db();
+
+$areaId = null;
 if ($sessao['nome']) {
     $ficha = null;
     try {
@@ -49,25 +54,29 @@ if ($sessao['nome']) {
         if (!empty($ficha['cpf'])) {
             $cpf = $ficha['cpf'];
         }
+        // Setor do RH vira a área da pessoa — é o que faz a recomendação
+        // de cursos por área funcionar sem ninguém preencher nada à mão.
+        if (!empty($ficha['obras_departamento'])) {
+            $areaId = mse_area_id_por_setor($pdo, $ficha['obras_departamento']);
+        }
     }
 }
 
-$primeiroNome = mse_first_name_from_email($email);
-
-$pdo = mse_db();
-
 $stmt = $pdo->prepare(
-    "INSERT INTO users (name, first_name, email, cpf, cargo, role, provisioned_via)
-     VALUES (?, ?, ?, ?, ?, 'colaborador', 'sso')
+    "INSERT INTO users (name, first_name, email, cpf, cargo, area_id, role, provisioned_via)
+     VALUES (?, ?, ?, ?, ?, ?, 'colaborador', 'sso')
      ON DUPLICATE KEY UPDATE
        name = VALUES(name),
        first_name = VALUES(first_name),
        cpf = COALESCE(VALUES(cpf), cpf),
        cargo = COALESCE(VALUES(cargo), cargo),
+       -- COALESCE: setor não reconhecido (ou API fora do ar) não apaga a
+       -- área que a pessoa já tinha.
+       area_id = COALESCE(VALUES(area_id), area_id),
        active = 1,
        id = LAST_INSERT_ID(id)"
 );
-$stmt->execute([$nome, $primeiroNome, $email, $cpf, $cargo]);
+$stmt->execute([$nome, $primeiroNome, $email, $cpf, $cargo, $areaId]);
 $userId = (int) $pdo->lastInsertId();
 $isFirstLogin = $stmt->rowCount() === 1;
 
