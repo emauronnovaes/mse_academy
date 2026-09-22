@@ -754,8 +754,13 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
         `
         : `
           <div class="vid-hint"><i class="fa-solid fa-lock" aria-hidden="true"></i> Assista até o fim para liberar a pergunta. Não é possível avançar a barra.</div>
-          <div class="vid-player-wrap"><div id="onb-yt-${mod.id}"></div></div>
-          <div class="vid-watch-bar"><div class="vid-watch-fill" id="vid-watch-fill-${mod.id}"></div></div>
+          <div class="vid-player-wrap">
+            <div id="onb-yt-${mod.id}"></div>
+            <button type="button" class="vid-fullscreen-btn" data-alvo="onb-wrap-${mod.id}" aria-label="Tela cheia">
+              <i class="fa-solid fa-display" aria-hidden="true"></i>
+            </button>
+            <div class="vid-watch-bar"><div class="vid-watch-fill" id="vid-watch-fill-${mod.id}"></div></div>
+          </div>
           <div class="quiz-box" id="quiz-box-${mod.id}" hidden></div>
         `;
 
@@ -764,7 +769,10 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
           videoId: detalhe.youtube_id,
           playerVars: isRewatch
             ? { rel: 0, modestbranding: 1 }
-            : { controls: 0, disablekb: 1, rel: 0, modestbranding: 1, fs: 0 },
+            // fs:1 permite tela cheia; a barra do YouTube continua
+            // escondida por controls:0, então nem em tela cheia dá pra
+            // arrastar o vídeo.
+            : { controls: 0, disablekb: 1, rel: 0, modestbranding: 1, fs: 1 },
           events: {
             onStateChange: (e) => {
               if(e.data === YT.PlayerState.ENDED) onbSetWatchPct(mod, 1);
@@ -772,6 +780,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
           }
         });
         onbPlayer = player;
+        ligarBotaoTelaCheia(body);
         if(isRewatch) return;
 
         // O player do YouTube não dispara "timeupdate" como o <video>,
@@ -800,6 +809,9 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
           <button type="button" class="vid-play-btn" id="vid-play-${mod.id}" aria-label="Reproduzir vídeo">
             <i class="fa-solid fa-play" aria-hidden="true"></i>
           </button>
+          <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
+            <i class="fa-solid fa-display" aria-hidden="true"></i>
+          </button>
           <div class="vid-watch-bar"><div class="vid-watch-fill" id="vid-watch-fill-${mod.id}"></div></div>
         </div>
         <div class="quiz-box" id="quiz-box-${mod.id}" hidden></div>
@@ -807,6 +819,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
 
     const videoEl = document.getElementById(`onb-video-${mod.id}`);
     onbPlayer = videoEl;
+    ligarBotaoTelaCheia(body);
 
     if(isRewatch){
       return; // controles nativos cuidam de tudo — não precisa rastrear progresso
@@ -847,6 +860,23 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       // reassiste. Derrubar o player por causa disso seria pior.
       console.warn('[progresso] não consegui registrar:', e.message);
     }
+  }
+
+  // Tela cheia na moldura inteira (e não só no <video>): assim a barra
+  // de quanto foi assistido continua visível, e no caso do YouTube o
+  // iframe vai junto.
+  function ligarBotaoTelaCheia(escopo){
+    const btn = escopo.querySelector('.vid-fullscreen-btn');
+    if(!btn) return;
+    btn.addEventListener('click', () => {
+      const alvo = btn.closest('.vid-player-wrap');
+      if(!alvo) return;
+      if(document.fullscreenElement){
+        document.exitFullscreen();
+      } else if(alvo.requestFullscreen){
+        alvo.requestFullscreen().catch(e => console.warn('[tela cheia]', e.message));
+      }
+    });
   }
 
   function onbSetWatchPct(mod, pct){
