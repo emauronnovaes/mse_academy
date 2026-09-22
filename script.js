@@ -2751,11 +2751,13 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             <div class="aulas-meta">${c.area_name || 'Sem área'} · ${c.type === 'onboarding' ? 'Integração' : 'Catálogo'} · <b>${c.total_concluido}</b> concluíram</div>
           </div>
           <div class="aulas-acoes">
+            <button type="button" class="aulas-btn aulas-btn-areas">Áreas</button>
             <button type="button" class="aulas-btn aulas-btn-renomear">Renomear</button>
             <button type="button" class="aulas-btn aulas-btn-arquivar">${arquivada ? 'Republicar' : 'Arquivar'}</button>
             <button type="button" class="aulas-btn aulas-btn-excluir">Excluir</button>
           </div>
         `;
+        li.querySelector('.aulas-btn-areas').addEventListener('click', () => abrirAreasDaAula(c.id, c.title));
         li.querySelector('.aulas-btn-renomear').addEventListener('click', () => renomearAula(c.id, c.title));
         li.querySelector('.aulas-btn-arquivar').addEventListener('click', () => arquivarAula(c.id, arquivada));
         li.querySelector('.aulas-btn-excluir').addEventListener('click', () => excluirAula(c.id));
@@ -2779,6 +2781,65 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }catch(e){
       console.warn('[conteudo] não consegui recarregar a tela:', e.message);
     }
+  }
+
+  // Escolhe para quais áreas a aula é obrigatória. Nenhuma marcada =
+  // obrigatória pra todo mundo, que é o padrão. Marcar não esconde a
+  // aula de ninguém: quem é de fora continua vendo e podendo assistir,
+  // só não conta como pendência dele.
+  async function abrirAreasDaAula(courseId, titulo){
+    const body = document.getElementById('aulasModalBody');
+    const anterior = body.innerHTML;
+    body.innerHTML = '<p>Carregando áreas...</p>';
+
+    let dados;
+    try {
+      dados = await apiFetch('api/admin/courses/areas.php?course_id=' + encodeURIComponent(courseId));
+    } catch(e){
+      body.innerHTML = `<p>Não foi possível carregar: ${e.message}</p>`;
+      setTimeout(loadAulas, 2500);
+      return;
+    }
+
+    body.innerHTML = `
+      <button type="button" class="watchers-back-btn" id="areasVoltar">&larr; Voltar</button>
+      <h5 class="areas-aula-titulo">${titulo}</h5>
+      <p class="admin-field-hint">Marque as áreas para as quais esta aula é <strong>obrigatória</strong>.
+        Sem nenhuma marcada, vale para todos. Quem não é da área marcada continua vendo a aula —
+        ela só não entra nas pendências nem na barra de progresso dessa pessoa.</p>
+      <div class="areas-aula-lista">
+        ${dados.areas.map(a => `
+          <label class="areas-aula-item">
+            <input type="checkbox" value="${a.id}" ${a.marcada ? 'checked' : ''}>
+            <span>${a.name}</span>
+          </label>
+        `).join('')}
+      </div>
+      <button type="button" class="admin-modal-submit" id="areasSalvar">Salvar</button>
+      <div class="admin-modal-feedback" id="areasFeedback" hidden></div>
+    `;
+
+    document.getElementById('areasVoltar').addEventListener('click', loadAulas);
+    document.getElementById('areasSalvar').addEventListener('click', async () => {
+      const marcadas = Array.from(body.querySelectorAll('.areas-aula-item input:checked'))
+        .map(i => parseInt(i.value, 10));
+      const fb = document.getElementById('areasFeedback');
+      try {
+        const r = await apiFetch('api/admin/courses/areas.php', {
+          method: 'POST',
+          body: JSON.stringify({ course_id: courseId, areas: marcadas }),
+        });
+        fb.hidden = false;
+        fb.className = 'admin-modal-feedback ok';
+        fb.textContent = r.message;
+        recarregarTelaConteudo(); // a barra de progresso muda na hora
+        setTimeout(loadAulas, 1200);
+      } catch(e){
+        fb.hidden = false;
+        fb.className = 'admin-modal-feedback erro';
+        fb.textContent = e.message;
+      }
+    });
   }
 
   // Só troca o texto: não mexe em vídeo, área nem quiz, e não recria a

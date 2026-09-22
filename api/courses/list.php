@@ -26,6 +26,8 @@ foreach ($pdo->query('SHOW COLUMNS FROM courses') as $col) {
 }
 $temObrigatorio = isset($colunas['obrigatorio']);
 $temDuracaoSegundos = isset($colunas['duration_seconds']);
+// Tabela da migração 016 — mesma precaução das colunas acima.
+$temCursosPorArea = $pdo->query("SHOW TABLES LIKE 'course_areas'")->fetch() !== false;
 
 // tem_quiz evita que o front precise buscar o detalhe de cada aula só
 // pra saber se ela tem pergunta — informação que ele precisa já na
@@ -83,6 +85,20 @@ if ($type === 'onboarding') {
     ));
 }
 
+// Quais cursos foram restringidos a áreas específicas, e quais delas.
+// Curso ausente daqui não tem restrição: vale pra todo mundo.
+$areasPorCurso = [];
+if ($temCursosPorArea && $courses) {
+    $ids = array_map(static fn($c) => (int) $c['id'], $courses);
+    $marcadores = implode(',', array_fill(0, count($ids), '?'));
+    $stmt = $pdo->prepare("SELECT course_id, area_id FROM course_areas WHERE course_id IN ({$marcadores})");
+    $stmt->execute($ids);
+    foreach ($stmt->fetchAll() as $linha) {
+        $areasPorCurso[(int) $linha['course_id']][] = (int) $linha['area_id'];
+    }
+}
+$minhaArea = $user['area_id'] !== null ? (int) $user['area_id'] : null;
+
 foreach ($courses as &$course) {
     $course['id'] = (int) $course['id'];
     $course['area_id'] = $course['area_id'] !== null ? (int) $course['area_id'] : null;
@@ -91,6 +107,16 @@ foreach ($courses as &$course) {
     $course['order_index'] = (int) $course['order_index'];
     $course['tem_quiz'] = (bool) $course['tem_quiz'];
     $course['obrigatorio'] = (bool) $course['obrigatorio'];
+
+    // Curso restrito a áreas continua VISÍVEL pra quem é de fora — só
+    // deixa de ser pendência dele e sai da barra de progresso. Quem
+    // quiser assistir, assiste. Isso reaproveita o mesmo "obrigatorio"
+    // que a tela já usa pra aula opcional, agora calculado por pessoa.
+    $restrito = $areasPorCurso[$course['id']] ?? [];
+    $course['areas_obrigatorias'] = $restrito;
+    if ($restrito && ($minhaArea === null || !in_array($minhaArea, $restrito, true))) {
+        $course['obrigatorio'] = false;
+    }
 }
 
 mse_json([
