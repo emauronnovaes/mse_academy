@@ -406,8 +406,12 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   }
 
   function updateOnboardingHeader(){
-    const total = ONBOARDING.length;
-    const done = onbProgress.completed.length;
+    // A barra conta só as aulas obrigatórias. Incluir as opcionais fazia
+    // o número parecer pior do que é: quem assistiu tudo que precisava
+    // via "4 de 6" e achava que faltava coisa.
+    const obrigatorias = ONBOARDING.filter(m => m.obrigatorio !== false);
+    const total = obrigatorias.length;
+    const done = obrigatorias.filter(m => onbProgress.completed.includes(m.id)).length;
     const pct = total ? Math.round((done / total) * 100) : 0;
     document.getElementById('onboardingProgressLabel').textContent = `${done} de ${total} módulos concluídos`;
     document.getElementById('onboardingProgressPct').textContent = `${pct}%`;
@@ -833,6 +837,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
         </div>
       `;
       ligarBotaoTelaCheia(body);
+      concluirAoAbrir(mod);
       return;
     }
 
@@ -1005,6 +1010,24 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   // Aula sem pergunta: assistir até o fim é o que conclui. Quem marca
   // isso é o servidor (progress/update.php), então aqui só garantimos o
   // envio dos 100% e recarregamos a trilha pra liberar o próximo módulo.
+  // Aula opcional (playlist, extras) não tem como ser concluída pelo
+  // caminho normal: não há vídeo pra medir nem pergunta pra responder.
+  // Abrir já conta como cumprida, senão ela ficaria pendente pra sempre
+  // e apareceria como "não concluída" no relatório de quem assistiu.
+  async function concluirAoAbrir(mod){
+    if(mod.obrigatorio !== false) return;
+    if(onbProgress.completed.includes(mod.id)) return;
+    try {
+      await apiPost('api/progress/update.php', { course_id: mod.id, watched_pct: 100 });
+      onbProgress.completed.push(mod.id);
+      saveOnboardingProgress(onbProgress);
+      renderProgressPanel();
+      renderOnbPath(); // marca a casa como concluída sem redesenhar o vídeo
+    } catch(e){
+      console.warn('[opcional] não consegui registrar:', e.message);
+    }
+  }
+
   async function concluirModuloSemPergunta(mod){
     const caixa = document.getElementById(`quiz-box-${mod.id}`);
     try {
