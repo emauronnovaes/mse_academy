@@ -695,6 +695,19 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
         extra.textContent = 'opcional';
         label.appendChild(extra);
       }
+
+      // Admin renomeia clicando no próprio balão. O balão é
+      // pointer-events:none pra não atrapalhar o clique na casa, então a
+      // classe abaixo devolve o clique só pra quem pode editar.
+      if(!isChestNode && window.mseEhAdmin && typeof window.mseRenomearAula === 'function'){
+        label.classList.add('is-editavel');
+        label.title = 'Clique para renomear';
+        label.addEventListener('click', (e) => {
+          e.stopPropagation(); // senão o clique vazaria pra casa da trilha
+          window.mseRenomearAula(mod.id, mod.title);
+        });
+      }
+
       tilesLayer.appendChild(label);
 
       // Mesma lógica: a bolha "Continuar" também fica fora do botão, por
@@ -2930,6 +2943,13 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
 
     const isAdmin = await checkIsRealAdmin();
     diagnostico.isAdmin = isAdmin;
+
+    // A trilha é desenhada fora deste bloco e não enxerga nem o estado
+    // de admin nem renomearAula(). Publicar os dois aqui é o que permite
+    // editar o nome clicando direto no balão, sem abrir o painel.
+    window.mseEhAdmin = isAdmin;
+    window.mseRenomearAula = renomearAula;
+    if(isAdmin && typeof renderOnboarding === 'function') renderOnboarding();
     diagnostico.temTokenSalvo = !!getRealSessionToken();
 
     // mostrarPainelDiagnostico(diagnostico); // desativado — só reativar se precisar depurar de novo

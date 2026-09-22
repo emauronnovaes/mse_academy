@@ -1094,6 +1094,16 @@
   }
   .admin-field-hint strong{ color:var(--ink); }
 
+  /* O balão é pointer-events:none pra não roubar o clique da casa da
+     trilha. Só volta a receber clique quando é editável (admin). */
+  .onb-node-label-standalone.is-editavel{
+    pointer-events:auto; cursor:text;
+    transition:box-shadow .15s ease;
+  }
+  .onb-node-label-standalone.is-editavel:hover{
+    box-shadow:0 0 0 2px var(--red), 0 5px 14px rgba(28,27,26,0.14);
+  }
+
   .onb-node-opcional{
     display:block; margin-top:2px;
     font-size:10px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase;
