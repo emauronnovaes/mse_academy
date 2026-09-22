@@ -124,20 +124,34 @@ if ($orderIndex === null) {
     $orderIndex = (int) $orderIndex;
 }
 
+// Enquanto a migração não roda no servidor, grava sem as colunas novas
+// em vez de recusar o cadastro inteiro.
+$colunas = [];
+$tipoVideoSource = '';
+foreach ($pdo->query('SHOW COLUMNS FROM courses') as $col) {
+    $colunas[$col['Field']] = true;
+    if ($col['Field'] === 'video_source') {
+        $tipoVideoSource = (string) $col['Type'];
+    }
+}
+$temNovas = isset($colunas['grupo_sorteio']) && isset($colunas['obrigatorio']);
+
+// Playlist e sorteio, diferente das outras colunas, não dá pra
+// "degradar": sem a migração o dado simplesmente não cabe no banco.
+// Melhor dizer o que falta do que devolver erro de SQL cru — ou pior,
+// gravar errado (fora do modo estrito o MySQL aceita e guarda vazio).
+// Conferido ANTES de abrir a transação, pra não ter nada pra desfazer.
+if ($videoSource === 'playlist' && !mse_str_contains($tipoVideoSource, "'playlist'")) {
+    mse_error('Este servidor ainda não aceita playlist. Falta rodar a migração 014 no banco (migrations/014_sorteio_e_playlist.sql).', 409);
+}
+if ($grupoSorteio !== '' && !$temNovas) {
+    mse_error('Este servidor ainda não aceita grupo de sorteio. Falta rodar a migração 014 no banco (migrations/014_sorteio_e_playlist.sql).', 409);
+}
+
 // Curso + pergunta + opções tudo junto numa transação — se qualquer
-// parte falhar, desfaz tudo (não deixa vídeo "órfão" sem pergunta
-// pela metade, nem pergunta sem curso).
+// parte falhar, desfaz tudo.
 $pdo->beginTransaction();
 try {
-    $stmt = $pdo->prepare(
-    // Enquanto a migração não roda no servidor, grava sem as colunas
-    // novas em vez de recusar o cadastro inteiro.
-    $colunas = [];
-    foreach ($pdo->query('SHOW COLUMNS FROM courses') as $col) {
-        $colunas[$col['Field']] = true;
-    }
-    $temNovas = isset($colunas['grupo_sorteio']) && isset($colunas['obrigatorio']);
-
     if ($temNovas) {
         $stmt = $pdo->prepare(
             'INSERT INTO courses (area_id, type, grupo_sorteio, obrigatorio, title, description, video_source, youtube_id, video_key, duration_minutes, order_index, is_published)
