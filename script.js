@@ -257,48 +257,59 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   //
   // TROQUE "youtubeId" pelo ID real de cada vídeo (é o trecho depois de
   // "v=" na URL do YouTube, ex: https://youtube.com/watch?v=ABC123 -> "ABC123").
-  const ONBOARDING = [
-    {
-      id: 'visao-geral',
-      title: 'Visão geral do Portal MSE',
-      desc: 'Um tour rápido pelas áreas principais e onde encontrar cada coisa.',
-      minutes: 4,
-      videoFile: 'modulo-1-visao-geral.mp4',
-      questions: [
-        { q: 'Onde você encontra os tutoriais de cada área do portal?', options: ['Na aba Cursos da MSE Academy', 'Só recebendo por e-mail', 'Perguntando presencialmente ao RH'], correct: 0 }
-      ]
-    },
-    {
-      id: 'dados-cadastrais',
-      title: 'Atualizando seus dados cadastrais',
-      desc: 'Como manter contato, endereço e documentos sempre em dia.',
-      minutes: 3,
-      videoFile: 'modulo-2-dados-cadastrais.mp4',
-      questions: [
-        { q: 'Por que é importante manter seus dados cadastrais atualizados?', options: ['Não afeta nada no dia a dia', 'Garante que benefícios e comunicados cheguem certos', 'É só uma formalidade sem uso'], correct: 1 }
-      ]
-    },
-    {
-      id: 'horas-ferias',
-      title: 'Lançando horas e solicitando férias',
-      desc: 'Passo a passo para registrar horas e abrir pedidos de férias.',
-      minutes: 6,
-      videoFile: 'modulo-3-horas-ferias.mp4',
-      questions: [
-        { q: 'O pedido de férias deve ser feito por qual canal?', options: ['Pelo Portal MSE', 'Só verbalmente com o gestor', 'Não precisa de pedido formal'], correct: 0 }
-      ]
-    },
-    {
-      id: 'contracheque',
-      title: 'Emitindo contracheque e documentos',
-      desc: 'Onde baixar holerite, informe de rendimentos e declarações.',
-      minutes: 3,
-      videoFile: 'modulo-4-contracheque.mp4',
-      questions: [
-        { q: 'Onde você baixa seu contracheque?', options: ['No Portal MSE, na área Financeiro', 'Só recebe impresso', 'Precisa pedir para o RH toda vez'], correct: 0 }
-      ]
-    }
-  ];
+  // ================================================================
+  // ---------- Conteúdo vindo do banco ----------
+  // ================================================================
+  // Antes as aulas eram listas fixas neste arquivo, sem ligação nenhuma
+  // com o que o admin cadastrava: vídeo enviado pelo painel nunca
+  // aparecia, e o relatório "Quem assistiu" ficava sempre zerado porque
+  // o progresso só existia no localStorage de cada navegador.
+  let conteudoCarregado = false;
+  const detalheCache = new Map();
+
+  function tokenSessao(){
+    try { return localStorage.getItem('mse_academy_real_session_token'); }
+    catch(e){ return null; }
+  }
+
+  async function apiGet(caminho){
+    const token = tokenSessao();
+    const res = await fetch(caminho, {
+      credentials: 'include',
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+    });
+    const dados = await res.json().catch(() => ({}));
+    if(!res.ok) throw new Error(dados.error || ('Erro ' + res.status));
+    return dados;
+  }
+
+  async function apiPost(caminho, corpo){
+    const token = tokenSessao();
+    const res = await fetch(caminho, {
+      method: 'POST',
+      credentials: 'include',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {}),
+      body: JSON.stringify(corpo),
+    });
+    const dados = await res.json().catch(() => ({}));
+    if(!res.ok) throw new Error(dados.error || ('Erro ' + res.status));
+    return dados;
+  }
+
+  // O vídeo vem como URL assinada que expira em 30 min, então o detalhe
+  // é buscado na hora de abrir o módulo — não dá pra pré-carregar tudo.
+  async function carregarDetalheCurso(id){
+    if(detalheCache.has(id)) return detalheCache.get(id);
+    const dados = await apiGet('api/courses/detail.php?id=' + encodeURIComponent(id));
+    detalheCache.set(id, dados.course);
+    return dados.course;
+  }
+
+  // Carregada do banco em carregarConteudo(), logo apos o login.
+  // Antes era uma lista fixa aqui, que nao tinha relacao nenhuma com
+  // o que o admin cadastrava — video enviado pelo painel nunca
+  // aparecia pra ninguem.
+  let ONBOARDING = [];
 
   const ONB_STORAGE_KEY = 'mse_academy_onboarding_v1';
   const ONB_PASS_THRESHOLD = 0.95; // 95% do vídeo assistido libera a pergunta
@@ -381,16 +392,24 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     }
   }
 
-  const ONB_PATH_POSITIONS = [
-    { x: 50, y: 6 },
-    { x: 50, y: 27 },
-    { x: 50, y: 48 },
-    { x: 50, y: 69 },
-    { x: 50, y: 92 },
-  ];
+  // As posições eram 5 fixas (4 módulos + baú). Como a trilha passou a
+  // vir do banco, a quantidade de módulos varia — com a lista fixa, um
+  // módulo a mais deixava `positions[i]` indefinido e a tela quebrava
+  // inteira num TypeError. Agora são calculadas pra qualquer quantidade,
+  // mantendo o mesmo espaçamento visual de antes (6% no topo, 92% no fim).
+  function onbPathPositions(nodeCount){
+    if(nodeCount <= 1) return [{ x: 50, y: 50 }];
+    const inicio = 6, fim = 92;
+    const passo = (fim - inicio) / (nodeCount - 1);
+    return Array.from({ length: nodeCount }, (_, i) => ({ x: 50, y: inicio + passo * i }));
+  }
   let onbPawnLastIndex = null;
 
   function renderOnboarding(){
+    // Sem esse guard, a trilha renderiza vazia no carregamento da página
+    // (o conteúdo só chega depois do login) e o usuário vê "0 de 0" e a
+    // tela do baú antes de qualquer coisa.
+    if(!conteudoCarregado) return;
     updateOnboardingHeader();
     renderActiveModuleSection(); // zera o progresso do vídeo do módulo atual...
     renderOnbPath();             // ...antes do anel de progresso ler esse valor
@@ -456,8 +475,8 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
 
     const currentIdx = onbCurrentIndex();
     const allDone = currentIdx >= ONBOARDING.length;
-    const positions = ONB_PATH_POSITIONS; // 5 pontos: 4 módulos + 1 baú
     const NODE_COUNT = ONBOARDING.length + 1; // +1 = a casa do baú
+    const positions = onbPathPositions(NODE_COUNT);
 
     let tilesLayer = track.querySelector('.onb-tiles-layer');
     if(!tilesLayer){
@@ -689,14 +708,39 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     renderModuleBody(mod, freeRewatch);
   }
 
-  function renderModuleBody(mod, isRewatch){
+  async function renderModuleBody(mod, isRewatch){
     const body = document.getElementById(`onb-body-${mod.id}`);
     if(!body) return;
 
     onbVideoUnlocked = false;
     onbMaxWatchedPct = 0;
+    ultimoPctEnviado = -1; // senão o módulo seguinte herdaria o % do anterior
 
-    const videoSrc = `videos/${mod.videoFile}`;
+    body.innerHTML = '<div class="vid-hint"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Carregando o vídeo...</div>';
+
+    let detalhe;
+    try {
+      detalhe = await carregarDetalheCurso(mod.id);
+    } catch(e){
+      body.innerHTML = `<div class="vid-hint"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Não foi possível carregar este módulo: ${e.message}</div>`;
+      return;
+    }
+
+    // O quiz vem junto do detalhe, já sem a resposta certa — quem decide
+    // se acertou é o servidor (antes o índice da correta ficava visível
+    // no código da página, dava pra ver pelo inspecionar elemento).
+    mod.questions = detalhe.questions || [];
+
+    // video_url é a URL assinada do S3; quando a aula é do YouTube ela
+    // vem nula e o id do vídeo é usado no lugar.
+    const videoSrc = detalhe.video_url;
+    if(!videoSrc){
+      body.innerHTML = detalhe.youtube_id
+        ? `<div class="vid-player-wrap"><iframe id="onb-yt-${mod.id}" src="https://www.youtube-nocookie.com/embed/${detalhe.youtube_id}?rel=0" title="${mod.title}" allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowfullscreen style="width:100%;aspect-ratio:16/9;border:0;border-radius:12px"></iframe></div><div class="quiz-box" id="quiz-box-${mod.id}" hidden></div>`
+        : `<div class="vid-hint"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Este módulo ainda não tem vídeo cadastrado.</div>`;
+      if(detalhe.youtube_id) revealQuiz(mod); // sem <video> não há como medir o quanto foi assistido
+      return;
+    }
 
     body.innerHTML = isRewatch
       ? `
@@ -743,10 +787,30 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     videoEl.addEventListener('ended', () => onbSetWatchPct(mod, 1));
   }
 
+  // O servidor recusa a resposta do quiz de quem não assistiu 95% do
+  // vídeo, e ele só sabe disso pelo que enviamos aqui. Mandar a cada
+  // "timeupdate" seriam ~4 requisições por segundo, então só avisamos a
+  // cada 5 pontos percentuais — e sempre no 100%, que é o que libera.
+  let ultimoPctEnviado = -1;
+  async function enviarProgresso(courseId, pct){
+    const inteiro = Math.min(Math.round(pct * 100), 100);
+    if(inteiro <= ultimoPctEnviado || (inteiro % 5 !== 0 && inteiro < 100)) return;
+    ultimoPctEnviado = inteiro;
+    try {
+      await apiPost('api/progress/update.php', { course_id: courseId, watched_pct: inteiro });
+    } catch(e){
+      // Não interrompe a aula: no pior caso o quiz recusa e a pessoa
+      // reassiste. Derrubar o player por causa disso seria pior.
+      console.warn('[progresso] não consegui registrar:', e.message);
+    }
+  }
+
   function onbSetWatchPct(mod, pct){
     onbMaxWatchedPct = Math.max(onbMaxWatchedPct, pct);
     const fill = document.getElementById(`vid-watch-fill-${mod.id}`);
     if(fill) fill.style.width = Math.min(onbMaxWatchedPct * 100, 100) + '%';
+
+    enviarProgresso(mod.id, onbMaxWatchedPct);
 
     if(!onbVideoUnlocked && onbMaxWatchedPct >= ONB_PASS_THRESHOLD){
       onbVideoUnlocked = true;
@@ -763,12 +827,19 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     onbQuizAnsweredThisSession = false; // nova "sessão" — só a 1ª resposta dessa vez conta
 
     const question = mod.questions[0];
+    if(!question){
+      quizEl.hidden = true; // aula sem pergunta cadastrada
+      return;
+    }
+    // Os textos e ids vêm do banco (question_text/option_text), e cada
+    // opção carrega o id real — é o que o servidor usa pra conferir a
+    // resposta, já que a alternativa certa não é mais enviada ao browser.
     quizEl.innerHTML = `
-      <h5>${question.q}</h5>
+      <h5>${question.question_text}</h5>
       <div class="quiz-options">
-        ${question.options.map((opt, i) => `
-          <button type="button" class="quiz-option" data-index="${i}">
-            <span>${opt}</span>
+        ${question.options.map(opt => `
+          <button type="button" class="quiz-option" data-option-id="${opt.id}">
+            <span>${opt.option_text}</span>
           </button>
         `).join('')}
       </div>
@@ -780,11 +851,28 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     });
   }
 
-  function onbAnswerQuestion(mod, question, btn, quizEl){
+  async function onbAnswerQuestion(mod, question, btn, quizEl){
     const allOptions = quizEl.querySelectorAll('.quiz-option');
-    const chosenIndex = parseInt(btn.dataset.index, 10);
-    const isCorrect = chosenIndex === question.correct;
     const feedbackEl = document.getElementById(`quiz-feedback-${mod.id}`);
+
+    allOptions.forEach(o => o.disabled = true);
+
+    // Quem confere é o servidor: ele valida a opção, registra a
+    // tentativa e é quem marca o módulo como concluído.
+    let isCorrect;
+    try {
+      const r = await apiPost('api/quiz/submit.php', {
+        question_id: question.id,
+        option_id: parseInt(btn.dataset.optionId, 10),
+      });
+      isCorrect = !!r.correct;
+    } catch(e){
+      feedbackEl.hidden = false;
+      feedbackEl.className = 'quiz-feedback bad';
+      feedbackEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${e.message}`;
+      allOptions.forEach(o => o.disabled = false);
+      return;
+    }
 
     // Guarda o resultado só da PRIMEIRA resposta dessa sessão (não do
     // retry imediato de 1.2s que já existia) — senão a pessoa sempre
@@ -796,8 +884,6 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       onbProgress.firstTry[mod.id] = isCorrect;
       saveOnboardingProgress(onbProgress);
     }
-
-    allOptions.forEach(o => o.disabled = true);
 
     if(isCorrect){
       btn.classList.add('correct');
@@ -844,26 +930,57 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   // O campo "cat" usa o slug da área real do Portal MSE (mesma estrutura do menu lateral).
   // Quando o backend estiver pronto, dá pra usar esse mesmo "cat" para filtrar
   // automaticamente os tutoriais pela área do colaborador logado.
-  const courses = [
-    {id:'ferias', cat:'dp', label:'Departamento Pessoal', title:'Como solicitar férias', desc:'Passo a passo para abrir o pedido de férias e acompanhar a aprovação.', time:'3 min', youtubeId:'dQw4w9WgXcQ',
-      questions:[{q:'Onde você abre o pedido de férias?', options:['Pelo Portal MSE','Só verbalmente com o gestor','Não precisa de pedido formal'], correct:0}]},
-    {id:'horas', cat:'dp', label:'Departamento Pessoal', title:'Lançando horas no sistema', desc:'Como registrar horas trabalhadas e corrigir lançamentos.', time:'4 min', youtubeId:'dQw4w9WgXcQ',
-      questions:[{q:'O que fazer se um lançamento de horas estiver errado?', options:['Ignorar, se ajusta sozinho','Corrigir direto no sistema, na mesma tela','Só o RH pode corrigir'], correct:1}]},
-    {id:'contracheque', cat:'financeiro', label:'Financeiro', title:'Emitir contracheque', desc:'Onde baixar holerite, informe de rendimentos e declarações.', time:'2 min', youtubeId:'dQw4w9WgXcQ',
-      questions:[{q:'Onde você baixa o contracheque?', options:['No Portal MSE, na área Financeiro','Só recebe impresso','Precisa pedir pro RH toda vez'], correct:0}]},
-    {id:'reembolso', cat:'financeiro', label:'Financeiro', title:'Solicitar reembolso de despesas', desc:'Como anexar notas fiscais e acompanhar o status do pedido.', time:'5 min', youtubeId:'dQw4w9WgXcQ',
-      questions:[{q:'O que precisa anexar no pedido de reembolso?', options:['Nada, só descrever a despesa','A nota fiscal da despesa','Print de conversa com o gestor'], correct:1}]},
-    {id:'senha', cat:'ti', label:'TI', title:'Recuperar senha de acesso', desc:'O que fazer quando esquecer a senha do Portal MSE.', time:'2 min', youtubeId:'dQw4w9WgXcQ',
-      questions:[{q:'Esqueceu a senha do portal — o que fazer primeiro?', options:['Usar a opção "esqueci minha senha" na tela de login','Criar um usuário novo','Ligar pro suporte de outra empresa'], correct:0}]},
-    {id:'chamado-ti', cat:'ti', label:'TI', title:'Abrindo um chamado de TI', desc:'Onde relatar um problema técnico e acompanhar a solução.', time:'2 min', youtubeId:'dQw4w9WgXcQ',
-      questions:[{q:'Onde você acompanha o status de um chamado de TI?', options:['No próprio Portal MSE','Só por telefone','Não dá pra acompanhar'], correct:0}]},
-    {id:'rdo', cat:'obras', label:'Obras', title:'Preenchendo o RDO', desc:'Passo a passo para registrar o Relatório Diário de Obra.', time:'6 min', youtubeId:'dQw4w9WgXcQ',
-      questions:[{q:'O que é o RDO?', options:['Relatório Diário de Obra','Registro de Débitos e Ordens','Um tipo de contrato'], correct:0}]},
-    {id:'medicao', cat:'obras', label:'Obras', title:'Lançando medição de obra', desc:'Como lançar e enviar a medição para aprovação.', time:'5 min', youtubeId:'dQw4w9WgXcQ',
-      questions:[{q:'Depois de lançar a medição, o que acontece?', options:['Ela some do sistema','Ela vai pra aprovação','Nada, é só um registro solto'], correct:1}]},
-    {id:'antecipacao', cat:'suprimentos', label:'Suprimentos', title:'Antecipação de pagamento a fornecedor', desc:'Como abrir e acompanhar uma solicitação de antecipação.', time:'3 min', youtubeId:'dQw4w9WgXcQ',
-      questions:[{q:'Quem pode solicitar antecipação de pagamento a fornecedor?', options:['Qualquer colaborador autorizado, pelo portal','Só o fornecedor, por telefone','Ninguém, isso não existe'], correct:0}]},
-  ];
+  // Catalogo carregado do banco em carregarConteudo(). Os cursos que
+  // ficavam fixos aqui usavam todos o mesmo video de exemplo do
+  // YouTube, entao nenhum deles era conteudo real.
+  let courses = [];
+
+  // Traduz o formato da API pro formato que o resto da tela já esperava,
+  // pra não precisar reescrever gamificação, favoritos, busca e painel
+  // de progresso — que juntos usam essas listas em mais de 30 lugares.
+  async function carregarConteudo(){
+    const [trilha, catalogo] = await Promise.all([
+      apiGet('api/courses/list.php?type=onboarding'),
+      apiGet('api/courses/list.php?type=curso&scope=all'),
+    ]);
+
+    ONBOARDING = (trilha.courses || []).map(c => ({
+      id: c.id,
+      title: c.title,
+      desc: c.description || '',
+      minutes: c.duration_minutes,
+      youtubeId: c.youtube_id,
+      questions: [], // preenchido ao abrir o módulo (vem do detail.php)
+    }));
+
+    courses = (catalogo.courses || []).map(c => ({
+      id: c.id,
+      cat: c.area_slug,
+      label: c.area_name || '',
+      title: c.title,
+      desc: c.description || '',
+      time: (c.duration_minutes || 0) + ' min',
+      youtubeId: c.youtube_id,
+      questions: [],
+    }));
+
+    await carregarProgressoServidor();
+    conteudoCarregado = true;
+  }
+
+  // O progresso agora mora no banco (vale em qualquer navegador, e é o
+  // que alimenta o relatório "Quem assistiu"). O localStorage continua
+  // sendo escrito só como espelho, pra tela não piscar enquanto carrega.
+  async function carregarProgressoServidor(){
+    const dados = await apiGet('api/progress/list.php');
+    const concluidos = (dados.progress || [])
+      .filter(p => p.status === 'concluido')
+      .map(p => Number(p.course_id));
+
+    const idsTrilha = new Set(ONBOARDING.map(m => m.id));
+    onbProgress.completed = concluidos.filter(id => idsTrilha.has(id));
+    catalogProgress.completed = concluidos.filter(id => !idsTrilha.has(id));
+  }
 
   // ---------- Progresso do catálogo (pontos + concluídos) ----------
   // Front-end apenas por enquanto (localStorage) — quando o backend entrar,
@@ -1135,6 +1252,10 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   if(lightningCanvas && !prefersReducedMotion) requestAnimationFrame(lightningTick);
 
   function renderProgressPanel(){
+    // Com as listas ainda vazias, checagens do tipo courses.every(...)
+    // retornam true e o painel daria nível máximo e todos os troféus
+    // antes do conteúdo chegar.
+    if(!conteudoCarregado) return;
     const points = getTotalPoints();
     const levelIdx = getCurrentLevelIndex();
     const level = LEVELS[levelIdx];
@@ -1426,18 +1547,45 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     // fecha o vídeo primeiro, sem sair da tela de área que estiver por baixo.
     history.pushState({ mseOverlay: 'video' }, '', '');
 
-    // Controles normais do YouTube liberados — aqui, ao contrário da trilha
-    // de integração, não existe bloqueio nenhum (a pessoa pode pular à vontade).
-    loadYouTubeApi().then(() => {
-      modalState.player = new YT.Player('catalog-yt-player', {
-        videoId: course.youtubeId,
-        playerVars: { controls: 1, modestbranding: 1, rel: 0, fs: 1 },
-        events: {
-          onStateChange: (e) => {
-            if(e.data === YT.PlayerState.ENDED) showBonusQuiz();
+    // O detalhe traz o vídeo e a pergunta do banco. Curso do catálogo
+    // pode ser do YouTube (id) ou um arquivo no S3 (URL assinada), então
+    // o player muda conforme o caso.
+    carregarDetalheCurso(course.id).then(detalhe => {
+      course.questions = detalhe.questions || [];
+      const wrap = videoModalBodyEl.querySelector('.vid-player-wrap');
+      if(!wrap) return;
+
+      if(detalhe.video_url){
+        wrap.innerHTML = `<video src="${detalhe.video_url}" controls playsinline style="width:100%;border-radius:12px"></video>`;
+        const v = wrap.querySelector('video');
+        v.addEventListener('timeupdate', () => {
+          if(v.duration) enviarProgresso(course.id, v.currentTime / v.duration);
+        });
+        v.addEventListener('ended', () => { enviarProgresso(course.id, 1); showBonusQuiz(); });
+        return;
+      }
+
+      if(!detalhe.youtube_id){
+        wrap.innerHTML = '<div class="vid-hint"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Esta aula ainda não tem vídeo cadastrado.</div>';
+        return;
+      }
+
+      // Controles normais do YouTube liberados — aqui, ao contrário da trilha
+      // de integração, não existe bloqueio nenhum (a pessoa pode pular à vontade).
+      loadYouTubeApi().then(() => {
+        modalState.player = new YT.Player('catalog-yt-player', {
+          videoId: detalhe.youtube_id,
+          playerVars: { controls: 1, modestbranding: 1, rel: 0, fs: 1 },
+          events: {
+            onStateChange: (e) => {
+              if(e.data === YT.PlayerState.ENDED){ enviarProgresso(course.id, 1); showBonusQuiz(); }
+            }
           }
-        }
+        });
       });
+    }).catch(e => {
+      const wrap = videoModalBodyEl.querySelector('.vid-player-wrap');
+      if(wrap) wrap.innerHTML = `<div class="vid-hint"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Não foi possível carregar: ${e.message}</div>`;
     });
 
     // mesmo motivo do outro setTimeout: evita que a tecla Enter que abriu
@@ -1454,14 +1602,15 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     const container = document.getElementById('catalogBonusQuiz');
     if(!container || container.querySelector('.quiz-box')) return;
 
-    const question = course.questions[0];
+    const question = (course.questions || [])[0];
+    if(!question) return; // aula sem pergunta cadastrada
     container.innerHTML = `
       <div class="quiz-box">
-        <h5>Pergunta rápida (opcional, vale +10 pontos): ${question.q}</h5>
+        <h5>Pergunta rápida (opcional, vale +10 pontos): ${question.question_text}</h5>
         <div class="quiz-options">
-          ${question.options.map((opt, i) => `
-            <button type="button" class="quiz-option" data-index="${i}">
-              <span>${opt}</span>
+          ${question.options.map(opt => `
+            <button type="button" class="quiz-option" data-option-id="${opt.id}">
+              <span>${opt.option_text}</span>
             </button>
           `).join('')}
         </div>
@@ -1474,13 +1623,28 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     });
   }
 
-  function answerCatalogQuiz(question, btn){
+  async function answerCatalogQuiz(question, btn){
     const allOptions = document.querySelectorAll('#catalogBonusQuiz .quiz-option');
-    const chosenIndex = parseInt(btn.dataset.index, 10);
-    const isCorrect = chosenIndex === question.correct;
     const feedbackEl = document.getElementById('catalogQuizFeedback');
 
     allOptions.forEach(o => o.disabled = true);
+
+    // Mesma regra da trilha: quem confere a resposta e credita os pontos
+    // é o servidor, não o navegador.
+    let isCorrect;
+    try {
+      const r = await apiPost('api/quiz/submit.php', {
+        question_id: question.id,
+        option_id: parseInt(btn.dataset.optionId, 10),
+      });
+      isCorrect = !!r.correct;
+    } catch(e){
+      feedbackEl.hidden = false;
+      feedbackEl.className = 'quiz-feedback bad';
+      feedbackEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${e.message}`;
+      allOptions.forEach(o => o.disabled = false);
+      return;
+    }
 
     if(isCorrect){
       btn.classList.add('correct');
@@ -2393,6 +2557,21 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
 
     await tryRealSsoLogin(diagnostico);
     updateGreetingBanner(); // atualiza a saudação com o nome real, se o login deu certo
+
+    // Só aqui a sessão existe, e os endpoints de conteúdo exigem login —
+    // por isso a trilha e o catálogo carregam neste ponto, e não no
+    // início do arquivo como eram quando estavam fixos no código.
+    try {
+      await carregarConteudo();
+      renderOnboarding();
+      renderProgressPanel();
+    } catch(e){
+      console.error('[conteudo] falha ao carregar:', e.message);
+      const trilha = document.getElementById('onboardingPath') || document.querySelector('.onb-track');
+      if(trilha) trilha.insertAdjacentHTML('beforebegin',
+        `<p style="text-align:center;color:#C4212C;font-size:14px">Não consegui carregar as aulas: ${e.message}</p>`);
+    }
+
     const isAdmin = await checkIsRealAdmin();
     diagnostico.isAdmin = isAdmin;
     diagnostico.temTokenSalvo = !!getRealSessionToken();
