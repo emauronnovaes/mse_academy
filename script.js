@@ -409,11 +409,33 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   // módulo a mais deixava `positions[i]` indefinido e a tela quebrava
   // inteira num TypeError. Agora são calculadas pra qualquer quantidade,
   // mantendo o mesmo espaçamento visual de antes (6% no topo, 92% no fim).
+  const ONB_INICIO_PCT = 6, ONB_FIM_PCT = 92;
+  const ONB_ESPACO_PX = 150;   // distância entre os centros de duas casas
+  const ONB_PADDING_PX = 128;  // o padding vertical do viewport (64 em cima + 64 embaixo)
+
   function onbPathPositions(nodeCount){
     if(nodeCount <= 1) return [{ x: 50, y: 50 }];
-    const inicio = 6, fim = 92;
-    const passo = (fim - inicio) / (nodeCount - 1);
-    return Array.from({ length: nodeCount }, (_, i) => ({ x: 50, y: inicio + passo * i }));
+    const passo = (ONB_FIM_PCT - ONB_INICIO_PCT) / (nodeCount - 1);
+    return Array.from({ length: nodeCount }, (_, i) => ({ x: 50, y: ONB_INICIO_PCT + passo * i }));
+  }
+
+  // As posições são percentuais de um contêiner que tinha altura fixa
+  // (aspect-ratio 1/2.05): com mais aulas, as casas iam se espremendo
+  // uma contra a outra em vez de a trilha crescer. Aqui a altura passa a
+  // ser calculada pela quantidade de casas, mantendo a mesma distância
+  // entre elas, não importa quantas aulas existam.
+  function ajustarAlturaDaTrilha(nodeCount){
+    const viewport = document.querySelector('.onb-path-viewport');
+    if(!viewport) return;
+    if(nodeCount <= 1){
+      viewport.style.removeProperty('height');
+      viewport.style.removeProperty('aspect-ratio');
+      return;
+    }
+    const faixa = (ONB_FIM_PCT - ONB_INICIO_PCT) / 100; // fração da altura ocupada pelas casas
+    const alturaTrilha = (ONB_ESPACO_PX * (nodeCount - 1)) / faixa;
+    viewport.style.aspectRatio = 'auto'; // senão a altura calculada é ignorada
+    viewport.style.height = Math.round(alturaTrilha + ONB_PADDING_PX) + 'px';
   }
   let onbPawnLastIndex = null;
 
@@ -489,6 +511,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     const allDone = currentIdx >= ONBOARDING.length;
     const NODE_COUNT = ONBOARDING.length + 1; // +1 = a casa do baú
     const positions = onbPathPositions(NODE_COUNT);
+    ajustarAlturaDaTrilha(NODE_COUNT);
 
     let tilesLayer = track.querySelector('.onb-tiles-layer');
     if(!tilesLayer){
