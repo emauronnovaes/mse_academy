@@ -15,8 +15,12 @@ $scope = $_GET['scope'] ?? 'recommended'; // 'recommended' (padrão) ou 'all'
 
 $pdo = mse_db();
 
+// tem_quiz evita que o front precise buscar o detalhe de cada aula só
+// pra saber se ela tem pergunta — informação que ele precisa já na
+// listagem, pra decidir se a conclusão vem de assistir ou de responder.
 $sql = "SELECT c.id, c.title, c.description, c.youtube_id, c.duration_minutes,
-               c.order_index, c.type, c.area_id, a.slug AS area_slug, a.name AS area_name
+               c.order_index, c.type, c.area_id, a.slug AS area_slug, a.name AS area_name,
+               EXISTS(SELECT 1 FROM quiz_questions q WHERE q.course_id = c.id) AS tem_quiz
         FROM courses c
         LEFT JOIN areas a ON a.id = c.area_id
         WHERE c.is_published = 1";
@@ -59,6 +63,7 @@ foreach ($courses as &$course) {
     $course['area_id'] = $course['area_id'] !== null ? (int) $course['area_id'] : null;
     $course['duration_minutes'] = (int) $course['duration_minutes'];
     $course['order_index'] = (int) $course['order_index'];
+    $course['tem_quiz'] = (bool) $course['tem_quiz'];
 }
 
 mse_json([

@@ -30,15 +30,23 @@ if (!mse_course_is_unlocked($pdo, (int) $user['id'], $courseId)) {
     mse_error('Este módulo ainda está bloqueado.', 403);
 }
 
-// NUNCA marca "concluido" aqui — só quem faz isso é o quiz/submit.php,
-// depois de responder a pergunta certa. Assistir o vídeo (mesmo 100%)
-// só deixa em "em_andamento"; sem essa distinção, o curso "concluía"
-// sozinho só de assistir, e a pergunta virava decorativa (dava pra
-// pular ela e o curso já aparecia como feito). Testado: sem essa
-// correção, quiz/submit.php nunca conseguia dar pontos, porque o
-// status já vinha "concluido" antes mesmo da pessoa responder.
-$status = $watchedPct > 0 ? 'em_andamento' : 'nao_iniciado';
-$completedAt = null;
+// Aula COM pergunta nunca conclui aqui — quem conclui é o
+// quiz/submit.php, depois da resposta certa. Sem essa distinção a
+// pergunta viraria decorativa: dava pra pular e o curso já aparecia
+// como feito.
+//
+// Mas aula SEM pergunta cadastrada não tem como ser concluída pelo
+// quiz, então ficaria "em andamento" pra sempre e a trilha nunca
+// avançaria. Nesse caso, assistir até o fim é o que conclui — quem
+// decide é o admin, ao cadastrar (ou não) uma pergunta na aula.
+$stmt = $pdo->prepare('SELECT COUNT(*) FROM quiz_questions WHERE course_id = ?');
+$stmt->execute([$courseId]);
+$temPergunta = (int) $stmt->fetchColumn() > 0;
+
+$concluiuAssistindo = !$temPergunta && $watchedPct >= 95;
+
+$status = $concluiuAssistindo ? 'concluido' : ($watchedPct > 0 ? 'em_andamento' : 'nao_iniciado');
+$completedAt = $concluiuAssistindo ? date('Y-m-d H:i:s') : null;
 
 // GREATEST() garante que o percentual nunca regride (ex: se a pessoa voltar
 // e assistir só um trecho de novo, não perde o progresso já feito).
@@ -58,5 +66,29 @@ $stmt->execute([
     'pct' => $watchedPct,
     'completed_at' => $completedAt,
 ]);
+
+// Pontos da aula sem pergunta. O mesmo cuidado do quiz/submit.php: só
+// soma na PRIMEIRA vez, senão reassistir renderia pontos de novo a cada
+// vez, sem limite.
+if ($concluiuAssistindo) {
+    $stmt = $pdo->prepare(
+        'SELECT completed_at FROM user_course_progress WHERE user_id = ? AND course_id = ?'
+    );
+    $stmt->execute([$user['id'], $courseId]);
+    $linha = $stmt->fetch();
+
+    // Se completed_at é igual ao que acabamos de gravar, esta é a
+    // primeira conclusão (o COALESCE acima preserva o valor anterior).
+    if ($linha && $linha['completed_at'] === $completedAt) {
+        $stmt = $pdo->prepare(
+            'INSERT INTO user_stats (user_id, total_points, modules_completed)
+             VALUES (?, 10, 1)
+             ON DUPLICATE KEY UPDATE
+                total_points = total_points + 10,
+                modules_completed = modules_completed + 1'
+        );
+        $stmt->execute([$user['id']]);
+    }
+}
 
 mse_json(['ok' => true, 'status' => $status, 'watched_pct' => $watchedPct]);

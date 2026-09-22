@@ -337,7 +337,18 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     const correct = ONBOARDING.filter(m => onbProgress.firstTry[m.id] === true).length;
     return { correct, total, pct: total ? Math.round((correct / total) * 100) : 0 };
   }
+  // Trilha sem nenhuma pergunta cadastrada: assistir tudo é o suficiente
+  // pra abrir o baú. Sem isso a exigência de 75% de acerto nunca seria
+  // atingida (0 acertos de 0 perguntas) e a recompensa ficaria travada
+  // pra sempre.
+  function trilhaTemPerguntas(){
+    // temQuiz vem da listagem: as perguntas em si só chegam ao abrir o
+    // módulo, então olhar mod.questions aqui diria "sem perguntas" mesmo
+    // quando existem.
+    return ONBOARDING.some(m => m.temQuiz);
+  }
   function isOnbQuizPassed(){
+    if(!trilhaTemPerguntas()) return true;
     return getOnbQuizAccuracy().correct / ONBOARDING.length >= ONB_QUIZ_PASS_RATIO;
   }
 
@@ -667,7 +678,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
           <div class="onb-congrats-inner">
             <div class="onb-congrats-emoji"><i class="fa-solid fa-medal" aria-hidden="true"></i></div>
             <h4>Parabéns! Você concluiu a integração</h4>
-            <p>Você acertou ${quiz.correct} de ${quiz.total} perguntas (${quiz.pct}%). Agora acesse a aba <strong>Cursos</strong> — o catálogo de mini-aulas também é obrigatório. Clique em qualquer módulo acima pra rever a integração quando precisar.</p>
+            <p>${trilhaTemPerguntas() ? `Você acertou ${quiz.correct} de ${quiz.total} perguntas (${quiz.pct}%). ` : ''}Agora acesse a aba <strong>Cursos</strong> — o catálogo de mini-aulas também é obrigatório. Clique em qualquer módulo acima pra rever a integração quando precisar.</p>
           </div>
         </div>` : `
         <div class="onb-module onb-congrats">
@@ -888,7 +899,36 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
 
     if(!onbVideoUnlocked && onbMaxWatchedPct >= ONB_PASS_THRESHOLD){
       onbVideoUnlocked = true;
-      revealQuiz(mod);
+      if(mod.temQuiz){
+        revealQuiz(mod);
+      } else {
+        concluirModuloSemPergunta(mod);
+      }
+    }
+  }
+
+  // Aula sem pergunta: assistir até o fim é o que conclui. Quem marca
+  // isso é o servidor (progress/update.php), então aqui só garantimos o
+  // envio dos 100% e recarregamos a trilha pra liberar o próximo módulo.
+  async function concluirModuloSemPergunta(mod){
+    const caixa = document.getElementById(`quiz-box-${mod.id}`);
+    try {
+      await apiPost('api/progress/update.php', { course_id: mod.id, watched_pct: 100 });
+      if(!onbProgress.completed.includes(mod.id)){
+        onbProgress.completed.push(mod.id);
+        saveOnboardingProgress(onbProgress);
+      }
+      if(caixa){
+        caixa.hidden = false;
+        caixa.innerHTML = '<div class="quiz-feedback ok"><i class="fa-solid fa-check" aria-hidden="true"></i> Módulo concluído. Próxima etapa liberada.</div>';
+      }
+      renderProgressPanel();
+      setTimeout(renderOnboarding, 900);
+    } catch(e){
+      if(caixa){
+        caixa.hidden = false;
+        caixa.innerHTML = `<div class="quiz-feedback bad"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> ${e.message}</div>`;
+      }
     }
   }
 
@@ -1024,6 +1064,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       desc: c.description || '',
       minutes: c.duration_minutes,
       youtubeId: c.youtube_id,
+      temQuiz: !!c.tem_quiz,
       questions: [], // preenchido ao abrir o módulo (vem do detail.php)
     }));
 
