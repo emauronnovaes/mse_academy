@@ -345,6 +345,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   let onbPlayer = null;
   let onbMaxWatchedPct = 0;
   let onbVideoUnlocked = false; // true quando >=95% assistido (libera a pergunta)
+  let onbYtTimer = null; // consulta a posição do player do YouTube (ele não avisa sozinho)
 
   function onbCurrentIndex(){
     // primeiro módulo ainda não concluído
@@ -715,6 +716,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     onbVideoUnlocked = false;
     onbMaxWatchedPct = 0;
     ultimoPctEnviado = -1; // senão o módulo seguinte herdaria o % do anterior
+    clearInterval(onbYtTimer); // sem isso o módulo anterior continuaria contando
 
     body.innerHTML = '<div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Carregando o vídeo...</div>';
 
@@ -735,10 +737,52 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     // vem nula e o id do vídeo é usado no lugar.
     const videoSrc = detalhe.video_url;
     if(!videoSrc){
-      body.innerHTML = detalhe.youtube_id
-        ? `<div class="vid-player-wrap"><iframe id="onb-yt-${mod.id}" src="https://www.youtube-nocookie.com/embed/${detalhe.youtube_id}?rel=0" title="${mod.title}" allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowfullscreen style="width:100%;aspect-ratio:16/9;border:0;border-radius:12px"></iframe></div><div class="quiz-box" id="quiz-box-${mod.id}" hidden></div>`
-        : `<div class="vid-hint"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> Este módulo ainda não tem vídeo cadastrado.</div>`;
-      if(detalhe.youtube_id) revealQuiz(mod); // sem <video> não há como medir o quanto foi assistido
+      if(!detalhe.youtube_id){
+        body.innerHTML = '<div class="vid-hint"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> Este módulo ainda não tem vídeo cadastrado.</div>';
+        return;
+      }
+
+      // Aula por link do YouTube tem a MESMA trava do vídeo enviado: sem
+      // controles e sem teclado, então não dá pra arrastar a barra até o
+      // fim pra liberar a pergunta. Antes a pergunta abria de imediato
+      // aqui, porque o <iframe> sozinho não informa o quanto foi visto —
+      // a API do player resolve isso.
+      body.innerHTML = isRewatch
+        ? `
+          <div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Modo revisão — pode avançar a barra à vontade.</div>
+          <div class="vid-player-wrap"><div id="onb-yt-${mod.id}"></div></div>
+        `
+        : `
+          <div class="vid-hint"><i class="fa-solid fa-lock" aria-hidden="true"></i> Assista até o fim para liberar a pergunta. Não é possível avançar a barra.</div>
+          <div class="vid-player-wrap"><div id="onb-yt-${mod.id}"></div></div>
+          <div class="vid-watch-bar"><div class="vid-watch-fill" id="vid-watch-fill-${mod.id}"></div></div>
+          <div class="quiz-box" id="quiz-box-${mod.id}" hidden></div>
+        `;
+
+      loadYouTubeApi().then(() => {
+        const player = new YT.Player(`onb-yt-${mod.id}`, {
+          videoId: detalhe.youtube_id,
+          playerVars: isRewatch
+            ? { rel: 0, modestbranding: 1 }
+            : { controls: 0, disablekb: 1, rel: 0, modestbranding: 1, fs: 0 },
+          events: {
+            onStateChange: (e) => {
+              if(e.data === YT.PlayerState.ENDED) onbSetWatchPct(mod, 1);
+            }
+          }
+        });
+        onbPlayer = player;
+        if(isRewatch) return;
+
+        // O player do YouTube não dispara "timeupdate" como o <video>,
+        // então a posição é consultada de segundo em segundo.
+        clearInterval(onbYtTimer);
+        onbYtTimer = setInterval(() => {
+          if(typeof player.getDuration !== 'function') return;
+          const total = player.getDuration();
+          if(total > 0) onbSetWatchPct(mod, player.getCurrentTime() / total);
+        }, 1000);
+      });
       return;
     }
 
