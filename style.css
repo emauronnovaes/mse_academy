@@ -1077,6 +1077,11 @@
   }
   .vid-play-btn:hover{ background:rgba(0,0,0,0.7); transform:translate(-50%,-50%) scale(1.05); }
   .vid-play-btn.is-hidden{ opacity:0; pointer-events:none; }
+  .admin-field-hint{
+    font-size:12px; color:var(--steel); line-height:1.45; margin:4px 0 10px;
+  }
+  .admin-field-hint strong{ color:var(--ink); }
+
   .onb-node-opcional{
     display:block; margin-top:2px;
     font-size:10px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase;

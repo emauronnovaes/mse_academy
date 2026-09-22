@@ -11,7 +11,7 @@
      Sem ele, o Chrome reaproveita o arquivo que já tem e a pessoa
      recarrega a página sem ver mudança nenhuma. AO SUBIR UMA ALTERAÇÃO
      EM style.css OU script.js, TROQUE A DATA ABAIXO (nos dois). -->
-<link rel="stylesheet" href="style.css?v=20260922i">
+<link rel="stylesheet" href="style.css?v=20260922j">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -103,6 +103,7 @@
     <select id="videoModalOrigem">
       <option value="youtube">Link do YouTube (mais rápido, não precisa baixar)</option>
       <option value="s3">Enviar um arquivo (.mp4, .webm ou .mov)</option>
+      <option value="playlist">Playlist do YouTube (conteúdo extra, opcional)</option>
     </select>
 
     <div id="videoModalYoutubeWrap">
@@ -113,6 +114,18 @@
     <div id="videoModalArquivoWrap" hidden>
       <label class="admin-field-label">Arquivo de vídeo (.mp4, .webm ou .mov)</label>
       <input type="file" id="videoModalArquivo" accept=".mp4,.webm,.mov">
+    </div>
+
+    <div id="videoModalPlaylistWrap" hidden>
+      <label class="admin-field-label">Link da playlist do YouTube</label>
+      <input type="text" id="videoModalPlaylistUrl" placeholder="Ex: https://youtube.com/playlist?list=PLxxxxxxxx">
+      <p class="admin-field-hint">A playlist entra como conteúdo extra: aparece na trilha marcada como <strong>opcional</strong> e não trava o avanço. A Academy não registra o que foi assistido dentro dela.</p>
+    </div>
+
+    <div id="videoModalSorteioWrap">
+      <label class="admin-field-label">Grupo de sorteio (opcional)</label>
+      <input type="text" id="videoModalSorteio" placeholder="Ex: boas-vindas — deixe em branco se todos devem ver esta aula">
+      <p class="admin-field-hint">Aulas com o <strong>mesmo</strong> grupo são alternativas entre si: cada pessoa recebe uma delas por sorteio e nunca vê as outras. Em branco, todo mundo vê esta aula.</p>
     </div>
 
     <div class="admin-quiz-fields">
@@ -548,7 +561,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20260922i"></script>
+<script src="script.js?v=20260922j"></script>
 
 </body>
 </html>

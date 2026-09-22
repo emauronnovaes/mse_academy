@@ -2188,6 +2188,20 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     const origem = document.getElementById('videoModalOrigem').value;
     document.getElementById('videoModalYoutubeWrap').hidden = origem !== 'youtube';
     document.getElementById('videoModalArquivoWrap').hidden = origem !== 's3';
+    document.getElementById('videoModalPlaylistWrap').hidden = origem !== 'playlist';
+    // Sortear entre playlists não faz sentido: elas são conteúdo extra,
+    // não alternativas de uma mesma aula obrigatória.
+    document.getElementById('videoModalSorteioWrap').hidden = origem === 'playlist';
+  }
+
+  // O id da playlist é o trecho depois de "list=". É mais longo e
+  // variável que o de vídeo (começa com PL, UU, OL...), por isso não
+  // serve a mesma regra de 11 caracteres.
+  function extrairPlaylistId(entrada){
+    entrada = (entrada || '').trim();
+    if(/^[A-Za-z0-9_-]{12,64}$/.test(entrada)) return entrada; // já é só o id
+    const m = entrada.match(/[?&]list=([A-Za-z0-9_-]{12,64})/);
+    return m ? m[1] : null;
   }
 
   // Aceita tanto o link inteiro do YouTube (várias formas: youtube.com/watch?v=,
@@ -2225,6 +2239,8 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
     const origem = document.getElementById('videoModalOrigem').value;
     const arquivo = origem === 's3' ? document.getElementById('videoModalArquivo').files[0] : null;
     const youtubeEntrada = document.getElementById('videoModalYoutubeUrl').value.trim();
+    const playlistEntrada = document.getElementById('videoModalPlaylistUrl').value.trim();
+    const grupoSorteio = document.getElementById('videoModalSorteio').value.trim();
     const pergunta = document.getElementById('videoModalPergunta').value.trim();
     const feedback = document.getElementById('videoModalFeedback');
     const submitBtn = document.getElementById('videoModalSubmit');
@@ -2260,6 +2276,15 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
         return;
       }
     }
+    if(origem === 'playlist'){
+      youtubeId = extrairPlaylistId(playlistEntrada);
+      if(!youtubeId){
+        feedback.hidden = false;
+        feedback.className = 'admin-modal-feedback erro';
+        feedback.textContent = 'Não consegui identificar a playlist nesse link. Cola o link completo (ex: https://youtube.com/playlist?list=PL...) ou só o código depois de "list=".';
+        return;
+      }
+    }
 
     submitBtn.disabled = true;
     feedback.hidden = true;
@@ -2276,6 +2301,13 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
       if(origem === 'youtube'){
         body.video_source = 'youtube';
         body.youtube_id = youtubeId;
+      }
+      if(origem === 'playlist'){
+        body.video_source = 'playlist';
+        body.youtube_id = youtubeId; // aqui é o id da playlist, não de um vídeo
+      }
+      if(grupoSorteio && origem !== 'playlist'){
+        body.grupo_sorteio = grupoSorteio;
       }
 
       if(pergunta){
