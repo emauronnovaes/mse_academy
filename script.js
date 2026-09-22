@@ -1131,6 +1131,45 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
   // YouTube, entao nenhum deles era conteudo real.
   let courses = [];
 
+  // O carrossel e a busca mostravam exemplos escritos à mão ("Como
+  // solicitar férias", "Ex: férias, contracheque..."), que envelheciam
+  // sozinhos: citavam aulas que podiam nem existir mais. Agora saem do
+  // próprio catálogo, sorteados a cada carregamento da página — assim a
+  // pessoa vê sugestões que existem de verdade e vão mudando.
+  function sortear(lista, quantos){
+    const copia = lista.slice();
+    for(let i = copia.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [copia[i], copia[j]] = [copia[j], copia[i]];
+    }
+    return copia.slice(0, quantos);
+  }
+
+  function atualizarDestaquesComCursosReais(){
+    if(!courses.length) return;
+
+    // Carrossel: mantém as imagens que já existiam e troca só os textos.
+    const escolhidos = sortear(courses, slides.length);
+    escolhidos.forEach((curso, i) => {
+      if(!slides[i]) return;
+      slides[i].title = curso.title;
+      slides[i].lead = curso.label
+        ? `Tutorial da área <b>${curso.label}</b>. ${curso.desc || ''}`.trim()
+        : (curso.desc || '');
+    });
+    renderSlideInstant(currentSlide);
+
+    // Busca: sugere títulos que existem de verdade, em vez de exemplos fixos.
+    const exemplos = sortear(courses, 3).map(c => c.title);
+    if(exemplos.length){
+      const dica = 'Ex: ' + exemplos.join(', ');
+      ['heroSearch', 'headerSearch'].forEach(id => {
+        const campo = document.getElementById(id);
+        if(campo) campo.placeholder = dica;
+      });
+    }
+  }
+
   // Traduz o formato da API pro formato que o resto da tela já esperava,
   // pra não precisar reescrever gamificação, favoritos, busca e painel
   // de progresso — que juntos usam essas listas em mais de 30 lugares.
@@ -1167,6 +1206,7 @@ const IMG_SLIDE_5 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgF
 
     await carregarProgressoServidor();
     conteudoCarregado = true;
+    atualizarDestaquesComCursosReais();
   }
 
   // O progresso agora mora no banco (vale em qualquer navegador, e é o

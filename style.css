@@ -621,8 +621,15 @@
     border:1px solid var(--line); border-radius:8px; background:#fff;
     padding:26px 22px; transition:transform .2s ease, box-shadow .2s ease, border-color .2s ease;
     /* reset — o card agora é um <button>, não um <div> decorativo */
-    text-align:left; width:100%; font:inherit; color:inherit; cursor:pointer; display:block;
+    text-align:left; width:100%; font:inherit; color:inherit; cursor:pointer;
+    /* Botão centraliza o conteúdo verticalmente por padrão. Como o card
+       estica até a altura da linha do grid, o ícone subia ou descia
+       conforme o tamanho da descrição — ficava desalinhado entre cartões
+       vizinhos. Com flex-start todos começam na mesma altura. */
+    display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-start;
   }
+  /* O ícone não pode encolher quando a descrição é longa. */
+  .area-card .area-icon{ flex-shrink:0; }
   .area-card:hover{
     transform:translateY(-3px); border-color:var(--red);
     box-shadow:0 14px 28px rgba(28,27,26,0.07);
