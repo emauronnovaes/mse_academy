@@ -44,7 +44,11 @@ $validarChave = static function (string $key): string {
     return $key;
 };
 
-$bucket = trim(mse_env('AWS_S3_BUCKET'));
+// Via mse_aws_bucket(), não lendo a variável direto: o .env do servidor
+// usa AWS_BUCKET_NAME (nome do AWS CLI) em vez de AWS_S3_BUCKET, e é
+// essa função que sabe aceitar os dois. Lendo direto, o upload acusava
+// "não configurado no .env" enquanto todo o resto da AWS funcionava.
+$bucket = mse_aws_bucket();
 if ($bucket === '') {
     mse_error('AWS_S3_BUCKET não configurado no .env', 500);
 }
