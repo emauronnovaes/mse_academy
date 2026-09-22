@@ -20,3 +20,24 @@ RedirectMatch 404 ^/scripts/
     Header set Cache-Control "no-cache, must-revalidate"
   </FilesMatch>
 </IfModule>
+
+# O servidor já comprimia o HTML, mas não o CSS nem o JS — medido: 450 KB
+# saindo sem compressão, quando dariam 239 KB. Compressão de texto é o
+# ganho mais barato que existe: nada muda no arquivo, só no transporte.
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/css text/xml
+  AddOutputFilterByType DEFLATE application/javascript application/x-javascript text/javascript
+  AddOutputFilterByType DEFLATE application/json image/svg+xml
+</IfModule>
+
+# Imagens, vídeos e fontes não mudam depois de publicados (o nome do
+# arquivo muda quando o conteúdo muda), então podem ficar guardados por
+# bastante tempo — evita rebaixar os mesmos MB a cada visita.
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType image/jpeg "access plus 1 year"
+  ExpiresByType image/png  "access plus 1 year"
+  ExpiresByType image/webp "access plus 1 year"
+  ExpiresByType font/woff2 "access plus 1 year"
+  ExpiresByType video/mp4  "access plus 1 month"
+</IfModule>
