@@ -52,7 +52,11 @@ $areaSlug = isset($payload['area_slug']) && trim((string) $payload['area_slug'])
 // Enriquecimento opcional. Falhas externas nunca bloqueiam autenticação.
 $ficha = null;
 try {
-    $ficha = mse_portal_ficha_buscar($nome);
+    // CPF primeiro: é único, o nome não. Buscar por nome pode trazer a
+    // ficha de outra pessoa quando há homônimos, e aí a Academy gravaria
+    // cargo e setor errados — sem ninguém perceber, porque o login
+    // funciona normalmente. Só cai pro nome quando não há CPF.
+    $ficha = mse_portal_ficha_buscar($cpf ?: $nome);
 } catch (Throwable $e) {
     error_log('[sso.php] Enriquecimento via ficha falhou (ignorado): ' . $e->getMessage());
 }

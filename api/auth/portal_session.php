@@ -43,6 +43,9 @@ $areaId = null;
 if ($sessao['nome']) {
     $ficha = null;
     try {
+        // Por nome porque a sessão do Portal só traz nome e e-mail — não
+        // há CPF aqui pra usar, que seria mais preciso (ver sso.php).
+        // Com homônimos, isso pode trazer a ficha de outra pessoa.
         $ficha = mse_portal_ficha_buscar($sessao['nome']);
     } catch (Throwable $e) {
         error_log('[portal_session.php] Enriquecimento via ficha falhou (ignorado): ' . $e->getMessage());
