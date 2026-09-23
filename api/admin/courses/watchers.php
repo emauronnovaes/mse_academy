@@ -38,6 +38,12 @@ if ($courseId) {
         $where[] = 'ua.slug = :area';
         $params[':area'] = $areaFiltro;
     }
+    // Mesmo filtro do relatório de acessos: quem está oculto não aparece
+    // aqui também, senão a pessoa sumiria de uma lista e não da outra.
+    if ($pdo->query("SHOW COLUMNS FROM users LIKE 'oculto_em_relatorios'")->fetch() !== false) {
+        $where[] = 'u.oculto_em_relatorios = 0';
+    }
+
     $whereSql = implode(' AND ', $where);
 
     $stmt = $pdo->prepare(

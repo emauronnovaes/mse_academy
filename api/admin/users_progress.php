@@ -36,6 +36,15 @@ if ($areaFiltro !== '') {
     $where[] = 'a.slug = :area';
     $params[':area'] = $areaFiltro;
 }
+// Quem foi marcado como oculto some das listas de acompanhamento. A
+// conta segue ativa e o progresso segue sendo registrado — é só pra
+// tirar da vista quem não é público do treinamento (contas de teste,
+// TI, os próprios admins). Condicionado à existência da coluna porque a
+// migração 018 pode ainda não ter rodado no servidor.
+if ($pdo->query("SHOW COLUMNS FROM users LIKE 'oculto_em_relatorios'")->fetch() !== false) {
+    $where[] = 'u.oculto_em_relatorios = 0';
+}
+
 $whereSql = implode(' AND ', $where);
 
 $stmt = $pdo->prepare(
