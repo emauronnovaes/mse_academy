@@ -5,9 +5,11 @@ require_once __DIR__ . '/../../../src/Cors.php';
 require_once __DIR__ . '/../../../src/Response.php';
 require_once __DIR__ . '/../../../src/Auth.php';
 require_once __DIR__ . '/../../../src/AwsS3.php';
+require_once __DIR__ . '/../../../src/Progress.php';       // mse_normalize_text()
+require_once __DIR__ . '/../../../src/PortalFichaApi.php'; // ficha funcional (cargo/setor)
 
 mse_cors();
-mse_require_admin();
+$user = mse_require_admin();
 
 /**
  * Diz o que o servidor está enxergando da configuração da AWS, sem
@@ -76,7 +78,55 @@ if ($relatorio['AWS_ACCESS_KEY_ID']['preenchida']
     }
 }
 
+// ------------------------------------------------------------
+// API de ficha funcional (cargo e setor do RH)
+// ------------------------------------------------------------
+// Mesma ideia do bloco da AWS: sem ver o que o servidor enxerga, a
+// investigação vira tentativa e erro. O token nunca é devolvido — só
+// o tamanho e se ainda é o texto de exemplo do .env.example.
+$pdo = mse_db();
+$fichaToken = trim(mse_env('PORTAL_FICHA_API_TOKEN'));
+$ficha = [
+    'base' => trim(mse_env('PORTAL_FICHA_API_BASE')),
+    'token_preenchido' => $fichaToken !== '',
+    'token_tamanho' => strlen($fichaToken),
+    'token_e_exemplo' => $fichaToken !== '' && mse_str_contains(mse_normalize_text($fichaToken), 'troque'),
+    'curl_disponivel' => function_exists('curl_init'),
+];
+
+// Só testa de verdade quando o token parece real — chamar com o texto
+// de exemplo só geraria um 401 previsível.
+if ($fichaToken !== '' && !$ficha['token_e_exemplo'] && function_exists('curl_init')) {
+    $usuario = $pdo->query('SELECT name, cpf FROM users WHERE id = ' . (int) $user['id'])->fetch();
+    $termo = !empty($usuario['cpf']) ? $usuario['cpf'] : (string) ($usuario['name'] ?? '');
+    $ficha['testado_com'] = !empty($usuario['cpf']) ? 'CPF' : 'nome';
+    try {
+        $r = mse_portal_ficha_buscar($termo);
+        $ficha['encontrou'] = $r !== null;
+        // Devolve só se os campos vieram, nunca o conteúdo — é dado
+        // pessoal de RH.
+        $ficha['trouxe_cargo'] = $r !== null && !empty($r['funcao']);
+        $ficha['trouxe_setor'] = $r !== null && !empty($r['obras_departamento']);
+    } catch (Throwable $e) {
+        $ficha['erro'] = substr($e->getMessage(), 0, 200);
+    }
+} else {
+    $ficha['testado_com'] = null;
+    $ficha['motivo_nao_testado'] = $fichaToken === ''
+        ? 'token vazio no .env'
+        : ($ficha['token_e_exemplo'] ? 'token ainda é o texto de exemplo' : 'extensão curl ausente');
+}
+
+// O que já está gravado do usuário logado — se a API funciona mas isto
+// continua vazio, o problema é outro (ex: o nome não achou ficha).
+$meu = $pdo->query('SELECT cargo, area_id FROM users WHERE id = ' . (int) $user['id'])->fetch();
+$ficha['meu_cargo_no_banco'] = $meu['cargo'] ?: null;
+$ficha['minha_area_no_banco'] = $meu['area_id']
+    ? $pdo->query('SELECT name FROM areas WHERE id = ' . (int) $meu['area_id'])->fetchColumn()
+    : null;
+
 mse_json([
+    'ficha_funcional' => $ficha,
     'arquivo_env' => [
         'caminho_esperado' => $envPath ?: 'NÃO ENCONTRADO',
         'existe' => $envPath !== false,
