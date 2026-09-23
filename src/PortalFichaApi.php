@@ -76,6 +76,43 @@ function mse_area_id_por_setor(PDO $pdo, ?string $setor): ?int
 }
 
 /**
+ * Deduz a área a partir do CARGO, usando o mapeamento que o admin
+ * cadastra (tabela cargo_areas, migração 017).
+ *
+ * Usado só quando nem o RH nem o token do Portal informaram o setor.
+ * Ex: cargo "Analista de Segurança do Trabalho Jr" contém a palavra
+ * "seguranca do trabalho", então a pessoa é dessa área.
+ *
+ * Casa pela palavra MAIS LONGA primeiro: se existirem "seguranca" e
+ * "seguranca do trabalho" cadastradas, a mais específica ganha — senão
+ * a ordem no banco decidiria, o que daria resultado imprevisível.
+ */
+function mse_area_id_por_cargo(PDO $pdo, ?string $cargo): ?int
+{
+    $cargo = trim((string) $cargo);
+    if ($cargo === '') {
+        return null;
+    }
+    if ($pdo->query("SHOW TABLES LIKE 'cargo_areas'")->fetch() === false) {
+        return null; // migração 017 ainda não rodou neste servidor
+    }
+
+    $alvo = mse_normalize_text($cargo);
+    if ($alvo === '') {
+        return null;
+    }
+
+    $stmt = $pdo->query('SELECT palavra, area_id FROM cargo_areas ORDER BY CHAR_LENGTH(palavra) DESC');
+    foreach ($stmt->fetchAll() as $linha) {
+        $palavra = mse_normalize_text((string) $linha['palavra']);
+        if ($palavra !== '' && mse_str_contains($alvo, $palavra)) {
+            return (int) $linha['area_id'];
+        }
+    }
+    return null;
+}
+
+/**
  * Busca a ficha funcional pelo nome (ou CPF). Devolve o PRIMEIRO
  * resultado encontrado, ou null se não achar nada ou a API falhar —
  * uma falha aqui NUNCA deve impedir o login (é só um enriquecimento

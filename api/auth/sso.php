@@ -107,6 +107,13 @@ if ($ficha !== null && !empty($ficha['obras_departamento'])) {
     }
 }
 
+// Última tentativa: deduzir pelo cargo. Só entra quando nem o RH nem o
+// token informaram o setor — é o caso mais comum, já que o cargo chega
+// com muito mais frequência que o departamento.
+if ($areaId === null) {
+    $areaId = mse_area_id_por_cargo($pdo, $cargo);
+}
+
 $stmt = $pdo->prepare(
     "INSERT INTO users (name, first_name, email, cpf, cargo, area_id, role, provisioned_via)
      VALUES (?, ?, ?, ?, ?, ?, 'colaborador', 'sso')

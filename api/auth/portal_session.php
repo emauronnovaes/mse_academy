@@ -62,6 +62,11 @@ if ($sessao['nome']) {
     }
 }
 
+// Sem setor informado, deduz pelo cargo (mapeamento que o admin mantém).
+if ($areaId === null) {
+    $areaId = mse_area_id_por_cargo($pdo, $cargo);
+}
+
 $stmt = $pdo->prepare(
     "INSERT INTO users (name, first_name, email, cpf, cargo, area_id, role, provisioned_via)
      VALUES (?, ?, ?, ?, ?, ?, 'colaborador', 'sso')
