@@ -1149,6 +1149,26 @@
     position:absolute; left:0; right:0; bottom:0; height:5px; background:rgba(255,255,255,0.15); z-index:3;
   }
   .vid-watch-fill{height:100%; width:0%; background:var(--red); transition:width .3s linear;}
+
+  /* Na primeira vez a barra aceita clique, mas só no trecho já assistido —
+     por isso ela cresce um pouco no hover: é pra ficar claro que dá pra
+     clicar. Clique adiante do preenchido não leva a lugar nenhum e pisca
+     em branco, senão a pessoa fica tentando de novo achando que falhou. */
+  .vid-watch-bar.is-clicavel{
+    height:8px; cursor:pointer;
+    transition:height .15s ease, background-color .2s ease;
+  }
+  .vid-watch-bar.is-clicavel:hover{ height:12px; }
+  .vid-watch-bar.is-negado{ background:rgba(255,255,255,0.5); }
+
+  .vid-voltar-btn{
+    position:absolute; left:12px; bottom:20px; z-index:11;
+    padding:7px 12px; border-radius:100px; cursor:pointer;
+    border:1px solid rgba(255,255,255,0.6); background:rgba(0,0,0,0.55); color:#fff;
+    font-family:inherit; font-size:13px; font-weight:600; line-height:1;
+    transition:background-color .15s ease;
+  }
+  .vid-voltar-btn:hover{ background:rgba(0,0,0,0.78); }
   .vid-hint{
     display:flex; align-items:center; gap:8px;
     font-size:13px; color:var(--steel); margin-bottom:4px;

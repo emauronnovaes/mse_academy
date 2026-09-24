@@ -11,31 +11,20 @@ const IMG_SLIDE_4 = "img/slide-4.jpg";
 const IMG_SLIDE_5 = "img/slide-5.jpg";
 
 // ---------- Carrossel do hero ----------
+  // As imagens são decoração e continuam fixas; os textos vêm do catálogo.
+  const IMAGENS_DO_CARROSSEL = [IMG_SLIDE_1, IMG_SLIDE_2, IMG_SLIDE_3, IMG_SLIDE_4, IMG_SLIDE_5];
+
+  // Slide de abertura: é o que fica no ar no instante entre a página abrir e
+  // o catálogo chegar da API. Não anuncia curso nenhum de propósito — antes
+  // havia cinco aulas de exemplo escritas aqui, e quem tivesse menos de cinco
+  // cursos cadastrados ficava com os que sobravam anunciando aula que não
+  // existe. Se o catálogo vier vazio ou a API falhar, este slide é o que
+  // continua: não tem como voltar a aparecer nome inventado.
   const slides = [
     {
       img: IMG_SLIDE_1,
-      title: 'Como solicitar férias pelo Portal MSE',
-      lead: 'Tutorial da série <b>RH & Pessoal</b>. Veja como abrir o pedido e acompanhar a aprovação.'
-    },
-    {
-      img: IMG_SLIDE_2,
-      title: 'Como emitir seu contracheque',
-      lead: 'Tutorial da série <b>Financeiro</b>. Passo a passo para baixar holerite e declarações.'
-    },
-    {
-      img: IMG_SLIDE_3,
-      title: 'Recuperando o acesso ao portal',
-      lead: 'Tutorial da série <b>Sistemas & Acessos</b>. O que fazer quando esquecer a senha.'
-    },
-    {
-      img: IMG_SLIDE_4,
-      title: 'Preenchendo o RDO da obra',
-      lead: 'Tutorial da série <b>Processos de Obra</b>. Como registrar o relatório diário corretamente.'
-    },
-    {
-      img: IMG_SLIDE_5,
-      title: 'Central de Ajuda: por onde começar',
-      lead: 'Um panorama rápido de tudo que você encontra na MSE Academy.'
+      title: 'MSE Academy',
+      lead: 'Os treinamentos da MSE em um lugar só.'
     }
   ];
 
@@ -85,17 +74,26 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   const dotsWrap = document.getElementById('slideDots');
   const heroSection = document.querySelector('.hero');
 
-  slideTotal.textContent = slides.length;
+  // As bolinhas são redesenhadas quando o catálogo chega: a quantidade de
+  // slides passa a ser a de cursos que existem, então não dá pra montá-las
+  // uma vez só no começo.
+  function montarBolinhas(){
+    dotsWrap.innerHTML = '';
+    slideTotal.textContent = slides.length;
+    slides.forEach((_, i) => {
+      const dot = document.createElement('button');
+      dot.setAttribute('role', 'tab');
+      dot.setAttribute('aria-label', `Ir para o slide ${i + 1}`);
+      dot.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
+      if (i === 0) dot.classList.add('active');
+      dot.addEventListener('click', () => goToSlide(i));
+      dotsWrap.appendChild(dot);
+    });
+    // Uma bolinha sozinha não navega pra lugar nenhum.
+    dotsWrap.hidden = slides.length < 2;
+  }
 
-  slides.forEach((_, i) => {
-    const dot = document.createElement('button');
-    dot.setAttribute('role', 'tab');
-    dot.setAttribute('aria-label', `Ir para o slide ${i + 1}`);
-    dot.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
-    if (i === 0) dot.classList.add('active');
-    dot.addEventListener('click', () => goToSlide(i));
-    dotsWrap.appendChild(dot);
-  });
+  montarBolinhas();
 
   function renderSlide(index){
     const s = slides[index];
@@ -889,7 +887,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             <button type="button" class="vid-fullscreen-btn" data-alvo="onb-wrap-${mod.id}" aria-label="Tela cheia">
               <i class="fa-solid fa-display" aria-hidden="true"></i>
             </button>
-            <div class="vid-watch-bar"><div class="vid-watch-fill" id="vid-watch-fill-${mod.id}"></div></div>
+            ${marcacaoControlesDeRevisao(mod.id)}
           </div>
           <div class="quiz-box" id="quiz-box-${mod.id}" hidden></div>
         `;
@@ -916,25 +914,31 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         ligarBotaoTelaCheia(body);
         if(isRewatch) return;
 
-        // O player do YouTube não dispara "timeupdate" como o <video>,
-        // então a posição é consultada de segundo em segundo.
+        const trava = criarTravaDeAvanco(false);
+        ligarControlesDeRevisao(
+          body,
+          trava,
+          (seg) => player.seekTo(seg, true),
+          () => (typeof player.getCurrentTime === 'function' ? player.getCurrentTime() : 0)
+        );
+
+        // O player do YouTube não dispara "timeupdate" como o <video> e não
+        // avisa quando a posição muda, então a posição é consultada de meio
+        // em meio segundo. Como aqui não há barra do YouTube pra arrastar
+        // (controls:0 e fs:0), isto é rede de segurança — pega atalho de
+        // teclado ou qualquer outro caminho que escape.
         clearInterval(onbYtTimer);
         onbYtTimer = setInterval(() => {
           if(typeof player.getDuration !== 'function') return;
           const total = player.getDuration();
           if(total <= 0) return;
           registrarDuracao(mod.id, total);
+          trava.definirDuracao(total);
 
-          // Mesma trava do vídeo enviado: em tela cheia o YouTube mostra
-          // a própria barra, e sem isso dava pra arrastar até o fim.
-          const atual = player.getCurrentTime();
-          const limite = onbMaxWatchedPct * total + 2; // 2s de folga (a consulta é de 1 em 1s)
-          if(atual > limite){
-            player.seekTo(limite, true);
-            return;
-          }
-          onbSetWatchPct(mod, atual / total);
-        }, 1000);
+          const voltarPara = trava.conferir(player.getCurrentTime());
+          if(voltarPara !== null) player.seekTo(voltarPara, true);
+          onbSetWatchPct(mod, trava.pct);
+        }, 500);
       });
       return;
     }
@@ -956,7 +960,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
             <i class="fa-solid fa-display" aria-hidden="true"></i>
           </button>
-          <div class="vid-watch-bar"><div class="vid-watch-fill" id="vid-watch-fill-${mod.id}"></div></div>
+          ${marcacaoControlesDeRevisao(mod.id)}
         </div>
         <div class="quiz-box" id="quiz-box-${mod.id}" hidden></div>
       `;
@@ -969,16 +973,29 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       return; // controles nativos cuidam de tudo — não precisa rastrear progresso
     }
 
+    const trava = criarTravaDeAvanco(false);
+    ligarControlesDeRevisao(
+      body,
+      trava,
+      (seg) => { videoEl.currentTime = seg; },
+      () => videoEl.currentTime
+    );
+
     // Esconder os controles não basta pra travar o avanço: em tela cheia
     // o navegador mostra os próprios controles, e aí dava pra arrastar a
-    // barra e pular o vídeo. Aqui a regra é aplicada no relógio do vídeo,
-    // então vale de qualquer jeito que a pessoa tente adiantar. Voltar
-    // continua liberado — o limite é só pra frente.
-    videoEl.addEventListener('seeking', () => {
-      if(!videoEl.duration) return;
-      const limite = onbMaxWatchedPct * videoEl.duration + 1; // 1s de folga
-      if(videoEl.currentTime > limite) videoEl.currentTime = limite;
-    });
+    // barra e pular o vídeo. A regra é aplicada na posição do vídeo, então
+    // vale por qualquer caminho que a pessoa tente. Voltar continua
+    // liberado — o limite é só pra frente.
+    const travarBusca = () => {
+      trava.definirDuracao(videoEl.duration);
+      const voltarPara = trava.aoBuscar(videoEl.currentTime);
+      if(voltarPara !== null) videoEl.currentTime = voltarPara;
+    };
+    // "seeking" avisa quando o salto começa; "seeked", quando termina. Os
+    // dois porque nem todo navegador aceita corrigir a posição já no
+    // primeiro — sem o segundo, o salto passava batido em alguns.
+    videoEl.addEventListener('seeking', travarBusca);
+    videoEl.addEventListener('seeked', travarBusca);
 
     // Sem controles nativos nesse modo (trava avançar a barra) — um botão
     // de play próprio, e a barra de progresso é só visual (não clicável),
@@ -993,10 +1010,18 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     });
     videoEl.addEventListener('play', () => playBtn.classList.add('is-hidden'));
     // O <video> só conhece a duração depois de ler os metadados.
-    videoEl.addEventListener('loadedmetadata', () => registrarDuracao(mod.id, videoEl.duration));
+    videoEl.addEventListener('loadedmetadata', () => {
+      registrarDuracao(mod.id, videoEl.duration);
+      trava.definirDuracao(videoEl.duration);
+    });
     videoEl.addEventListener('timeupdate', () => {
       if(!videoEl.duration) return;
-      onbSetWatchPct(mod, videoEl.currentTime / videoEl.duration);
+      trava.definirDuracao(videoEl.duration);
+      // O progresso vem da trava, não da posição do vídeo: era daí que
+      // saía o furo — a posição sobe com o arrasto, o limite não.
+      const voltarPara = trava.conferir(videoEl.currentTime);
+      if(voltarPara !== null) videoEl.currentTime = voltarPara;
+      onbSetWatchPct(mod, trava.pct);
     });
     videoEl.addEventListener('ended', () => onbSetWatchPct(mod, 1));
   }
@@ -1022,6 +1047,137 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // Tela cheia na moldura inteira (e não só no <video>): assim a barra
   // de quanto foi assistido continua visível, e no caso do YouTube o
   // iframe vai junto.
+  // ================================================================
+  // ---------- Trava de avanço do vídeo ----------
+  // ================================================================
+  // Na primeira vez, a pessoa só anda pra frente assistindo: voltar é
+  // livre, adiantar não. Depois de 99% assistido o vídeo conta como visto
+  // e a barra libera de vez.
+  //
+  // A versão anterior tinha um furo que se explicava sozinho: o "já vi até
+  // aqui" era alimentado com a posição atual do vídeo, fosse ela qual
+  // fosse. Arrastar a barra pra frente subia justamente o número que
+  // deveria barrar o arrasto — a trava autorizava o pulo que ela existia
+  // pra impedir. Por isso dava pra pular nos dois players.
+  //
+  // Aqui o limite só sobe quando o tempo anda sozinho, no ritmo de quem
+  // está assistindo. A referência é o relógio de parede: durante a
+  // reprodução o vídeo avança mais ou menos o mesmo tanto que o tempo real;
+  // um pulo avança minutos em milissegundos. Comparar com o relógio (em vez
+  // de usar um limite fixo em segundos) é o que faz a trava sobreviver a
+  // travadas de buffer e à aba em segundo plano, onde a amostragem atrasa e
+  // um avanço legítimo pareceria salto.
+  const TRAVA_PASSO_MIN = 1.0;   // s — folga mínima, pra amostras muito juntas
+  const TRAVA_PCT_LIVRE = 0.99;  // assistiu isso, pode avançar à vontade
+
+  function criarTravaDeAvanco(jaLiberado){
+    let maxSeg = 0;        // até onde a pessoa realmente assistiu (segundos)
+    let ultimoTempo = 0;   // última posição observada no vídeo
+    let ultimoRelogio = 0; // performance.now() da última observação
+    let duracao = 0;
+    let livre = !!jaLiberado;
+
+    return {
+      get livre(){ return livre; },
+      get duracaoTotal(){ return duracao; },
+      get maxSegundos(){ return livre && duracao ? duracao : maxSeg; },
+      get pct(){
+        if(duracao <= 0) return 0;
+        return Math.min((livre ? duracao : maxSeg) / duracao, 1);
+      },
+      definirDuracao(d){ if(d > 0 && isFinite(d)) duracao = d; },
+
+      /**
+       * Posição observada durante a reprodução. Devolve o segundo pra onde
+       * o vídeo deve voltar, ou null quando está tudo certo.
+       */
+      conferir(atual){
+        if(livre || duracao <= 0 || !isFinite(atual)) return null;
+
+        const agora = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        const decorrido = ultimoRelogio ? (agora - ultimoRelogio) / 1000 : 0;
+        ultimoRelogio = agora;
+
+        const passo = atual - ultimoTempo;
+        ultimoTempo = atual;
+
+        // Andou junto com o relógio: é reprodução. A margem cobre 1.5x de
+        // velocidade e o atraso normal entre uma amostra e outra.
+        if(passo >= 0 && passo <= Math.max(TRAVA_PASSO_MIN, decorrido * 1.6 + 0.5)){
+          if(atual > maxSeg) maxSeg = atual;
+          if(maxSeg / duracao >= TRAVA_PCT_LIVRE){ maxSeg = duracao; livre = true; }
+          return null;
+        }
+
+        // Voltou, ou está revendo trecho que já assistiu: pode.
+        if(atual <= maxSeg + 0.3) return null;
+
+        ultimoTempo = maxSeg;
+        return maxSeg;
+      },
+
+      /**
+       * Tentativa explícita de mudar de posição — o evento "seeking" do
+       * <video> ou um clique na nossa barra. Aqui não há dúvida nenhuma
+       * sobre a intenção, então nem entra a conta do relógio.
+       */
+      aoBuscar(destino){
+        if(livre || !isFinite(destino)) return null;
+        if(destino <= maxSeg + 0.3){ ultimoTempo = destino; return null; }
+        ultimoTempo = maxSeg;
+        return maxSeg;
+      }
+    };
+  }
+
+  // A barra própria da primeira vez aceita clique, mas só dentro do trecho
+  // já assistido. É o que permite voltar sem abrir a porta pra frente: a
+  // barra nativa (do <video> ou do YouTube) não tem como oferecer uma coisa
+  // sem a outra — ou dá as duas, ou não dá nenhuma.
+  function ligarControlesDeRevisao(escopo, trava, irPara, posicaoAtual){
+    const bar = escopo.querySelector('.vid-watch-bar');
+    if(bar){
+      bar.classList.add('is-clicavel');
+      bar.title = 'Clique para rever um trecho que você já assistiu';
+      bar.addEventListener('click', (e) => {
+        const total = trava.duracaoTotal;
+        if(!total) return;
+        const r = bar.getBoundingClientRect();
+        const alvo = ((e.clientX - r.left) / r.width) * total;
+        const barrado = trava.aoBuscar(alvo);
+        if(barrado !== null){
+          bar.classList.add('is-negado');
+          setTimeout(() => bar.classList.remove('is-negado'), 400);
+          return; // clicou adiante do que assistiu — fica onde está
+        }
+        irPara(Math.max(alvo, 0));
+      });
+    }
+
+    const voltarBtn = escopo.querySelector('.vid-voltar-btn');
+    if(voltarBtn){
+      voltarBtn.addEventListener('click', () => {
+        const destino = Math.max(posicaoAtual() - 10, 0);
+        trava.aoBuscar(destino);
+        irPara(destino);
+      });
+    }
+  }
+
+  function atualizarBarraDeRevisao(id, trava){
+    const fill = document.getElementById(`vid-watch-fill-${id}`);
+    if(fill) fill.style.width = Math.min(trava.pct * 100, 100) + '%';
+  }
+
+  // Marcação dos controles da primeira vez. Só a barra e o "voltar 10s":
+  // avançar não tem botão porque não existe avançar aqui.
+  function marcacaoControlesDeRevisao(id){
+    return `
+      <div class="vid-watch-bar"><div class="vid-watch-fill" id="vid-watch-fill-${id}"></div></div>
+      <button type="button" class="vid-voltar-btn" aria-label="Voltar 10 segundos">&minus;10s</button>
+    `;
+  }
+
   function ligarBotaoTelaCheia(escopo){
     const btn = escopo.querySelector('.vid-fullscreen-btn');
     if(!btn) return;
@@ -1228,17 +1384,28 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   }
 
   function atualizarDestaquesComCursosReais(){
+    // Sem catálogo, fica o slide de abertura. Melhor um slide só e
+    // verdadeiro do que cinco anunciando aula que não existe.
     if(!courses.length) return;
 
-    // Carrossel: mantém as imagens que já existiam e troca só os textos.
-    const escolhidos = sortear(courses, slides.length);
+    // O carrossel passa a ter o tamanho do catálogo, no máximo o número de
+    // imagens disponíveis. Antes eram sempre cinco slides e só os primeiros
+    // recebiam curso real — com três cursos cadastrados, dois slides
+    // seguiam anunciando as aulas de exemplo escritas no código.
+    const escolhidos = sortear(courses, IMAGENS_DO_CARROSSEL.length);
+    slides.length = 0;
     escolhidos.forEach((curso, i) => {
-      if(!slides[i]) return;
-      slides[i].title = curso.title;
-      slides[i].lead = curso.label
-        ? `Tutorial da área <b>${curso.label}</b>. ${curso.desc || ''}`.trim()
-        : (curso.desc || '');
+      slides.push({
+        img: IMAGENS_DO_CARROSSEL[i],
+        title: curso.title,
+        lead: curso.label
+          ? `Tutorial da área <b>${curso.label}</b>. ${curso.desc || ''}`.trim()
+          : (curso.desc || '')
+      });
     });
+
+    montarBolinhas();
+    currentSlide = 0;
     renderSlideInstant(currentSlide);
 
     // Busca: sugere títulos que existem de verdade, em vez de exemplos fixos.
@@ -1893,22 +2060,30 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       // ter concluído, pode pular à vontade — quem volta pra rever um
       // trecho não deveria ter que assistir tudo de novo.
       const jaConcluiu = catalogProgress.completed.includes(course.id);
-      let maxAssistido = jaConcluiu ? 1 : 0;
+      const trava = criarTravaDeAvanco(jaConcluiu);
 
       if(detalhe.video_url){
         wrap.innerHTML = `<video src="${detalhe.video_url}" controls playsinline style="width:100%;border-radius:12px"></video>`;
         const v = wrap.querySelector('video');
-        // Os controles ficam visíveis mesmo travado, pra dar pra VOLTAR.
-        // O que é bloqueado é só avançar além do que já foi visto.
-        v.addEventListener('seeking', () => {
-          if(jaConcluiu || !v.duration) return;
-          const limite = maxAssistido * v.duration + 1; // 1s de folga
-          if(v.currentTime > limite) v.currentTime = limite;
-        });
+
+        // Os controles nativos ficam visíveis mesmo travado, pra dar pra
+        // VOLTAR. O que é bloqueado é só avançar além do que já foi visto —
+        // e aqui dá pra bloquear com precisão porque o <video>, ao
+        // contrário do YouTube, avisa quando alguém mexe na barra.
+        const travarBusca = () => {
+          trava.definirDuracao(v.duration);
+          const voltarPara = trava.aoBuscar(v.currentTime);
+          if(voltarPara !== null) v.currentTime = voltarPara;
+        };
+        v.addEventListener('seeking', travarBusca);
+        v.addEventListener('seeked', travarBusca);
+
         v.addEventListener('timeupdate', () => {
           if(!v.duration) return;
-          maxAssistido = Math.max(maxAssistido, v.currentTime / v.duration);
-          enviarProgresso(course.id, v.currentTime / v.duration);
+          trava.definirDuracao(v.duration);
+          const voltarPara = trava.conferir(v.currentTime);
+          if(voltarPara !== null) v.currentTime = voltarPara;
+          enviarProgresso(course.id, trava.pct);
         });
         v.addEventListener('ended', () => { enviarProgresso(course.id, 1); showBonusQuiz(); });
         return;
@@ -1919,29 +2094,56 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         return;
       }
 
-      // Controles ficam visíveis nos dois casos (pra poder voltar); o que
-      // muda é o bloqueio de adiantar, aplicado só na primeira vez.
+      // Quem já concluiu vê o player do YouTube inteiro e pula à vontade.
+      // Na primeira vez a barra do YouTube não aparece — era por ela que
+      // dava pra adiantar. No lugar entram os controles da Academy: uma
+      // barra que só aceita clique no trecho já assistido e um "voltar
+      // 10s". Voltar continua possível; avançar deixou de existir.
+      //
+      // Por que não deixar a barra do YouTube e só corrigir a posição:
+      // o player do YouTube não avisa quando alguém mexe na barra, só dá
+      // pra perguntar onde ele está de tempos em tempos. Com a barra à
+      // mostra, todo pulo aparecia por um instante antes de voltar — trava
+      // que pisca não é trava.
+      if(!jaConcluiu){
+        wrap.insertAdjacentHTML('beforeend', marcacaoControlesDeRevisao('catalog'));
+      }
+
       loadYouTubeApi().then(() => {
         modalState.player = new YT.Player('catalog-yt-player', {
           videoId: detalhe.youtube_id,
-          playerVars: { controls: 1, modestbranding: 1, rel: 0, fs: 1 },
+          playerVars: jaConcluiu
+            ? { controls: 1, modestbranding: 1, rel: 0, fs: 1 }
+            // fs:0 tira o botão de tela cheia DO YOUTUBE: em tela cheia do
+            // player o YouTube mostra a barra dele de volta, e aí controls:0
+            // deixaria de valer.
+            : { controls: 0, disablekb: 1, modestbranding: 1, rel: 0, fs: 0 },
           events: {
             onReady: () => {
               if(jaConcluiu) return;
-              // O player do YouTube não avisa quando a posição muda, então
-              // a checagem é de segundo em segundo, igual à da trilha.
+              const p = modalState.player;
+              ligarControlesDeRevisao(
+                wrap,
+                trava,
+                (seg) => p.seekTo(seg, true),
+                () => (typeof p.getCurrentTime === 'function' ? p.getCurrentTime() : 0)
+              );
+
+              // Rede de segurança pro que escapar dos controles próprios
+              // (atalho de teclado, clique no player). Meio em meio segundo,
+              // igual à trilha.
               clearInterval(modalState.travaTimer);
               modalState.travaTimer = setInterval(() => {
-                const p = modalState.player;
-                if(!p || typeof p.getDuration !== 'function') return;
-                const total = p.getDuration();
+                const pl = modalState.player;
+                if(!pl || typeof pl.getDuration !== 'function') return;
+                const total = pl.getDuration();
                 if(total <= 0) return;
-                const atual = p.getCurrentTime();
-                const limite = maxAssistido * total + 2; // 2s de folga
-                if(atual > limite){ p.seekTo(limite, true); return; }
-                maxAssistido = Math.max(maxAssistido, atual / total);
-                enviarProgresso(course.id, atual / total);
-              }, 1000);
+                trava.definirDuracao(total);
+                const voltarPara = trava.conferir(pl.getCurrentTime());
+                if(voltarPara !== null) pl.seekTo(voltarPara, true);
+                atualizarBarraDeRevisao('catalog', trava);
+                enviarProgresso(course.id, trava.pct);
+              }, 500);
             },
             onStateChange: (e) => {
               if(e.data === YT.PlayerState.ENDED){ enviarProgresso(course.id, 1); showBonusQuiz(); }
