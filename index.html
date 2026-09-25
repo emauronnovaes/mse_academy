@@ -20,7 +20,7 @@
 <link rel="preload" href="fonts/space-grotesk-700.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/ibm-plex-mono-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/fa-mse-900.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20260923a">
+<link rel="stylesheet" href="style.css?v=20260925a">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -57,6 +57,9 @@
     </button>
     <button type="button" id="btnGerenciarAulas" class="btn-add-people btn-gerenciar-aulas" hidden>
       <i class="fa-solid fa-book" aria-hidden="true"></i> Gerenciar aulas
+    </button>
+    <button type="button" id="btnDepartamentos" class="btn-add-people btn-departamentos" hidden>
+      <i class="fa-solid fa-folder-open" aria-hidden="true"></i> Departamentos
     </button>
     <button type="button" id="btnMinimizarAdmin" class="btn-minimizar-admin" title="Minimizar" aria-label="Minimizar barra de admin">
       <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
@@ -203,6 +206,21 @@
      quantos módulos de integração já concluiu. Números absolutos (não
      porcentagem — não temos o total real de colaboradores do Portal
      pra calcular uma % de cobertura de verdade). -->
+<!-- Departamentos: criar, renomear e trocar o ícone dos cartões da seção
+     "Cursos". Não há excluir de propósito — apagar um departamento deixaria
+     os vídeos dele sem nenhuma tela onde aparecer. Departamento sem vídeo
+     publicado já não é mostrado pra quem não é admin. -->
+<div class="admin-modal-overlay" id="areasModalOverlay" hidden>
+  <div class="admin-modal admin-modal-wide" role="dialog" aria-modal="true" aria-labelledby="areasModalTitle">
+    <button type="button" class="admin-modal-close" id="areasModalClose" aria-label="Fechar">
+      <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
+    </button>
+    <h3 id="areasModalTitle">Departamentos</h3>
+    <p id="areasModalSubtitle">O cartão só aparece pra quem não é admin depois que o departamento tem pelo menos um vídeo publicado.</p>
+    <div id="areasModalBody"></div>
+  </div>
+</div>
+
 <div class="admin-modal-overlay" id="acessosModalOverlay" hidden>
   <div class="admin-modal admin-modal-wide" role="dialog" aria-modal="true" aria-labelledby="acessosModalTitle">
     <button type="button" class="admin-modal-close" id="acessosModalClose" aria-label="Fechar">
@@ -370,117 +388,13 @@
         <span class="fav-count" id="favCount">0</span>
       </button>
     </div>
-    <div class="areas-grid areas-grid-wide">
-      <button type="button" class="area-card" data-area="portal-mse">
-        <div class="area-icon"><i class="fa-solid fa-house" aria-hidden="true"></i></div>
-        <h4>Portal MSE</h4>
-        <p>Primeiros passos e navegação geral.</p>
-      </button>
-      <button type="button" class="area-card" data-area="administrativo">
-        <div class="area-icon"><i class="fa-solid fa-folder-open" aria-hidden="true"></i></div>
-        <h4>Administrativo</h4>
-        <p>Rotinas administrativas e facilities.</p>
-      </button>
-      <button type="button" class="area-card" data-area="almoxarifado">
-        <div class="area-icon"><i class="fa-solid fa-warehouse" aria-hidden="true"></i></div>
-        <h4>Almoxarifado</h4>
-        <p>Entrada, saída e controle de estoque.</p>
-      </button>
-      <button type="button" class="area-card" data-area="contratos">
-        <div class="area-icon"><i class="fa-solid fa-file-signature" aria-hidden="true"></i></div>
-        <h4>Contratos</h4>
-        <p>Elaboração, aditivos e não conformidade.</p>
-      </button>
-      <button type="button" class="area-card" data-area="dp">
-        <div class="area-icon"><i class="fa-solid fa-user" aria-hidden="true"></i></div>
-        <h4>Departamento Pessoal</h4>
-        <p>Férias, ponto, benefícios e dados cadastrais.</p>
-      </button>
-      <button type="button" class="area-card" data-area="seguranca-trabalho">
-        <div class="area-icon"><i class="fa-solid fa-helmet-safety" aria-hidden="true"></i></div>
-        <h4>Segurança do Trabalho</h4>
-        <p>Normas, EPIs e procedimentos de segurança.</p>
-      </button>
-      <button type="button" class="area-card" data-area="hse">
-        <div class="area-icon"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i></div>
-        <h4>HSE</h4>
-        <p>Saúde, segurança e meio ambiente.</p>
-      </button>
-      <button type="button" class="area-card" data-area="comercial">
-        <div class="area-icon"><i class="fa-solid fa-handshake" aria-hidden="true"></i></div>
-        <h4>Comercial</h4>
-        <p>Relacionamento com cliente e negociação.</p>
-      </button>
-      <button type="button" class="area-card" data-area="financeiro">
-        <div class="area-icon"><i class="fa-solid fa-credit-card" aria-hidden="true"></i></div>
-        <h4>Financeiro</h4>
-        <p>Contracheque, reembolsos, S1 e NF.</p>
-      </button>
-      <button type="button" class="area-card" data-area="fiscal">
-        <div class="area-icon"><i class="fa-solid fa-receipt" aria-hidden="true"></i></div>
-        <h4>Fiscal</h4>
-        <p>Notas, impostos e obrigações fiscais.</p>
-      </button>
-      <button type="button" class="area-card" data-area="fornecedores">
-        <div class="area-icon"><i class="fa-solid fa-truck" aria-hidden="true"></i></div>
-        <h4>Fornecedores</h4>
-        <p>Cadastro, cotação e homologação.</p>
-      </button>
-      <button type="button" class="area-card" data-area="gestao">
-        <div class="area-icon"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></div>
-        <h4>Gestão</h4>
-        <p>Indicadores e acompanhamento de processos.</p>
-      </button>
-      <button type="button" class="area-card" data-area="gestao-materiais">
-        <div class="area-icon"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i></div>
-        <h4>Gestão de Materiais</h4>
-        <p>Requisições e controle de materiais.</p>
-      </button>
-      <button type="button" class="area-card" data-area="logistica">
-        <div class="area-icon"><i class="fa-solid fa-route" aria-hidden="true"></i></div>
-        <h4>Logística</h4>
-        <p>Transporte, entregas e roteirização.</p>
-      </button>
-      <button type="button" class="area-card" data-area="propostas">
-        <div class="area-icon"><i class="fa-solid fa-file-contract" aria-hidden="true"></i></div>
-        <h4>Propostas</h4>
-        <p>Elaboração e envio de propostas comerciais.</p>
-      </button>
-      <button type="button" class="area-card" data-area="suprimentos">
-        <div class="area-icon"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i></div>
-        <h4>Suprimentos</h4>
-        <p>Materiais, locações e empreitas.</p>
-      </button>
-      <button type="button" class="area-card" data-area="infraestrutura">
-        <div class="area-icon"><i class="fa-solid fa-building" aria-hidden="true"></i></div>
-        <h4>Infraestrutura</h4>
-        <p>Instalações e recursos de infraestrutura.</p>
-      </button>
-      <button type="button" class="area-card" data-area="obras">
-        <div class="area-icon"><i class="fa-solid fa-diagram-project" aria-hidden="true"></i></div>
-        <h4>Obras</h4>
-        <p>RDO, medições e documentos de projeto.</p>
-      </button>
-      <button type="button" class="area-card" data-area="recrutamento">
-        <div class="area-icon"><i class="fa-solid fa-user-plus" aria-hidden="true"></i></div>
-        <h4>Recrutamento e Seleção</h4>
-        <p>Vagas, triagem e contratação.</p>
-      </button>
-      <button type="button" class="area-card" data-area="ti">
-        <div class="area-icon"><i class="fa-solid fa-display" aria-hidden="true"></i></div>
-        <h4>TI</h4>
-        <p>Login, senha e permissões no portal.</p>
-      </button>
-      <button type="button" class="area-card" data-area="programacao">
-        <div class="area-icon"><i class="fa-solid fa-file-lines" aria-hidden="true"></i></div>
-        <h4>Programação</h4>
-        <p>Desenvolvimento de sistemas e automações.</p>
-      </button>
-      <button type="button" class="area-card" data-area="qualidade">
-        <div class="area-icon"><i class="fa-solid fa-medal" aria-hidden="true"></i></div>
-        <h4>Qualidade</h4>
-        <p>Padrões, auditorias e certificações.</p>
-      </button>
+    <!-- Os cartoes sao montados pelo JS a partir do banco (api/areas/list.php).
+         Antes eram 22 blocos escritos a mao aqui, com nome, icone e descricao
+         fixos no arquivo: departamento criado pelo painel nao aparecia, nome
+         trocado no banco nao mudava na tela, e 21 dos 22 abriam numa tela vazia
+         porque nao tinham video nenhum. -->
+    <div class="areas-grid areas-grid-wide" id="areasGrid">
+      <p class="areas-vazio" id="areasCarregando">Carregando os departamentos...</p>
     </div>
   </div>
 </section>
@@ -576,7 +490,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20260923a"></script>
+<script src="script.js?v=20260925a"></script>
 
 </body>
 </html>

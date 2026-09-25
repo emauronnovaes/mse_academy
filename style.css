@@ -1113,6 +1113,80 @@
   .admin-field-hint{
     font-size:12px; color:var(--steel); line-height:1.45; margin:4px 0 10px;
   }
+  .admin-field-hint-inline{ font-weight:400; color:var(--steel); font-size:12px; }
+
+  /* ---------- Departamentos ---------- */
+  .areas-vazio{
+    grid-column:1 / -1; text-align:center; color:var(--steel);
+    font-size:14px; padding:28px 0;
+  }
+  /* Cartão de departamento que ainda não tem vídeo: só o admin enxerga,
+     então a tarja existe pra ele não achar que todo mundo está vendo. */
+  .area-sem-video{
+    display:block; margin-top:8px; font-size:11px; font-weight:600;
+    letter-spacing:.04em; text-transform:uppercase; color:var(--steel);
+  }
+
+  .area-novo-btn{
+    width:100%; margin-bottom:14px; padding:10px; cursor:pointer;
+    border:1px dashed var(--line); border-radius:8px; background:none;
+    color:var(--red); font-family:inherit; font-size:14px; font-weight:700;
+  }
+  .area-novo-btn:hover{ background:rgba(196,33,44,0.06); }
+
+  .areas-admin-list{ list-style:none; margin:0; padding:0; }
+  .areas-admin-item{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:12px 0; border-bottom:1px solid var(--line);
+  }
+  .areas-admin-info{ display:flex; align-items:center; gap:12px; min-width:0; }
+  .area-icon-mini{
+    width:38px; height:38px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:16px;
+  }
+  .areas-admin-nome{ font-weight:700; font-size:15px; }
+  .areas-admin-meta{ font-size:12px; color:var(--steel); margin-top:2px; }
+  .areas-admin-editar{
+    flex-shrink:0; padding:7px 14px; cursor:pointer;
+    border:1px solid var(--line); border-radius:8px; background:none;
+    font-family:inherit; font-size:13px; font-weight:600;
+  }
+  .areas-admin-editar:hover{ border-color:var(--red); color:var(--red); }
+
+  .area-form{ padding:14px 0 18px; }
+  .area-form label{
+    display:block; font-size:13px; font-weight:700; margin:10px 0 4px;
+  }
+  .area-form input[type="text"]{
+    width:100%; padding:10px 12px; font-family:inherit; font-size:14px;
+    border:1px solid var(--line); border-radius:8px;
+  }
+
+  /* O seletor de ícone mostra só os que a fonte do site tem de verdade —
+     ícone fora do recorte embutido no CSS não desenha nada e deixaria um
+     buraco no cartão. */
+  .area-icon-picker{
+    display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px;
+  }
+  .area-icon-opt{
+    width:40px; height:40px; cursor:pointer; font-size:15px;
+    display:flex; align-items:center; justify-content:center;
+    border:1px solid var(--line); border-radius:8px;
+    background:none; color:var(--ink);
+    transition:border-color .15s ease, background-color .15s ease;
+  }
+  .area-icon-opt:hover{ border-color:var(--red); }
+  .area-icon-opt.is-ativo{
+    border-color:var(--red); background:var(--red); color:#fff;
+  }
+
+  .area-form-acoes{ display:flex; align-items:center; gap:10px; margin-top:16px; }
+  .area-form-acoes .admin-modal-submit{ width:auto; padding:10px 20px; margin:0; }
+  .area-form-cancelar{
+    padding:10px 16px; cursor:pointer; background:none; border:none;
+    font-family:inherit; font-size:14px; color:var(--steel);
+  }
+  .area-form-cancelar:hover{ color:var(--ink); }
   .admin-field-hint strong{ color:var(--ink); }
 
   /* O balão é pointer-events:none pra não roubar o clique da casa da

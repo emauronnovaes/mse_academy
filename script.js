@@ -1422,6 +1422,55 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // Traduz o formato da API pro formato que o resto da tela já esperava,
   // pra não precisar reescrever gamificação, favoritos, busca e painel
   // de progresso — que juntos usam essas listas em mais de 30 lugares.
+  // ---------- Departamentos (os cartões da seção "Cursos") ----------
+  // Vêm do banco. Eram 22 blocos escritos à mão no index.html: criar um
+  // departamento pelo painel não fazia cartão aparecer, e trocar o nome no
+  // banco não mudava o que estava escrito na tela.
+  let areas = [];
+
+  function renderAreas(){
+    const grid = document.getElementById('areasGrid');
+    if(!grid) return;
+
+    if(!areas.length){
+      grid.innerHTML = '<p class="areas-vazio">Nenhum departamento tem vídeo publicado ainda.</p>';
+      return;
+    }
+
+    grid.innerHTML = areas.map(a => `
+      <button type="button" class="area-card" data-area="${escaparHtml(a.slug)}">
+        <div class="area-icon"><i class="fa-solid ${escaparHtml(a.icon)}" aria-hidden="true"></i></div>
+        <h4>${escaparHtml(a.name)}</h4>
+        <p>${escaparHtml(a.descricao || '')}</p>
+        ${a.total_cursos === 0 ? '<span class="area-sem-video">sem vídeo — só você vê</span>' : ''}
+      </button>
+    `).join('');
+
+    renderProgressPanel(); // recoloca a tarjinha de progresso nos cartões novos
+  }
+
+  function escaparHtml(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[ch]);
+  }
+
+  async function carregarAreas(){
+    try{
+      const r = await apiGet('api/areas/list.php');
+      areas = r.areas || [];
+      renderAreas();
+    }catch(e){
+      const grid = document.getElementById('areasGrid');
+      if(grid) grid.innerHTML = `<p class="areas-vazio">Não foi possível carregar os departamentos: ${escaparHtml(e.message)}</p>`;
+    }
+  }
+
+  // O painel de admin vive noutro escopo e precisa redesenhar os cartões
+  // logo depois de salvar um departamento — senão o nome novo só apareceria
+  // ao recarregar a página, que é justamente o problema que ele resolve.
+  window.mseRecarregarAreas = carregarAreas;
+
   async function carregarConteudo(){
     const [trilha, catalogo] = await Promise.all([
       apiGet('api/courses/list.php?type=onboarding'),
@@ -1456,6 +1505,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     await carregarProgressoServidor();
     conteudoCarregado = true;
     atualizarDestaquesComCursosReais();
+    await carregarAreas();
   }
 
   // O progresso agora mora no banco (vale em qualquer navegador, e é o
@@ -2928,6 +2978,174 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   });
 
   // ---------- Modal de "gerenciar aulas" ----------
+  // ---------- Modal de "Departamentos" ----------
+  // Criar, renomear e trocar o ícone dos cartões da seção "Cursos".
+  //
+  // Só os ícones que a fonte do site realmente tem. O Font Awesome daqui é
+  // um recorte embutido no style.css, não a biblioteca inteira: um nome que
+  // exista no site do Font Awesome mas não neste recorte não desenha nada e
+  // deixa um buraco no cartão. Esta lista é a mesma do servidor, que recusa
+  // qualquer ícone fora dela.
+  const ICONES_DE_AREA = [
+    'fa-folder-open', 'fa-house', 'fa-building', 'fa-warehouse', 'fa-boxes-stacked',
+    'fa-truck', 'fa-route', 'fa-diagram-project', 'fa-helmet-safety', 'fa-circle-exclamation',
+    'fa-user', 'fa-user-plus', 'fa-handshake', 'fa-credit-card', 'fa-receipt',
+    'fa-file-contract', 'fa-file-invoice', 'fa-file-lines', 'fa-file-signature',
+    'fa-chart-line', 'fa-medal', 'fa-star', 'fa-book', 'fa-display', 'fa-magnifying-glass',
+  ];
+
+  function openAreasModal(){
+    document.getElementById('areasModalOverlay').hidden = false;
+    loadAreasAdmin();
+  }
+  function closeAreasModal(){
+    document.getElementById('areasModalOverlay').hidden = true;
+  }
+
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[ch]);
+  }
+
+  function seletorDeIcone(iconeAtual){
+    return `<div class="area-icon-picker">` + ICONES_DE_AREA.map(ic => `
+      <button type="button" class="area-icon-opt${ic === iconeAtual ? ' is-ativo' : ''}"
+              data-icone="${ic}" title="${ic.replace('fa-', '')}" aria-label="${ic.replace('fa-', '')}">
+        <i class="fa-solid ${ic}" aria-hidden="true"></i>
+      </button>
+    `).join('') + `</div>`;
+  }
+
+  // Um formulário só, usado pra criar e pra editar. area=null cria.
+  function formularioDeArea(area){
+    const criando = !area;
+    return `
+      <div class="area-form" data-id="${criando ? '' : area.id}">
+        <label>Nome</label>
+        <input type="text" class="area-form-nome" value="${criando ? '' : esc(area.name)}"
+               placeholder="Ex: Segurança do Trabalho" maxlength="120">
+        <label>Descrição <span class="admin-field-hint-inline">(a frase embaixo do nome no cartão)</span></label>
+        <input type="text" class="area-form-desc" value="${criando ? '' : esc(area.descricao || '')}"
+               placeholder="Ex: Normas, EPIs e procedimentos de segurança." maxlength="255">
+        <label>Ícone</label>
+        ${seletorDeIcone(criando ? 'fa-folder-open' : area.icon)}
+        <div class="area-form-acoes">
+          <button type="button" class="admin-modal-submit area-form-salvar">${criando ? 'Criar departamento' : 'Salvar'}</button>
+          <button type="button" class="area-form-cancelar">Cancelar</button>
+        </div>
+        <div class="admin-modal-feedback area-form-feedback" hidden></div>
+      </div>
+    `;
+  }
+
+  async function loadAreasAdmin(){
+    const body = document.getElementById('areasModalBody');
+    body.innerHTML = '<p>Carregando...</p>';
+    try{
+      const data = await apiFetch('api/areas/list.php');
+      const lista = data.areas || [];
+
+      body.innerHTML = `
+        <button type="button" class="area-novo-btn" id="areaNovoBtn">+ Novo departamento</button>
+        <div id="areaNovoWrap"></div>
+        <ul class="areas-admin-list">
+          ${lista.map(a => `
+            <li class="areas-admin-item" data-id="${a.id}">
+              <div class="areas-admin-info">
+                <div class="area-icon area-icon-mini"><i class="fa-solid ${esc(a.icon)}" aria-hidden="true"></i></div>
+                <div>
+                  <div class="areas-admin-nome">${esc(a.name)}</div>
+                  <div class="areas-admin-meta">
+                    ${a.total_cursos === 0
+                      ? 'nenhum vídeo — não aparece pra quem não é admin'
+                      : a.total_cursos + (a.total_cursos === 1 ? ' vídeo' : ' vídeos')}
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="areas-admin-editar" data-editar="${a.id}">Editar</button>
+            </li>
+            <li class="areas-admin-form" data-form="${a.id}" hidden></li>
+          `).join('')}
+        </ul>
+      `;
+
+      // Criar
+      document.getElementById('areaNovoBtn').addEventListener('click', () => {
+        const wrap = document.getElementById('areaNovoWrap');
+        if(wrap.innerHTML){ wrap.innerHTML = ''; return; }
+        wrap.innerHTML = formularioDeArea(null);
+        ligarFormularioDeArea(wrap.querySelector('.area-form'), null);
+        wrap.querySelector('.area-form-nome').focus();
+      });
+
+      // Editar
+      body.querySelectorAll('[data-editar]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = Number(btn.dataset.editar);
+          const area = lista.find(a => a.id === id);
+          const linha = body.querySelector(`[data-form="${id}"]`);
+          if(!linha.hidden){ linha.hidden = true; linha.innerHTML = ''; return; }
+          linha.hidden = false;
+          linha.innerHTML = formularioDeArea(area);
+          ligarFormularioDeArea(linha.querySelector('.area-form'), area);
+          linha.querySelector('.area-form-nome').focus();
+        });
+      });
+    }catch(e){
+      body.innerHTML = `<p>Não foi possível carregar: ${esc(e.message)}</p>`;
+    }
+  }
+
+  function ligarFormularioDeArea(form, area){
+    let icone = area ? area.icon : 'fa-folder-open';
+
+    form.querySelectorAll('.area-icon-opt').forEach(opt => {
+      opt.addEventListener('click', () => {
+        icone = opt.dataset.icone;
+        form.querySelectorAll('.area-icon-opt').forEach(o => o.classList.toggle('is-ativo', o === opt));
+      });
+    });
+
+    form.querySelector('.area-form-cancelar').addEventListener('click', () => {
+      const pai = form.parentElement;
+      pai.innerHTML = '';
+      if(pai.hasAttribute('data-form')) pai.hidden = true;
+    });
+
+    const salvar = form.querySelector('.area-form-salvar');
+    salvar.addEventListener('click', async () => {
+      const nome = form.querySelector('.area-form-nome').value.trim();
+      const desc = form.querySelector('.area-form-desc').value.trim();
+      const aviso = form.querySelector('.area-form-feedback');
+
+      const mostrar = (texto, erro) => {
+        aviso.hidden = false;
+        aviso.textContent = texto;
+        aviso.classList.toggle('erro', !!erro);
+      };
+
+      if(!nome){ mostrar('Escreva o nome do departamento.', true); return; }
+
+      salvar.disabled = true;
+      try{
+        const r = await apiFetch('api/admin/areas/salvar.php', {
+          method: 'POST',
+          body: JSON.stringify({ id: area ? area.id : 0, name: nome, descricao: desc, icon: icone })
+        });
+        mostrar(r.message || 'Salvo.', false);
+        // Recarrega a lista do painel e os cartões da tela de uma vez: sem
+        // isso, o nome novo só apareceria no cartão depois de recarregar a
+        // página, que foi exatamente o problema que este painel resolve.
+        await loadAreasAdmin();
+        if(typeof window.mseRecarregarAreas === 'function') window.mseRecarregarAreas();
+      }catch(e){
+        mostrar(e.message, true);
+        salvar.disabled = false;
+      }
+    });
+  }
+
   function openAulasModal(){
     document.getElementById('aulasModalOverlay').hidden = false;
     loadAulas();
@@ -3324,7 +3542,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(isAdmin){
       const toolbar = document.getElementById('adminToolbar');
       if(toolbar) toolbar.hidden = false;
-      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnQuemAssistiu', 'btnAcessos', 'btnGerenciarAulas'].forEach(id => {
+      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnQuemAssistiu', 'btnAcessos', 'btnGerenciarAulas', 'btnDepartamentos'].forEach(id => {
         const btn = document.getElementById(id);
         if(btn) btn.hidden = false;
       });
@@ -3397,6 +3615,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(btnAulas) btnAulas.addEventListener('click', openAulasModal);
     const btnAulasClose = document.getElementById('aulasModalClose');
     if(btnAulasClose) btnAulasClose.addEventListener('click', closeAulasModal);
+
+    const btnAreas = document.getElementById('btnDepartamentos');
+    if(btnAreas) btnAreas.addEventListener('click', openAreasModal);
+    const btnAreasClose = document.getElementById('areasModalClose');
+    if(btnAreasClose) btnAreasClose.addEventListener('click', closeAreasModal);
     const aulasOverlay = document.getElementById('aulasModalOverlay');
     if(aulasOverlay) aulasOverlay.addEventListener('click', (e) => {
       if(e.target === aulasOverlay) closeAulasModal();
