@@ -3063,7 +3063,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
                   </div>
                 </div>
               </div>
-              <button type="button" class="areas-admin-editar" data-editar="${a.id}">Editar</button>
+              <div class="areas-admin-acoes">
+                <button type="button" class="areas-admin-editar" data-editar="${a.id}">Editar</button>
+                <button type="button" class="areas-admin-excluir" data-excluir="${a.id}">Excluir</button>
+              </div>
             </li>
             <li class="areas-admin-form" data-form="${a.id}" hidden></li>
           `).join('')}
@@ -3077,6 +3080,69 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         wrap.innerHTML = formularioDeArea(null);
         ligarFormularioDeArea(wrap.querySelector('.area-form'), null);
         wrap.querySelector('.area-form-nome').focus();
+      });
+
+      // Excluir — em dois passos. O primeiro clique só pergunta ao servidor
+      // o que a exclusão levaria junto e mostra na tela; o segundo é que
+      // apaga. Confirmação genérica ("tem certeza?") não ajudaria: o que
+      // pesa aqui são as pessoas que ficam sem departamento e as regras de
+      // cargo que somem, e isso não está à vista em lugar nenhum.
+      body.querySelectorAll('[data-excluir]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = Number(btn.dataset.excluir);
+          const linha = body.querySelector(`[data-form="${id}"]`);
+          linha.hidden = false;
+          linha.innerHTML = '<div class="area-form"><p>Verificando...</p></div>';
+
+          try{
+            const r = await apiFetch('api/admin/areas/excluir.php', {
+              method: 'POST', body: JSON.stringify({ id })
+            });
+            linha.innerHTML = `
+              <div class="area-form area-form-perigo">
+                <p class="area-excluir-titulo">${esc(r.message)}</p>
+                ${r.consequencias && r.consequencias.length ? `
+                  <ul class="area-excluir-lista">
+                    ${r.consequencias.map(c => `<li>${esc(c)}</li>`).join('')}
+                  </ul>` : ''}
+                <div class="area-form-acoes">
+                  <button type="button" class="area-excluir-confirmar">Excluir mesmo assim</button>
+                  <button type="button" class="area-form-cancelar">Cancelar</button>
+                </div>
+              </div>
+            `;
+            linha.querySelector('.area-form-cancelar').addEventListener('click', () => {
+              linha.hidden = true; linha.innerHTML = '';
+            });
+            const ok = linha.querySelector('.area-excluir-confirmar');
+            ok.addEventListener('click', async () => {
+              ok.disabled = true;
+              try{
+                await apiFetch('api/admin/areas/excluir.php', {
+                  method: 'POST', body: JSON.stringify({ id, confirmar: true })
+                });
+                await loadAreasAdmin();
+                if(typeof window.mseRecarregarAreas === 'function') window.mseRecarregarAreas();
+              }catch(e){
+                linha.querySelector('.area-excluir-titulo').textContent = e.message;
+                ok.disabled = false;
+              }
+            });
+          }catch(e){
+            // O caso mais comum aqui é o departamento ainda ter vídeos, e a
+            // mensagem do servidor já diz o que fazer.
+            linha.innerHTML = `
+              <div class="area-form area-form-perigo">
+                <p class="area-excluir-titulo">${esc(e.message)}</p>
+                <div class="area-form-acoes">
+                  <button type="button" class="area-form-cancelar">Fechar</button>
+                </div>
+              </div>`;
+            linha.querySelector('.area-form-cancelar').addEventListener('click', () => {
+              linha.hidden = true; linha.innerHTML = '';
+            });
+          }
+        });
       });
 
       // Editar
