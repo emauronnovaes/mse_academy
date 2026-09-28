@@ -205,7 +205,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       const mapa = {
         statColaboradores: data.colaboradores_atendidos,
         statTutoriais: data.tutoriais_disponiveis,
-        statAreas: data.areas_cobertas,
+        statAulasAssistidas: data.aulas_assistidas,
       };
       Object.keys(mapa).forEach(id => {
         const el = document.getElementById(id);

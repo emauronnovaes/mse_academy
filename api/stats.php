@@ -27,14 +27,19 @@ $tutoriais = (int) $pdo->query(
     "SELECT COUNT(*) AS c FROM courses WHERE is_published = 1"
 )->fetch()['c'];
 
-// Áreas cobertas = quantas áreas já têm pelo menos 1 curso do catálogo
-// publicado (área sem nenhum curso ainda não conta como "coberta").
-$areas = (int) $pdo->query(
-    "SELECT COUNT(DISTINCT area_id) AS c FROM courses WHERE type = 'curso' AND is_published = 1 AND area_id IS NOT NULL"
+// Aulas assistidas = quantas aulas foram concluídas, somando todo mundo.
+//
+// Substituiu "áreas do portal cobertas", que contava departamentos com
+// pelo menos um vídeo. Esse número não dizia nada a quem chega: ele mede
+// o quanto o catálogo foi preenchido, não o quanto a Academy é usada —
+// e fica parado em um ou dois por muito tempo, parecendo que nada
+// acontece. Este cresce toda vez que alguém termina uma aula.
+$aulasAssistidas = (int) $pdo->query(
+    "SELECT COUNT(*) AS c FROM user_course_progress WHERE status = 'concluido'"
 )->fetch()['c'];
 
 mse_json([
     'colaboradores_atendidos' => $colaboradores,
     'tutoriais_disponiveis' => $tutoriais,
-    'areas_cobertas' => $areas,
+    'aulas_assistidas' => $aulasAssistidas,
 ]);
