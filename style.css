@@ -1236,6 +1236,14 @@
     color:var(--steel); opacity:0.85;
   }
 
+  /* Fogos de artifício de quem concluiu a integração. Cobre a tela inteira
+     mas não intercepta clique nenhum: é decoração por cima, a pessoa
+     continua usando a página normalmente enquanto os fogos correm. */
+  .fogos-canvas{
+    position:fixed; inset:0; z-index:9999;
+    pointer-events:none;
+  }
+
   .vid-fullscreen-btn{
     position:absolute; right:10px; bottom:14px; z-index:11;
     width:34px; height:34px; border-radius:8px; cursor:pointer;

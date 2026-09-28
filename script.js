@@ -394,6 +394,18 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     // quando existem.
     return ONBOARDING.some(m => m.temQuiz);
   }
+  /**
+   * A trilha inteira foi concluída?
+   *
+   * O "ONBOARDING.length > 0" não é detalhe. Com a trilha vazia — nenhuma
+   * aula publicada ainda, ou a API fora do ar — o índice atual é 0 e o
+   * "0 >= 0" dava concluído: a pessoa recebia "Parabéns, você concluiu a
+   * integração" sem ter assistido nada, e o baú aparecia aberto na trilha.
+   */
+  function trilhaConcluida(indiceAtual){
+    return ONBOARDING.length > 0 && indiceAtual >= ONBOARDING.length;
+  }
+
   function isOnbQuizPassed(){
     if(!trilhaTemPerguntas()) return true;
     return getOnbQuizAccuracy().correct / ONBOARDING.length >= ONB_QUIZ_PASS_RATIO;
@@ -561,7 +573,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(!track) return;
 
     const currentIdx = onbCurrentIndex();
-    const allDone = currentIdx >= ONBOARDING.length;
+    const allDone = trilhaConcluida(currentIdx);
     const NODE_COUNT = ONBOARDING.length + 1; // +1 = a casa do baú
     const positions = onbPathPositions(NODE_COUNT);
     ajustarAlturaDaTrilha(NODE_COUNT);
@@ -760,7 +772,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const wrap = document.getElementById('onbActiveModule');
     if(!wrap) return;
     const currentIdx = onbCurrentIndex();
-    const allDone = currentIdx >= ONBOARDING.length;
+    const allDone = trilhaConcluida(currentIdx);
 
     // Mostra a tela de parabéns quando: clicaram na casa do baú, OU
     // (nada selecionado e a trilha inteira já foi concluída).
@@ -785,6 +797,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             <p>Você assistiu todos os vídeos, mas acertou só ${quiz.correct} de ${quiz.total} perguntas (${quiz.pct}%). Pra abrir o baú, precisa de pelo menos 75% (3 de 4). Clique em um módulo acima, assista de novo e responda com atenção.</p>
           </div>
         </div>`;
+
+      // A comemoração só faz sentido com o baú aberto. soltarFogos() já se
+      // segura sozinha pra não repetir na mesma visita, então chamar aqui
+      // toda vez que o painel é desenhado não vira fogo em série.
+      if(passed) soltarFogos();
       return;
     }
 
@@ -1176,6 +1193,149 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       <div class="vid-watch-bar"><div class="vid-watch-fill" id="vid-watch-fill-${id}"></div></div>
       <button type="button" class="vid-voltar-btn" aria-label="Voltar 10 segundos">&minus;10s</button>
     `;
+  }
+
+  // ================================================================
+  // ---------- Fogos de artifício ----------
+  // ================================================================
+  // Comemoração de quem terminou a trilha de integração. Em canvas e sem
+  // biblioteca nenhuma: o site é todo auto-hospedado, sem CDN, e puxar um
+  // pacote de fora só pra isso trocaria alguns segundos de festa por mais
+  // um arquivo pra carregar em toda visita.
+  //
+  // Dispara uma vez por visita. Reabrir o baú na mesma sessão não repete —
+  // fogo toda vez que a pessoa clica vira barulho, não comemoração.
+  //
+  // A marca fica na própria função, e não numa variável solta com "let",
+  // porque a declaração da função é içada pro topo mas a da variável não:
+  // se qualquer linha antes daqui falhasse, chamar soltarFogos() estouraria
+  // com "Cannot access before initialization" em vez de só não comemorar.
+  function soltarFogos(){
+    if(soltarFogos.jaRodou) return;
+    // Quem pediu menos movimento no sistema não recebe a animação. É a
+    // mesma preferência que já pausa o vídeo do banner.
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    soltarFogos.jaRodou = true;
+
+    const DURACAO = 5000;
+    const CORES = ['#C4212C', '#F2B705', '#FFFFFF', '#2EA05A', '#4A7BD4', '#E8843C'];
+
+    const tela = document.createElement('canvas');
+    tela.className = 'fogos-canvas';
+    tela.setAttribute('aria-hidden', 'true'); // decoração: leitor de tela ignora
+    document.body.appendChild(tela);
+    const ctx = tela.getContext('2d');
+
+    let larg = 0, alt = 0;
+    function medir(){
+      // devicePixelRatio senão fica borrado em tela de notebook boa.
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      larg = window.innerWidth; alt = window.innerHeight;
+      tela.width = larg * dpr; tela.height = alt * dpr;
+      tela.style.width = larg + 'px'; tela.style.height = alt + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    medir();
+    window.addEventListener('resize', medir);
+
+    const foguetes = [];
+    const fagulhas = [];
+
+    function lancar(){
+      foguetes.push({
+        x: larg * (0.15 + Math.random() * 0.7),
+        y: alt,
+        vy: -(alt / 75) * (0.85 + Math.random() * 0.3),
+        alvo: alt * (0.15 + Math.random() * 0.3),
+        cor: CORES[Math.floor(Math.random() * CORES.length)],
+      });
+    }
+
+    function estourar(f){
+      const quantas = 64 + Math.floor(Math.random() * 34);
+      for(let i = 0; i < quantas; i++){
+        const ang = (Math.PI * 2 * i) / quantas + Math.random() * 0.25;
+        const forca = 2.1 + Math.random() * 4.4;
+        fagulhas.push({
+          x: f.x, y: f.y,
+          vx: Math.cos(ang) * forca,
+          vy: Math.sin(ang) * forca,
+          vida: 1,
+          decai: 0.012 + Math.random() * 0.014,
+          cor: f.cor,
+        });
+      }
+    }
+
+    const inicio = performance.now();
+    let proximoLancamento = 0;
+
+    function quadro(agora){
+      // Se a pessoa saiu da página, o canvas some do DOM e o laço para —
+      // sem isso ele continuaria rodando à toa em segundo plano.
+      if(!tela.isConnected) return;
+
+      const passado = agora - inicio;
+
+      // Rastro: em vez de apagar tudo, tira um pouco da opacidade do que
+      // já estava desenhado. "destination-out" apaga pelo canal alfa, então
+      // o quadro anterior desbota sem pintar preto por cima — o que
+      // escureceria a página inteira, já que este canvas fica sobre ela.
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.globalAlpha = 0.22; // quanto some por quadro: menos = rastro maior
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, larg, alt);
+      ctx.globalCompositeOperation = 'source-over';
+
+      // Para de lançar antes do fim, pra última explosão ter tempo de
+      // apagar em vez de sumir cortada.
+      if(passado < DURACAO - 1600 && agora > proximoLancamento){
+        lancar();
+        if(passado < 400) lancar(); // uma saraivada no começo
+        proximoLancamento = agora + 200 + Math.random() * 260;
+      }
+
+      for(let i = foguetes.length - 1; i >= 0; i--){
+        const f = foguetes[i];
+        f.y += f.vy;
+        f.vy += 0.035; // desacelera subindo
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = f.cor;
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, 2.8, 0, Math.PI * 2);
+        ctx.fill();
+        // Estoura no alto do arco, ou ao chegar na altura sorteada.
+        if(f.vy >= 0 || f.y <= f.alvo){
+          estourar(f);
+          foguetes.splice(i, 1);
+        }
+      }
+
+      for(let i = fagulhas.length - 1; i >= 0; i--){
+        const p = fagulhas[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.055;  // gravidade
+        p.vx *= 0.985;  // ar
+        p.vy *= 0.985;
+        p.vida -= p.decai;
+        if(p.vida <= 0){ fagulhas.splice(i, 1); continue; }
+        ctx.globalAlpha = Math.max(p.vida, 0);
+        ctx.fillStyle = p.cor;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      if(passado > DURACAO && fagulhas.length === 0 && foguetes.length === 0){
+        window.removeEventListener('resize', medir);
+        tela.remove();
+        return;
+      }
+      requestAnimationFrame(quadro);
+    }
+
+    requestAnimationFrame(quadro);
   }
 
   function ligarBotaoTelaCheia(escopo){
