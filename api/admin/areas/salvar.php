@@ -64,6 +64,7 @@ if (mb_strlen($descricao) > 255) {
 const ICONES_DISPONIVEIS = [
     'fa-folder-open', 'fa-house', 'fa-building', 'fa-warehouse', 'fa-boxes-stacked',
     'fa-truck', 'fa-route', 'fa-diagram-project', 'fa-helmet-safety', 'fa-circle-exclamation',
+    'fa-briefcase-medical',
     'fa-user', 'fa-user-plus', 'fa-handshake', 'fa-credit-card', 'fa-receipt',
     'fa-file-contract', 'fa-file-invoice', 'fa-file-lines', 'fa-file-signature',
     'fa-chart-line', 'fa-medal', 'fa-star', 'fa-book', 'fa-display', 'fa-magnifying-glass',

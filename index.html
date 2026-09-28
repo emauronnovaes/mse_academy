@@ -19,8 +19,10 @@
 <link rel="preload" href="fonts/inter-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/space-grotesk-700.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/ibm-plex-mono-400.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="fonts/fa-mse-900.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20260928c">
+<!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
+     diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
+<link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css?v=20260928d">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -490,7 +492,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20260928c"></script>
+<script src="script.js?v=20260928d"></script>
 
 </body>
 </html>

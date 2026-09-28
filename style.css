@@ -76,7 +76,12 @@
   font-style: normal;
   font-weight: 900;
   font-display: block;
-  src: url(fonts/fa-mse-900.woff2) format('woff2');
+  /* O ?v= aqui é obrigatório ao trocar a fonte. O .htaccess manda guardar
+     woff2 por um ano, então sem versão na URL quem já visitou o site
+     continuaria com a fonte antiga — e todo ícone novo sairia em branco.
+     Este endereço tem que ser idêntico ao do <link rel="preload"> no
+     index.html, senão o navegador baixa a fonte duas vezes. */
+  src: url(fonts/fa-mse-900.woff2?v=20260928) format('woff2');
 }
 .fa-solid {
   font-family: 'Font Awesome 6 Free MSE';
@@ -102,6 +107,7 @@
 .fa-lock::before { content: "\f023"; }
 .fa-check::before { content: "\f00c"; }
 .fa-house::before { content: "\f015"; }
+.fa-briefcase-medical::before { content: "\f469"; }
 .fa-boxes-stacked::before { content: "\f468"; }
 .fa-folder-open::before { content: "\f07c"; }
 .fa-warehouse::before { content: "\f494"; }
