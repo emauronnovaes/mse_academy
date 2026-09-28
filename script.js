@@ -1203,19 +1203,55 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // pacote de fora só pra isso trocaria alguns segundos de festa por mais
   // um arquivo pra carregar em toda visita.
   //
-  // Dispara uma vez por visita. Reabrir o baú na mesma sessão não repete —
-  // fogo toda vez que a pessoa clica vira barulho, não comemoração.
+  // Só na vez em que a pessoa conclui. Depois disso, nunca mais: ela vai
+  // reabrir o baú muitas vezes pra rever a trilha, e fogos em toda visita
+  // deixam de ser comemoração e viram uma animação no caminho.
   //
-  // A marca fica na própria função, e não numa variável solta com "let",
-  // porque a declaração da função é içada pro topo mas a da variável não:
-  // se qualquer linha antes daqui falhasse, chamar soltarFogos() estouraria
-  // com "Cannot access before initialization" em vez de só não comemorar.
+  // A marca fica junto com o progresso da trilha, que já é guardado no
+  // navegador — então sobrevive a recarregar e a fechar a aba. Vale por
+  // navegador, igual ao resto do progresso local: quem concluiu no
+  // computador e abrir no celular vê uma vez lá também.
+  //
+  // A marca de sessão fica na PRÓPRIA função, e não numa variável solta
+  // com "let", porque a declaração da função é içada pro topo mas a da
+  // variável não: do jeito anterior, se qualquer linha antes daqui
+  // falhasse, chamar soltarFogos() estourava com "Cannot access before
+  // initialization" em vez de apenas não comemorar.
+  function jaComemorou(){
+    try{ return !!loadOnboardingProgress().fogosVistos; }
+    catch(e){ return false; } // sem storage, comemora — melhor que nunca comemorar
+  }
+
+  function marcarQueComemorou(){
+    try{
+      // Marca no objeto que já está em memória, em vez de trocá-lo por um
+      // recém-lido. Qualquer save posterior do progresso (concluir aula,
+      // responder pergunta) usa esse mesmo objeto — se a marca estivesse
+      // só numa cópia, o próximo save a apagaria e os fogos voltariam.
+      onbProgress.fogosVistos = true;
+      saveOnboardingProgress(onbProgress);
+    }catch(e){
+      // Se onbProgress ainda não existe, grava direto no armazenamento.
+      try{
+        const prog = loadOnboardingProgress();
+        prog.fogosVistos = true;
+        saveOnboardingProgress(prog);
+      }catch(e2){ /* navegador sem storage: só não lembra na próxima */ }
+    }
+  }
+
   function soltarFogos(){
     if(soltarFogos.jaRodou) return;
     // Quem pediu menos movimento no sistema não recebe a animação. É a
-    // mesma preferência que já pausa o vídeo do banner.
+    // mesma preferência que já pausa o vídeo do banner. Sai sem marcar:
+    // se um dia desligar a preferência, ainda ganha a comemoração.
     if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if(jaComemorou()) return;
+
     soltarFogos.jaRodou = true;
+    // Marca antes de animar: se algo estourar no meio, o pior que acontece
+    // é a pessoa perder os fogos, não recebê-los de novo toda vez.
+    marcarQueComemorou();
 
     const DURACAO = 5000;
     const CORES = ['#C4212C', '#F2B705', '#FFFFFF', '#2EA05A', '#4A7BD4', '#E8843C'];
