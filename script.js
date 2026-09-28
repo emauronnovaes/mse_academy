@@ -775,7 +775,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <div class="onb-congrats-inner">
             <div class="onb-congrats-emoji"><i class="fa-solid fa-medal" aria-hidden="true"></i></div>
             <h4>Parabéns! Você concluiu a integração</h4>
-            <p>${trilhaTemPerguntas() ? `Você acertou ${quiz.correct} de ${quiz.total} perguntas (${quiz.pct}%). ` : ''}Agora acesse a aba <strong>Cursos</strong> — o catálogo de mini-aulas também é obrigatório. Clique em qualquer módulo acima pra rever a integração quando precisar.</p>
+            <p>${trilhaTemPerguntas() ? `Você acertou ${quiz.correct} de ${quiz.total} perguntas (${quiz.pct}%). ` : ''}Agora vá até a aba <strong>Cursos</strong> e assista às aulas que você precisa.</p>
           </div>
         </div>` : `
         <div class="onb-module onb-congrats">
