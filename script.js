@@ -2155,8 +2155,22 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       // pra perguntar onde ele está de tempos em tempos. Com a barra à
       // mostra, todo pulo aparecia por um instante antes de voltar — trava
       // que pisca não é trava.
+      // Tela cheia sem sair da Academy. O botão é nosso, não o do YouTube:
+      // o do YouTube põe o PLAYER em tela cheia, e aí o YouTube mostra a
+      // barra dele de volta — controls:0 deixaria de valer e daria pra
+      // adiantar o vídeo justamente ali. O nosso expande a moldura inteira
+      // (.vid-player-wrap), então os controles da Academy vão junto e a
+      // barra do YouTube continua escondida.
+      //
+      // Só na primeira vez: depois de concluído o player abre com fs:1 e o
+      // botão do próprio YouTube já resolve, sem precisar de dois.
       if(!jaConcluiu){
-        wrap.insertAdjacentHTML('beforeend', marcacaoControlesDeRevisao('catalog'));
+        wrap.insertAdjacentHTML('beforeend', `
+          <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
+            <i class="fa-solid fa-display" aria-hidden="true"></i>
+          </button>
+        ` + marcacaoControlesDeRevisao('catalog'));
+        ligarBotaoTelaCheia(wrap);
       }
 
       loadYouTubeApi().then(() => {
