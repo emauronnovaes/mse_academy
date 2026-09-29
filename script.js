@@ -2862,8 +2862,99 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     return null;
   }
 
+  // ---------- Editor de alternativas ----------
+  // Usado nos dois lugares que escrevem pergunta: o cadastro do vídeo e o
+  // painel de pergunta de uma aula já criada. Antes eram três campos fixos
+  // escritos no HTML — quem precisasse de uma quarta alternativa não tinha
+  // como. Os dois endpoints já aceitavam qualquer quantidade; o limite era
+  // só da tela.
+  const QUIZ_MIN_OPCOES = 2;  // com uma só, não há o que escolher
+  const QUIZ_MAX_OPCOES = 6;  // acima disso a lista de rádios fica ilegível
+
+  function criarEditorDeOpcoes(container, grupo, iniciais){
+    let opcoes = (iniciais && iniciais.length ? iniciais : [])
+      .map(o => ({ text: o.text || '', is_correct: !!o.is_correct }));
+
+    // Começa com três, que era o que o formulário tinha antes.
+    while(opcoes.length < 3) opcoes.push({ text: '', is_correct: false });
+    if(!opcoes.some(o => o.is_correct)) opcoes[0].is_correct = true;
+
+    // Lê da tela antes de redesenhar, senão o que a pessoa acabou de
+    // digitar some ao adicionar ou tirar uma linha.
+    function sincronizar(){
+      const textos = container.querySelectorAll('.quiz-opcao-texto');
+      const marcada = container.querySelector('input[type="radio"]:checked');
+      textos.forEach((inp, i) => { if(opcoes[i]) opcoes[i].text = inp.value; });
+      opcoes.forEach((o, i) => { o.is_correct = !!marcada && Number(marcada.value) === i; });
+    }
+
+    function desenhar(){
+      const podeRemover = opcoes.length > QUIZ_MIN_OPCOES;
+      container.innerHTML = opcoes.map((o, i) => `
+        <div class="admin-quiz-option">
+          <input type="radio" name="${grupo}" value="${i}" ${o.is_correct ? 'checked' : ''}
+                 aria-label="Marcar a opção ${i + 1} como correta">
+          <input type="text" class="quiz-opcao-texto" maxlength="300" value="${esc(o.text)}"
+                 placeholder="Opção ${i + 1}${i === 0 ? ' (marque a certa ao lado)' : ''}">
+          ${podeRemover ? `<button type="button" class="quiz-opcao-remover" data-i="${i}"
+                   title="Tirar esta opção" aria-label="Tirar a opção ${i + 1}">&times;</button>` : ''}
+        </div>
+      `).join('') + (opcoes.length < QUIZ_MAX_OPCOES
+        ? '<button type="button" class="quiz-opcao-add">+ Adicionar opção</button>'
+        : `<p class="admin-field-hint">Máximo de ${QUIZ_MAX_OPCOES} opções.</p>`);
+
+      const add = container.querySelector('.quiz-opcao-add');
+      if(add) add.addEventListener('click', () => {
+        sincronizar();
+        opcoes.push({ text: '', is_correct: false });
+        desenhar();
+        // Foca a linha nova: sem isso a pessoa clica e tem que ir procurar
+        // onde digitar.
+        const campos = container.querySelectorAll('.quiz-opcao-texto');
+        campos[campos.length - 1].focus();
+      });
+
+      container.querySelectorAll('.quiz-opcao-remover').forEach(btn => {
+        btn.addEventListener('click', () => {
+          sincronizar();
+          opcoes.splice(Number(btn.dataset.i), 1);
+          // Se a removida era a correta, não sobra nenhuma marcada e o
+          // servidor recusaria. A primeira assume.
+          if(!opcoes.some(o => o.is_correct)) opcoes[0].is_correct = true;
+          desenhar();
+        });
+      });
+    }
+
+    desenhar();
+
+    return {
+      // Opção em branco é linha não preenchida, não erro: sai fora.
+      ler(){
+        sincronizar();
+        return opcoes
+          .map(o => ({ text: o.text.trim(), is_correct: o.is_correct }))
+          .filter(o => o.text !== '');
+      },
+      limpar(){
+        opcoes = [
+          { text: '', is_correct: true },
+          { text: '', is_correct: false },
+          { text: '', is_correct: false },
+        ];
+        desenhar();
+      },
+    };
+  }
+
+  // O cadastro de vídeo usa um editor só, recriado a cada abertura do modal.
+  let editorOpcoesVideo = null;
+
   function openVideoModal(){
     fillAreaSelect();
+    editorOpcoesVideo = criarEditorDeOpcoes(
+      document.getElementById('videoModalOpcoes'), 'videoModalCorreta', null
+    );
     document.getElementById('videoModalOverlay').hidden = false;
     document.getElementById('videoModalFeedback').hidden = true;
     atualizarVisibilidadeArea();
@@ -2970,10 +3061,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
       if(pergunta){
         body.quiz_question = pergunta;
-        body.quiz_options = [0, 1, 2].map(i => ({
-          text: document.getElementById('videoModalOpcao' + i).value.trim(),
-          is_correct: document.querySelector(`input[name="videoModalCorreta"][value="${i}"]`).checked,
-        })).filter(o => o.text);
+        body.quiz_options = editorOpcoesVideo ? editorOpcoesVideo.ler() : [];
       }
 
       if(origem === 's3'){
@@ -2987,7 +3075,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         document.getElementById('videoModalDescricao').value = '';
         document.getElementById('videoModalArquivo').value = '';
         document.getElementById('videoModalPergunta').value = '';
-        [0, 1, 2].forEach(i => { document.getElementById('videoModalOpcao' + i).value = ''; });
+        if(editorOpcoesVideo) editorOpcoesVideo.limpar();
       } else {
         await apiFetch('api/admin/courses/create.php', {
           method: 'POST',
@@ -3492,8 +3580,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     try{
       const d = await apiFetch('api/admin/courses/quiz.php?course_id=' + encodeURIComponent(courseId));
-      // Sempre três linhas de opção, como no cadastro do vídeo.
-      const opcoes = [0, 1, 2].map(i => d.options[i] || { text: '', is_correct: false });
 
       painel.innerHTML = `
         <div class="aulas-pergunta-form">
@@ -3502,13 +3588,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <input type="text" class="pq-texto" maxlength="500" value="${esc(d.question)}"
                  placeholder="Ex: Qual EPI é obrigatório na obra?">
           <label>Opções <span class="admin-field-hint-inline">(marque a certa ao lado; pelo menos duas preenchidas)</span></label>
-          ${opcoes.map((o, i) => `
-            <div class="pq-opcao">
-              <input type="radio" name="pq-certa-${courseId}" value="${i}" ${o.is_correct ? 'checked' : ''}>
-              <input type="text" class="pq-opcao-texto" data-i="${i}" maxlength="300"
-                     value="${esc(o.text)}" placeholder="Opção ${i + 1}">
-            </div>
-          `).join('')}
+          <div class="pq-opcoes"></div>
           <div class="pq-acoes">
             <button type="button" class="admin-modal-submit pq-salvar">${d.tem_pergunta ? 'Salvar' : 'Adicionar pergunta'}</button>
             ${d.tem_pergunta ? '<button type="button" class="pq-remover">Tirar a pergunta</button>' : ''}
@@ -3526,16 +3606,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         aviso.classList.toggle('erro', !!erro);
       };
 
+      const editor = criarEditorDeOpcoes(
+        painel.querySelector('.pq-opcoes'), 'pq-certa-' + courseId, d.options
+      );
+
       const montarCorpo = (remover) => {
         if(remover) return { course_id: courseId, remover: true };
-        const marcada = painel.querySelector(`input[name="pq-certa-${courseId}"]:checked`);
         return {
           course_id: courseId,
           question: painel.querySelector('.pq-texto').value.trim(),
-          options: [...painel.querySelectorAll('.pq-opcao-texto')].map(inp => ({
-            text: inp.value.trim(),
-            is_correct: !!marcada && Number(marcada.value) === Number(inp.dataset.i),
-          })),
+          options: editor.ler(),
         };
       };
 

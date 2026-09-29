@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20260929a">
+<link rel="stylesheet" href="style.css?v=20260929b">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -146,18 +146,11 @@
     <div class="admin-quiz-fields">
       <label class="admin-field-label">Pergunta do quiz (opcional)</label>
       <input type="text" id="videoModalPergunta" placeholder="Deixe em branco pra não ter pergunta">
-      <div class="admin-quiz-option">
-        <input type="radio" name="videoModalCorreta" value="0" checked>
-        <input type="text" id="videoModalOpcao0" placeholder="Opção 1 (marque a certa ao lado)">
-      </div>
-      <div class="admin-quiz-option">
-        <input type="radio" name="videoModalCorreta" value="1">
-        <input type="text" id="videoModalOpcao1" placeholder="Opção 2">
-      </div>
-      <div class="admin-quiz-option">
-        <input type="radio" name="videoModalCorreta" value="2">
-        <input type="text" id="videoModalOpcao2" placeholder="Opção 3">
-      </div>
+      <!-- As alternativas são montadas pelo JS. Eram três campos fixos
+           escritos aqui, e quem precisasse de uma quarta não tinha como —
+           o limite era só desta tela, os endpoints já aceitavam qualquer
+           quantidade. -->
+      <div id="videoModalOpcoes"></div>
     </div>
 
     <button type="button" id="videoModalSubmit" class="admin-modal-submit">Adicionar vídeo</button>
@@ -492,7 +485,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20260929a"></script>
+<script src="script.js?v=20260929b"></script>
 
 </body>
 </html>
