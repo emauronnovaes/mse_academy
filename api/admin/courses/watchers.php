@@ -81,10 +81,15 @@ if ($courseId) {
     ]);
 } else {
     // Visão geral: todos os vídeos, com a contagem de quem assistiu cada um.
+    // tem_pergunta vem junto pra lista poder marcar quais aulas ainda estão
+    // sem pergunta — é por onde o admin descobre o que falta preencher.
+    // Subconsulta em vez de mais um JOIN: com JOIN, a aula apareceria
+    // multiplicada pelas linhas de quiz e estragaria as contagens acima.
     $stmt = $pdo->query(
         'SELECT c.id, c.title, c.type, c.is_published, a.name AS area_name,
                 COUNT(CASE WHEN p.status = "concluido" THEN 1 END) AS total_concluido,
-                COUNT(CASE WHEN p.status = "em_andamento" THEN 1 END) AS total_em_andamento
+                COUNT(CASE WHEN p.status = "em_andamento" THEN 1 END) AS total_em_andamento,
+                (SELECT COUNT(*) FROM quiz_questions q WHERE q.course_id = c.id) AS total_perguntas
          FROM courses c
          LEFT JOIN areas a ON a.id = c.area_id
          LEFT JOIN user_course_progress p ON p.course_id = c.id
@@ -103,6 +108,7 @@ if ($courseId) {
                 'is_published' => (int) $c['is_published'],
                 'total_concluido' => (int) $c['total_concluido'],
                 'total_em_andamento' => (int) $c['total_em_andamento'],
+                'tem_pergunta' => (int) $c['total_perguntas'] > 0,
             ];
         }, $courses),
     ]);

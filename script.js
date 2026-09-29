@@ -3445,15 +3445,17 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         li.innerHTML = `
           <div class="aulas-info">
             <div class="aulas-title">${c.title}${arquivada ? ' <span class="aulas-badge">arquivada</span>' : ''}</div>
-            <div class="aulas-meta">${c.area_name || 'Sem área'} · ${c.type === 'onboarding' ? 'Integração' : 'Catálogo'} · <b>${c.total_concluido}</b> concluíram</div>
+            <div class="aulas-meta">${c.area_name || 'Sem área'} · ${c.type === 'onboarding' ? 'Integração' : 'Catálogo'} · <b>${c.total_concluido}</b> concluíram${c.tem_pergunta === false ? ' · <span class="aulas-sem-pergunta">sem pergunta</span>' : ''}</div>
           </div>
           <div class="aulas-acoes">
             <button type="button" class="aulas-btn aulas-btn-areas">Áreas</button>
+            <button type="button" class="aulas-btn aulas-btn-pergunta">Pergunta</button>
             <button type="button" class="aulas-btn aulas-btn-renomear">Renomear</button>
             <button type="button" class="aulas-btn aulas-btn-arquivar">${arquivada ? 'Republicar' : 'Arquivar'}</button>
             <button type="button" class="aulas-btn aulas-btn-excluir">Excluir</button>
           </div>
         `;
+        li.querySelector('.aulas-btn-pergunta').addEventListener('click', () => abrirPerguntaDaAula(li, c.id, c.title));
         li.querySelector('.aulas-btn-areas').addEventListener('click', () => abrirAreasDaAula(c.id, c.title));
         li.querySelector('.aulas-btn-renomear').addEventListener('click', () => renomearAula(c.id, c.title));
         li.querySelector('.aulas-btn-arquivar').addEventListener('click', () => arquivarAula(c.id, arquivada));
@@ -3462,6 +3464,116 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       });
     }catch(e){
       body.innerHTML = `<p>Não foi possível carregar: ${e.message}</p>`;
+    }
+  }
+
+  // ---------- Pergunta de uma aula já cadastrada ----------
+  // Antes a pergunta só podia ser escrita ao cadastrar o vídeo. Quem
+  // subisse a aula sem pergunta não tinha caminho nenhum: teria que apagar
+  // a aula e subir o vídeo de novo, perdendo o registro de quem assistiu.
+  //
+  // Uma pergunta por aula, que é como o resto do sistema trata: o cadastro
+  // grava uma, a tela mostra uma, a conta do baú é de uma por módulo.
+  async function abrirPerguntaDaAula(li, courseId, titulo){
+    let painel = li.nextElementSibling;
+    if(painel && painel.classList.contains('aulas-pergunta-painel')){
+      painel.remove();
+      return; // clicar de novo fecha
+    }
+
+    // Um painel por vez. São formulários altos: dois abertos ao mesmo tempo
+    // empurram a lista pra longe e dá pra digitar num achando que é o outro.
+    document.querySelectorAll('.aulas-pergunta-painel').forEach(el => el.remove());
+
+    painel = document.createElement('li');
+    painel.className = 'aulas-pergunta-painel';
+    painel.innerHTML = '<p>Carregando...</p>';
+    li.insertAdjacentElement('afterend', painel);
+
+    try{
+      const d = await apiFetch('api/admin/courses/quiz.php?course_id=' + encodeURIComponent(courseId));
+      // Sempre três linhas de opção, como no cadastro do vídeo.
+      const opcoes = [0, 1, 2].map(i => d.options[i] || { text: '', is_correct: false });
+
+      painel.innerHTML = `
+        <div class="aulas-pergunta-form">
+          <div class="pq-titulo">${d.tem_pergunta ? 'Pergunta de' : 'Nova pergunta para'} “${esc(titulo)}”</div>
+          <label>Pergunta <span class="admin-field-hint-inline">(em branco não dá — pra tirar, use o botão abaixo)</span></label>
+          <input type="text" class="pq-texto" maxlength="500" value="${esc(d.question)}"
+                 placeholder="Ex: Qual EPI é obrigatório na obra?">
+          <label>Opções <span class="admin-field-hint-inline">(marque a certa ao lado; pelo menos duas preenchidas)</span></label>
+          ${opcoes.map((o, i) => `
+            <div class="pq-opcao">
+              <input type="radio" name="pq-certa-${courseId}" value="${i}" ${o.is_correct ? 'checked' : ''}>
+              <input type="text" class="pq-opcao-texto" data-i="${i}" maxlength="300"
+                     value="${esc(o.text)}" placeholder="Opção ${i + 1}">
+            </div>
+          `).join('')}
+          <div class="pq-acoes">
+            <button type="button" class="admin-modal-submit pq-salvar">${d.tem_pergunta ? 'Salvar' : 'Adicionar pergunta'}</button>
+            ${d.tem_pergunta ? '<button type="button" class="pq-remover">Tirar a pergunta</button>' : ''}
+            <button type="button" class="pq-fechar">Fechar</button>
+          </div>
+          ${d.respostas > 0 ? `<p class="pq-aviso">${d.respostas} ${d.respostas === 1 ? 'pessoa já respondeu' : 'pessoas já responderam'} esta pergunta.</p>` : ''}
+          <div class="admin-modal-feedback pq-feedback" hidden></div>
+        </div>
+      `;
+
+      const aviso = painel.querySelector('.pq-feedback');
+      const mostrar = (texto, erro) => {
+        aviso.hidden = false;
+        aviso.textContent = texto;
+        aviso.classList.toggle('erro', !!erro);
+      };
+
+      const montarCorpo = (remover) => {
+        if(remover) return { course_id: courseId, remover: true };
+        const marcada = painel.querySelector(`input[name="pq-certa-${courseId}"]:checked`);
+        return {
+          course_id: courseId,
+          question: painel.querySelector('.pq-texto').value.trim(),
+          options: [...painel.querySelectorAll('.pq-opcao-texto')].map(inp => ({
+            text: inp.value.trim(),
+            is_correct: !!marcada && Number(marcada.value) === Number(inp.dataset.i),
+          })),
+        };
+      };
+
+      // Mandar duas vezes: a primeira pode voltar pedindo confirmação,
+      // quando já houve respostas — trocar a pergunta apaga o registro
+      // delas, e isso não pode acontecer num clique só.
+      const enviar = async (remover, botao) => {
+        botao.disabled = true;
+        try{
+          const corpo = montarCorpo(remover);
+          let r = await apiFetch('api/admin/courses/quiz.php', {
+            method: 'POST', body: JSON.stringify(corpo)
+          });
+          if(r.precisa_confirmar){
+            if(!confirm(r.message + '\n\nContinuar?')){ botao.disabled = false; return; }
+            r = await apiFetch('api/admin/courses/quiz.php', {
+              method: 'POST', body: JSON.stringify({ ...corpo, confirmar: true })
+            });
+          }
+          mostrar(r.message, false);
+          detalheCache.delete(courseId); // senão a aula volta do cache sem a pergunta nova
+          await recarregarTelaConteudo();
+          await loadAulas();
+        }catch(e){
+          mostrar(e.message, true);
+          botao.disabled = false;
+        }
+      };
+
+      const btnSalvar = painel.querySelector('.pq-salvar');
+      btnSalvar.addEventListener('click', () => enviar(false, btnSalvar));
+
+      const btnRemover = painel.querySelector('.pq-remover');
+      if(btnRemover) btnRemover.addEventListener('click', () => enviar(true, btnRemover));
+
+      painel.querySelector('.pq-fechar').addEventListener('click', () => painel.remove());
+    }catch(e){
+      painel.innerHTML = `<p class="aulas-pergunta-form">Não foi possível carregar a pergunta: ${esc(e.message)}</p>`;
     }
   }
 
