@@ -9,39 +9,45 @@ mse_cors();
 mse_require_admin();
 
 /**
- * Cria, troca ou tira a pergunta de uma aula depois que ela já existe.
+ * As perguntas de uma aula, depois que ela já existe.
  *
- * Antes a pergunta só podia ser escrita no momento de cadastrar o vídeo.
- * Quem subisse a aula sem pergunta — ou percebesse depois que a pergunta
- * estava ruim — não tinha caminho nenhum: teria que apagar a aula e subir
- * o vídeo de novo, perdendo junto o registro de quem já assistiu.
- *
- * Uma pergunta por aula, que é como o resto do sistema já trata: o
- * cadastro grava uma, a tela mostra uma, e a conta do baú é de uma por
- * módulo. Salvar de novo substitui a que existe.
+ * Antes a pergunta só podia ser escrita no momento de cadastrar o vídeo, e
+ * só uma. Quem subisse a aula sem pergunta — ou quisesse uma segunda —
+ * teria que apagar a aula e subir o vídeo de novo, perdendo junto o
+ * registro de quem já assistiu.
  *
  * MODO DE USO
- *   GET  ?course_id=N                                            lê a pergunta atual
- *   POST {course_id, question, options:[{text,is_correct},...]}  cria ou troca
- *   POST {course_id, remover:true}                               tira a pergunta
- *   + confirmar:true                                             quando já houve respostas
+ *   GET  ?course_id=N                    lê as perguntas atuais
+ *   POST {course_id, questions:[...]}    substitui o conjunto inteiro
+ *   POST {course_id, questions:[]}       tira todas
+ *   + confirmar:true                     quando já houve respostas
+ *
+ * Cada item de "questions" é {question, options:[{text,is_correct},...]}.
+ *
+ * O POST substitui tudo em vez de mexer pergunta a pergunta. A tela edita
+ * o conjunto inteiro de uma vez, e casar edição parcial com o que sumiu da
+ * tela exigiria mandar ids e tratar pergunta removida, criada e alterada
+ * em três caminhos diferentes — mais código pra chegar no mesmo lugar.
  *
  * O GET devolve is_correct, que api/courses/detail.php esconde de
  * propósito — lá é o colaborador lendo, e a resposta certa não pode sair
- * junto com a pergunta. Aqui é admin, que precisa ver o que já está
- * gravado pra poder corrigir.
+ * junto com a pergunta. Aqui é admin, que precisa ver o que está gravado.
  *
  * O PORQUÊ DA CONFIRMAÇÃO
- * quiz_attempts aponta pra quiz_options com ON DELETE CASCADE. Trocar as
- * opções apaga as respostas que apontavam pra elas — o histórico de quem
- * respondeu o quê some junto, sem aviso. Quem já assistiu NÃO é afetado:
- * isso vive em user_course_progress, que não é tocado aqui.
+ * quiz_attempts aponta pra quiz_options com ON DELETE CASCADE. Regravar as
+ * perguntas apaga as respostas que apontavam pras opções antigas — o
+ * registro de quem respondeu o quê some junto, sem aviso. Quem já assistiu
+ * NÃO é afetado: isso vive em user_course_progress, que não é tocado aqui.
  */
 
 $metodo = $_SERVER['REQUEST_METHOD'];
 if ($metodo !== 'POST' && $metodo !== 'GET') {
     mse_error('Método não permitido.', 405);
 }
+
+const QUIZ_MAX_PERGUNTAS = 10;
+const QUIZ_MIN_OPCOES = 2;
+const QUIZ_MAX_OPCOES = 6;
 
 $pdo = mse_db();
 $input = $metodo === 'POST' ? mse_input() : [];
@@ -61,15 +67,17 @@ if (!$curso) {
     mse_error('Aula não encontrada.', 404);
 }
 
-// Pergunta atual, se houver.
-$stmt = $pdo->prepare('SELECT id, question_text FROM quiz_questions WHERE course_id = ? ORDER BY order_index ASC LIMIT 1');
+// Perguntas que já existem, em ordem.
+$stmt = $pdo->prepare('SELECT id, question_text FROM quiz_questions WHERE course_id = ? ORDER BY order_index ASC, id ASC');
 $stmt->execute([$courseId]);
-$atual = $stmt->fetch();
+$atuais = $stmt->fetchAll();
 
 $respostasExistentes = 0;
-if ($atual) {
-    $stmt = $pdo->prepare('SELECT COUNT(*) FROM quiz_attempts WHERE question_id = ?');
-    $stmt->execute([(int) $atual['id']]);
+if ($atuais) {
+    $ids = array_map(function ($q) { return (int) $q['id']; }, $atuais);
+    $marcas = implode(',', array_fill(0, count($ids), '?'));
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM quiz_attempts WHERE question_id IN ({$marcas})");
+    $stmt->execute($ids);
     $respostasExistentes = (int) $stmt->fetchColumn();
 }
 
@@ -77,57 +85,80 @@ if ($atual) {
 // GET: o que já está gravado
 // ------------------------------------------------------------
 if ($metodo === 'GET') {
-    $opcoesAtuais = [];
-    if ($atual) {
+    $lista = [];
+    foreach ($atuais as $q) {
         $stmt = $pdo->prepare(
-            'SELECT option_text, is_correct FROM quiz_options WHERE question_id = ? ORDER BY order_index ASC'
+            'SELECT option_text, is_correct FROM quiz_options WHERE question_id = ? ORDER BY order_index ASC, id ASC'
         );
-        $stmt->execute([(int) $atual['id']]);
+        $stmt->execute([(int) $q['id']]);
+        $opcoes = [];
         foreach ($stmt->fetchAll() as $o) {
-            $opcoesAtuais[] = ['text' => $o['option_text'], 'is_correct' => (int) $o['is_correct'] === 1];
+            $opcoes[] = ['text' => $o['option_text'], 'is_correct' => (int) $o['is_correct'] === 1];
         }
+        $lista[] = ['question' => $q['question_text'], 'options' => $opcoes];
     }
 
     mse_json([
         'course_id' => $courseId,
         'titulo' => $curso['title'],
-        'tem_pergunta' => (bool) $atual,
-        'question' => $atual ? $atual['question_text'] : '',
-        'options' => $opcoesAtuais,
+        'questions' => $lista,
         'respostas' => $respostasExistentes,
+        'max_perguntas' => QUIZ_MAX_PERGUNTAS,
     ]);
 }
 
-$remover = !empty($input['remover']);
-
 // ------------------------------------------------------------
-// Validação do que vai ser gravado (antes de qualquer escrita)
+// Validação de tudo, antes de qualquer escrita
 // ------------------------------------------------------------
-$pergunta = '';
-$opcoes = [];
+$recebidas = $input['questions'] ?? null;
+if (!is_array($recebidas)) {
+    mse_error('Informe "questions" (mande uma lista vazia pra tirar todas).', 422);
+}
 
-if (!$remover) {
-    $pergunta = trim((string) ($input['question'] ?? ''));
-    if ($pergunta === '') {
-        mse_error('Escreva a pergunta.', 422);
+if (count($recebidas) > QUIZ_MAX_PERGUNTAS) {
+    mse_error('São no máximo ' . QUIZ_MAX_PERGUNTAS . ' perguntas por aula.', 422);
+}
+
+$perguntas = [];
+foreach ($recebidas as $pos => $q) {
+    $numero = $pos + 1;
+    $texto = trim((string) ($q['question'] ?? ''));
+
+    // Pergunta em branco é linha não preenchida, não erro — igual às
+    // opções. Mas só quando ela está vazia por inteiro: uma pergunta sem
+    // texto mas com alternativas escritas é engano, não desistência.
+    $opcoesBrutas = (array) ($q['options'] ?? []);
+    $temAlgumaOpcao = false;
+    foreach ($opcoesBrutas as $o) {
+        if (trim((string) ($o['text'] ?? '')) !== '') { $temAlgumaOpcao = true; break; }
     }
-    if (mb_strlen($pergunta) > 500) {
-        mse_error('A pergunta passou de 500 caracteres.', 422);
+    if ($texto === '' && !$temAlgumaOpcao) {
+        continue;
+    }
+    if ($texto === '') {
+        mse_error('A pergunta ' . $numero . ' está sem enunciado, mas tem alternativas escritas.', 422);
+    }
+    if (mb_strlen($texto) > 500) {
+        mse_error('A pergunta ' . $numero . ' passou de 500 caracteres.', 422);
     }
 
-    foreach ((array) ($input['options'] ?? []) as $o) {
-        $texto = trim((string) ($o['text'] ?? ''));
-        if ($texto === '') {
-            continue; // opção em branco é opção não preenchida, não erro
+    $opcoes = [];
+    foreach ($opcoesBrutas as $o) {
+        $t = trim((string) ($o['text'] ?? ''));
+        if ($t === '') {
+            continue;
         }
-        if (mb_strlen($texto) > 300) {
-            mse_error('Uma das opções passou de 300 caracteres.', 422);
+        if (mb_strlen($t) > 300) {
+            mse_error('Uma das alternativas da pergunta ' . $numero . ' passou de 300 caracteres.', 422);
         }
-        $opcoes[] = ['text' => $texto, 'is_correct' => !empty($o['is_correct'])];
+        $opcoes[] = ['text' => $t, 'is_correct' => !empty($o['is_correct'])];
     }
 
-    if (count($opcoes) < 2) {
-        mse_error('A pergunta precisa de pelo menos duas opções preenchidas.', 422);
+    if (count($opcoes) < QUIZ_MIN_OPCOES) {
+        mse_error('A pergunta ' . $numero . ' precisa de pelo menos ' . QUIZ_MIN_OPCOES . ' alternativas preenchidas.', 422);
+    }
+    if (count($opcoes) > QUIZ_MAX_OPCOES) {
+        mse_error('A pergunta ' . $numero . ' passou de ' . QUIZ_MAX_OPCOES . ' alternativas.', 422);
     }
 
     $certas = count(array_filter($opcoes, function ($o) { return $o['is_correct']; }));
@@ -136,14 +167,16 @@ if (!$remover) {
         // servidor aceitar respostas diferentes como corretas.
         mse_error(
             $certas === 0
-                ? 'Marque qual é a opção correta.'
-                : 'Marque só uma opção como correta.',
+                ? 'Marque qual é a alternativa correta da pergunta ' . $numero . '.'
+                : 'Marque só uma alternativa como correta na pergunta ' . $numero . '.',
             422
         );
     }
+
+    $perguntas[] = ['texto' => $texto, 'opcoes' => $opcoes];
 }
 
-if ($remover && !$atual) {
+if (!$perguntas && !$atuais) {
     mse_error('Esta aula não tem pergunta pra tirar.', 409);
 }
 
@@ -156,10 +189,8 @@ if ($respostasExistentes > 0 && empty($input['confirmar'])) {
         'course_id' => $courseId,
         'respostas' => $respostasExistentes,
         'message' => $respostasExistentes . ' '
-            . ($respostasExistentes === 1 ? 'pessoa já respondeu' : 'pessoas já responderam')
-            . ' esta pergunta. '
-            . ($remover ? 'Tirar' : 'Trocar')
-            . ' apaga esse registro de respostas, e isso não tem volta. '
+            . ($respostasExistentes === 1 ? 'resposta já foi registrada' : 'respostas já foram registradas')
+            . ' nesta aula. Salvar apaga esse registro de respostas, e isso não tem volta. '
             . 'Quem já assistiu a aula continua constando como assistido — isso não é afetado.',
     ]);
 }
@@ -169,22 +200,19 @@ if ($respostasExistentes > 0 && empty($input['confirmar'])) {
 // ------------------------------------------------------------
 $pdo->beginTransaction();
 try {
-    // Apagar a pergunta leva as opções e as respostas junto, por cascata.
-    // É o caminho para os dois casos: tirar de vez, ou recriar do zero.
-    if ($atual) {
-        $stmt = $pdo->prepare('DELETE FROM quiz_questions WHERE id = ?');
-        $stmt->execute([(int) $atual['id']]);
-    }
+    // Apagar as perguntas leva opções e respostas junto, por cascata. É o
+    // caminho para os dois casos: tirar de vez, ou recriar o conjunto.
+    $stmt = $pdo->prepare('DELETE FROM quiz_questions WHERE course_id = ?');
+    $stmt->execute([$courseId]);
 
-    $questionId = null;
-    if (!$remover) {
-        $stmt = $pdo->prepare('INSERT INTO quiz_questions (course_id, question_text, order_index) VALUES (?, ?, 1)');
-        $stmt->execute([$courseId, $pergunta]);
+    $insPergunta = $pdo->prepare('INSERT INTO quiz_questions (course_id, question_text, order_index) VALUES (?, ?, ?)');
+    $insOpcao = $pdo->prepare('INSERT INTO quiz_options (question_id, option_text, is_correct, order_index) VALUES (?, ?, ?, ?)');
+
+    foreach ($perguntas as $i => $p) {
+        $insPergunta->execute([$courseId, $p['texto'], $i + 1]);
         $questionId = (int) $pdo->lastInsertId();
-
-        $stmt = $pdo->prepare('INSERT INTO quiz_options (question_id, option_text, is_correct, order_index) VALUES (?, ?, ?, ?)');
-        foreach ($opcoes as $i => $o) {
-            $stmt->execute([$questionId, $o['text'], $o['is_correct'] ? 1 : 0, $i + 1]);
+        foreach ($p['opcoes'] as $j => $o) {
+            $insOpcao->execute([$questionId, $o['text'], $o['is_correct'] ? 1 : 0, $j + 1]);
         }
     }
 
@@ -194,13 +222,11 @@ try {
     mse_error('Falha ao salvar. Nada foi gravado (a transação desfez tudo). Detalhe: ' . $e->getMessage(), 500);
 }
 
+$total = count($perguntas);
 mse_json([
     'course_id' => $courseId,
-    'question_id' => $questionId,
-    'tem_pergunta' => !$remover,
-    'message' => $remover
-        ? 'Pergunta removida de "' . $curso['title'] . '".'
-        : ($atual
-            ? 'Pergunta de "' . $curso['title'] . '" atualizada.'
-            : 'Pergunta adicionada a "' . $curso['title'] . '".'),
+    'total_perguntas' => $total,
+    'message' => $total === 0
+        ? 'As perguntas de "' . $curso['title'] . '" foram removidas.'
+        : $total . ($total === 1 ? ' pergunta salva' : ' perguntas salvas') . ' em "' . $curso['title'] . '".',
 ]);

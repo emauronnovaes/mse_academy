@@ -425,6 +425,33 @@
     border-left:3px solid var(--red); background:var(--concrete); border-radius:0 8px 8px 0;
   }
   .pq-titulo{ font-weight:700; font-size:14px; margin-bottom:12px; }
+
+  /* Cada pergunta é um bloco, pra ficar claro onde uma acaba e a outra
+     começa — com várias, os campos soltos viravam uma parede de inputs. */
+  .pq-bloco{
+    padding:12px 14px; margin-bottom:12px;
+    background:#fff; border:1px solid var(--line); border-radius:8px;
+  }
+  .pq-bloco-topo{
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;
+  }
+  .pq-num{
+    font-family:'IBM Plex Mono',monospace; font-size:12px;
+    font-weight:700; color:var(--red); text-transform:uppercase; letter-spacing:.04em;
+  }
+  .pq-tirar{
+    padding:4px 10px; cursor:pointer; background:none;
+    border:1px solid var(--line); border-radius:6px;
+    font-family:inherit; font-size:12px; font-weight:600; color:var(--steel);
+  }
+  .pq-tirar:hover{ border-color:var(--red); color:var(--red); }
+  .pq-add-pergunta{
+    width:100%; padding:9px; margin-bottom:4px; cursor:pointer;
+    border:1px dashed var(--line); border-radius:8px; background:none;
+    color:var(--red); font-family:inherit; font-size:13px; font-weight:700;
+  }
+  .pq-add-pergunta:hover{ background:rgba(196,33,44,0.06); }
+  .pq-vazio{ font-size:13px; color:var(--steel); margin:4px 0 12px; }
   .aulas-pergunta-form label{
     display:block; font-size:13px; font-weight:700; margin:10px 0 4px;
   }
@@ -1341,6 +1368,17 @@
     margin-top:18px; padding-top:18px; border-top:1px dashed var(--line);
   }
   .quiz-box h5{font-size:15px; margin-bottom:14px;}
+
+  /* Com mais de uma pergunta na mesma aula, a linha separa uma da outra —
+     sem ela as alternativas de baixo pareciam continuação das de cima. */
+  .quiz-pergunta + .quiz-pergunta{
+    margin-top:18px; padding-top:18px; border-top:1px solid var(--line);
+  }
+  .quiz-enunciado{ font-size:15px; font-weight:600; margin:0 0 14px; }
+  .quiz-num{
+    display:inline-block; margin-right:6px;
+    font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--red);
+  }
   .quiz-options{display:flex; flex-direction:column; gap:10px; margin-bottom:16px;}
   .quiz-option{
     display:flex; align-items:center; gap:12px; text-align:left;

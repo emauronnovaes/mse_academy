@@ -1448,42 +1448,56 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }
   }
 
-  let onbQuizAnsweredThisSession = false; // reseta toda vez que a pergunta reaparece
+  // O que aconteceu nesta "sessão" de quiz — zerado toda vez que as
+  // perguntas reaparecem. "primeira" guarda o resultado da PRIMEIRA
+  // tentativa de cada pergunta (não do retry de 1,2s que já existia), e
+  // "acertadas" diz quais já foram vencidas, pra saber quando o módulo
+  // inteiro acabou.
+  let onbSessaoQuiz = { primeira: {}, acertadas: new Set() };
 
   function revealQuiz(mod){
     const quizEl = document.getElementById(`quiz-box-${mod.id}`);
     if(!quizEl) return;
     quizEl.hidden = false;
-    onbQuizAnsweredThisSession = false; // nova "sessão" — só a 1ª resposta dessa vez conta
+    onbSessaoQuiz = { primeira: {}, acertadas: new Set() }; // nova sessão
 
-    const question = mod.questions[0];
-    if(!question){
+    const perguntas = mod.questions || [];
+    if(!perguntas.length){
       quizEl.hidden = true; // aula sem pergunta cadastrada
       return;
     }
+
+    // Uma aula pode ter várias perguntas. Antes só a primeira era mostrada:
+    // as outras ficavam gravadas no banco e ninguém nunca as via.
+    //
     // Os textos e ids vêm do banco (question_text/option_text), e cada
     // opção carrega o id real — é o que o servidor usa pra conferir a
     // resposta, já que a alternativa certa não é mais enviada ao browser.
-    quizEl.innerHTML = `
-      <h5>${question.question_text}</h5>
-      <div class="quiz-options">
-        ${question.options.map(opt => `
-          <button type="button" class="quiz-option" data-option-id="${opt.id}">
-            <span>${opt.option_text}</span>
-          </button>
-        `).join('')}
+    quizEl.innerHTML = perguntas.map((q, i) => `
+      <div class="quiz-pergunta" data-q="${q.id}">
+        <h5>${perguntas.length > 1 ? `<span class="quiz-num">${i + 1}/${perguntas.length}</span> ` : ''}${q.question_text}</h5>
+        <div class="quiz-options">
+          ${q.options.map(opt => `
+            <button type="button" class="quiz-option" data-option-id="${opt.id}">
+              <span>${opt.option_text}</span>
+            </button>
+          `).join('')}
+        </div>
+        <div class="quiz-feedback" id="quiz-feedback-${mod.id}-${q.id}" hidden></div>
       </div>
-      <div class="quiz-feedback" id="quiz-feedback-${mod.id}" hidden></div>
-    `;
+    `).join('');
 
-    quizEl.querySelectorAll('.quiz-option').forEach(btn => {
-      btn.addEventListener('click', () => onbAnswerQuestion(mod, question, btn, quizEl));
+    perguntas.forEach(q => {
+      const bloco = quizEl.querySelector(`.quiz-pergunta[data-q="${q.id}"]`);
+      bloco.querySelectorAll('.quiz-option').forEach(btn => {
+        btn.addEventListener('click', () => onbAnswerQuestion(mod, q, btn, bloco, perguntas));
+      });
     });
   }
 
-  async function onbAnswerQuestion(mod, question, btn, quizEl){
-    const allOptions = quizEl.querySelectorAll('.quiz-option');
-    const feedbackEl = document.getElementById(`quiz-feedback-${mod.id}`);
+  async function onbAnswerQuestion(mod, question, btn, bloco, perguntas){
+    const allOptions = bloco.querySelectorAll('.quiz-option');
+    const feedbackEl = document.getElementById(`quiz-feedback-${mod.id}-${question.id}`);
 
     allOptions.forEach(o => o.disabled = true);
 
@@ -1509,10 +1523,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     // acabava com "acertou" eventualmente, e a exigência de 75% não
     // significaria nada. Só reassistir de novo (nova sessão) permite
     // tentar consertar o resultado.
-    if(!onbQuizAnsweredThisSession){
-      onbQuizAnsweredThisSession = true;
-      onbProgress.firstTry[mod.id] = isCorrect;
-      saveOnboardingProgress(onbProgress);
+    // Por pergunta, não por módulo: com várias, a segunda em diante nunca
+    // seria registrada se a marca fosse uma só pro módulo inteiro.
+    if(!(question.id in onbSessaoQuiz.primeira)){
+      onbSessaoQuiz.primeira[question.id] = isCorrect;
     }
 
     if(isCorrect){
@@ -1520,12 +1534,30 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       btn.insertAdjacentHTML('beforeend', '<i class="fa-solid fa-check opt-icon" aria-hidden="true"></i>');
       feedbackEl.hidden = false;
       feedbackEl.className = 'quiz-feedback ok';
+
+      onbSessaoQuiz.acertadas.add(question.id);
+      const faltam = perguntas.filter(q => !onbSessaoQuiz.acertadas.has(q.id)).length;
+
+      if(faltam > 0){
+        // Módulo só conclui quando todas forem acertadas — senão a primeira
+        // certa liberaria o próximo e as outras não valeriam nada.
+        feedbackEl.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i> Certo! '
+          + (faltam === 1 ? 'Falta uma pergunta.' : `Faltam ${faltam} perguntas.`);
+        return;
+      }
+
       feedbackEl.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i> Rota concluída. Você já sabe navegar por aqui.';
+
+      // O módulo conta como "acertou de primeira" só se TODAS as perguntas
+      // foram certas já na primeira tentativa desta sessão. É o que mantém
+      // a exigência de 75% do baú com o mesmo peso de antes, quando cada
+      // módulo tinha uma pergunta só.
+      onbProgress.firstTry[mod.id] = perguntas.every(q => onbSessaoQuiz.primeira[q.id] === true);
 
       if(!onbProgress.completed.includes(mod.id)){
         onbProgress.completed.push(mod.id);
-        saveOnboardingProgress(onbProgress);
       }
+      saveOnboardingProgress(onbProgress);
       renderProgressPanel();
       setTimeout(renderOnboarding, 900);
     } else {
@@ -2265,6 +2297,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     modalState.course = course;
     modalState.player = null;
     modalState.quizAnswered = false;
+    modalState.acertadas = new Set();
     modalState.lastFocusedEl = document.activeElement;
 
     videoModalTitleEl.textContent = course.title;
@@ -2430,30 +2463,43 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const container = document.getElementById('catalogBonusQuiz');
     if(!container || container.querySelector('.quiz-box')) return;
 
-    const question = (course.questions || [])[0];
-    if(!question) return; // aula sem pergunta cadastrada
+    const perguntas = course.questions || [];
+    if(!perguntas.length) return; // aula sem pergunta cadastrada
+
+    // Uma aula pode ter várias. Antes só a primeira aparecia, e as outras
+    // ficavam gravadas sem ninguém nunca ver.
     container.innerHTML = `
       <div class="quiz-box">
-        <h5>Pergunta rápida (opcional, vale +10 pontos): ${question.question_text}</h5>
-        <div class="quiz-options">
-          ${question.options.map(opt => `
-            <button type="button" class="quiz-option" data-option-id="${opt.id}">
-              <span>${opt.option_text}</span>
-            </button>
-          `).join('')}
-        </div>
-        <div class="quiz-feedback" id="catalogQuizFeedback" hidden></div>
+        <h5>${perguntas.length > 1
+          ? `Perguntas rápidas (opcional, valem +10 pontos cada)`
+          : 'Pergunta rápida (opcional, vale +10 pontos)'}</h5>
+        ${perguntas.map((q, i) => `
+          <div class="quiz-pergunta" data-q="${q.id}">
+            <p class="quiz-enunciado">${perguntas.length > 1 ? `<span class="quiz-num">${i + 1}/${perguntas.length}</span> ` : ''}${q.question_text}</p>
+            <div class="quiz-options">
+              ${q.options.map(opt => `
+                <button type="button" class="quiz-option" data-option-id="${opt.id}">
+                  <span>${opt.option_text}</span>
+                </button>
+              `).join('')}
+            </div>
+            <div class="quiz-feedback" id="catalogQuizFeedback-${q.id}" hidden></div>
+          </div>
+        `).join('')}
       </div>
     `;
 
-    container.querySelectorAll('.quiz-option').forEach(btn => {
-      btn.addEventListener('click', () => answerCatalogQuiz(question, btn));
+    perguntas.forEach(q => {
+      const bloco = container.querySelector(`.quiz-pergunta[data-q="${q.id}"]`);
+      bloco.querySelectorAll('.quiz-option').forEach(btn => {
+        btn.addEventListener('click', () => answerCatalogQuiz(q, btn, bloco));
+      });
     });
   }
 
-  async function answerCatalogQuiz(question, btn){
-    const allOptions = document.querySelectorAll('#catalogBonusQuiz .quiz-option');
-    const feedbackEl = document.getElementById('catalogQuizFeedback');
+  async function answerCatalogQuiz(question, btn, bloco){
+    const allOptions = bloco.querySelectorAll('.quiz-option');
+    const feedbackEl = document.getElementById('catalogQuizFeedback-' + question.id);
 
     allOptions.forEach(o => o.disabled = true);
 
@@ -2483,11 +2529,24 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
       modalState.quizAnswered = true;
       const course = modalState.course;
+
+      // +10 por pergunta distinta acertada, e só uma vez cada: sem o
+      // registro do que já foi acertado, reabrir a aula e responder de novo
+      // viraria uma máquina de pontos.
+      modalState.acertadas = modalState.acertadas || new Set();
+      const primeiraVezNesta = !modalState.acertadas.has(question.id);
+      modalState.acertadas.add(question.id);
+
+      let mudou = false;
       if(!catalogProgress.completed.includes(course.id)){
         catalogProgress.completed.push(course.id);
-        catalogProgress.points += 10;
-        saveCatalogProgress(catalogProgress);
+        mudou = true;
       }
+      if(primeiraVezNesta){
+        catalogProgress.points += 10;
+        mudou = true;
+      }
+      if(mudou) saveCatalogProgress(catalogProgress);
       // Atualiza o selo "Concluído" na tela de área/busca que ficou aberta por baixo
       if(!areaModalEl.hidden) refreshCourseScreen();
       renderProgressPanel();
@@ -3562,6 +3621,17 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   //
   // Uma pergunta por aula, que é como o resto do sistema trata: o cadastro
   // grava uma, a tela mostra uma, a conta do baú é de uma por módulo.
+  // ---------- Perguntas de uma aula já cadastrada ----------
+  // Antes a pergunta só podia ser escrita ao cadastrar o vídeo, e só uma.
+  // Quem subisse a aula sem pergunta — ou quisesse uma segunda — teria que
+  // apagar a aula e subir o vídeo de novo, perdendo o registro de quem já
+  // assistiu.
+  //
+  // O painel edita o conjunto inteiro e manda tudo de uma vez. Adicionar e
+  // tirar mexem só no bloco em questão, sem redesenhar os outros: redesenhar
+  // perderia o que já estava digitado nos demais.
+  const QUIZ_MAX_PERGUNTAS = 10;
+
   async function abrirPerguntaDaAula(li, courseId, titulo){
     let painel = li.nextElementSibling;
     if(painel && painel.classList.contains('aulas-pergunta-painel')){
@@ -3580,25 +3650,24 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     try{
       const d = await apiFetch('api/admin/courses/quiz.php?course_id=' + encodeURIComponent(courseId));
+      const maxPerguntas = d.max_perguntas || QUIZ_MAX_PERGUNTAS;
 
       painel.innerHTML = `
         <div class="aulas-pergunta-form">
-          <div class="pq-titulo">${d.tem_pergunta ? 'Pergunta de' : 'Nova pergunta para'} “${esc(titulo)}”</div>
-          <label>Pergunta <span class="admin-field-hint-inline">(em branco não dá — pra tirar, use o botão abaixo)</span></label>
-          <input type="text" class="pq-texto" maxlength="500" value="${esc(d.question)}"
-                 placeholder="Ex: Qual EPI é obrigatório na obra?">
-          <label>Opções <span class="admin-field-hint-inline">(marque a certa ao lado; pelo menos duas preenchidas)</span></label>
-          <div class="pq-opcoes"></div>
+          <div class="pq-titulo">Perguntas de “${esc(titulo)}”</div>
+          <div class="pq-lista"></div>
+          <button type="button" class="pq-add-pergunta">+ Adicionar pergunta</button>
           <div class="pq-acoes">
-            <button type="button" class="admin-modal-submit pq-salvar">${d.tem_pergunta ? 'Salvar' : 'Adicionar pergunta'}</button>
-            ${d.tem_pergunta ? '<button type="button" class="pq-remover">Tirar a pergunta</button>' : ''}
+            <button type="button" class="admin-modal-submit pq-salvar">Salvar</button>
             <button type="button" class="pq-fechar">Fechar</button>
           </div>
-          ${d.respostas > 0 ? `<p class="pq-aviso">${d.respostas} ${d.respostas === 1 ? 'pessoa já respondeu' : 'pessoas já responderam'} esta pergunta.</p>` : ''}
+          ${d.respostas > 0 ? `<p class="pq-aviso">${d.respostas} ${d.respostas === 1 ? 'resposta já foi registrada' : 'respostas já foram registradas'} nesta aula.</p>` : ''}
           <div class="admin-modal-feedback pq-feedback" hidden></div>
         </div>
       `;
 
+      const lista = painel.querySelector('.pq-lista');
+      const btnAddPergunta = painel.querySelector('.pq-add-pergunta');
       const aviso = painel.querySelector('.pq-feedback');
       const mostrar = (texto, erro) => {
         aviso.hidden = false;
@@ -3606,26 +3675,81 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         aviso.classList.toggle('erro', !!erro);
       };
 
-      const editor = criarEditorDeOpcoes(
-        painel.querySelector('.pq-opcoes'), 'pq-certa-' + courseId, d.options
-      );
+      const blocos = [];
+      let proximoId = 0;
 
-      const montarCorpo = (remover) => {
-        if(remover) return { course_id: courseId, remover: true };
-        return {
-          course_id: courseId,
-          question: painel.querySelector('.pq-texto').value.trim(),
-          options: editor.ler(),
-        };
-      };
+      // A numeração é refeita a cada mudança: com "Pergunta 1, 2, 3" fixo no
+      // momento da criação, tirar a do meio deixaria "1, 3".
+      function renumerar(){
+        blocos.forEach((b, i) => {
+          b.el.querySelector('.pq-num').textContent = 'Pergunta ' + (i + 1);
+          // Com uma só, tirar deixaria a aula sem pergunta nenhuma — pra
+          // isso existe o "Tirar todas", que avisa antes.
+          b.el.querySelector('.pq-tirar').hidden = blocos.length < 2;
+        });
+        btnAddPergunta.hidden = blocos.length >= maxPerguntas;
+        painel.querySelector('.pq-vazio')?.remove();
+        if(blocos.length === 0){
+          lista.insertAdjacentHTML('beforeend',
+            '<p class="pq-vazio">Esta aula está sem pergunta. Clique abaixo pra criar a primeira.</p>');
+        }
+      }
+
+      function adicionarBloco(dados){
+        const uid = proximoId++;
+        const el = document.createElement('div');
+        el.className = 'pq-bloco';
+        el.innerHTML = `
+          <div class="pq-bloco-topo">
+            <span class="pq-num"></span>
+            <button type="button" class="pq-tirar" title="Tirar esta pergunta">Tirar</button>
+          </div>
+          <input type="text" class="pq-texto" maxlength="500" value="${esc(dados && dados.question || '')}"
+                 placeholder="Ex: Qual EPI é obrigatório na obra?">
+          <div class="pq-opcoes"></div>
+        `;
+        lista.appendChild(el);
+
+        const editor = criarEditorDeOpcoes(
+          el.querySelector('.pq-opcoes'),
+          'pq-certa-' + courseId + '-' + uid,
+          dados && dados.options
+        );
+
+        el.querySelector('.pq-tirar').addEventListener('click', () => {
+          const i = blocos.findIndex(b => b.el === el);
+          if(i >= 0) blocos.splice(i, 1);
+          el.remove();
+          renumerar();
+        });
+
+        blocos.push({ el, editor });
+        renumerar();
+        return el;
+      }
+
+      (d.questions || []).forEach(q => adicionarBloco(q));
+      if(!(d.questions || []).length) adicionarBloco(null);
+
+      btnAddPergunta.addEventListener('click', () => {
+        const el = adicionarBloco(null);
+        el.querySelector('.pq-texto').focus();
+      });
+
+      const montarCorpo = () => ({
+        course_id: courseId,
+        questions: blocos.map(b => ({
+          question: b.el.querySelector('.pq-texto').value.trim(),
+          options: b.editor.ler(),
+        })),
+      });
 
       // Mandar duas vezes: a primeira pode voltar pedindo confirmação,
-      // quando já houve respostas — trocar a pergunta apaga o registro
-      // delas, e isso não pode acontecer num clique só.
-      const enviar = async (remover, botao) => {
+      // quando já houve respostas — regravar apaga o registro delas, e isso
+      // não pode acontecer num clique só.
+      const enviar = async (corpo, botao) => {
         botao.disabled = true;
         try{
-          const corpo = montarCorpo(remover);
           let r = await apiFetch('api/admin/courses/quiz.php', {
             method: 'POST', body: JSON.stringify(corpo)
           });
@@ -3636,7 +3760,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             });
           }
           mostrar(r.message, false);
-          detalheCache.delete(courseId); // senão a aula volta do cache sem a pergunta nova
+          detalheCache.delete(courseId); // senão a aula volta do cache sem as perguntas novas
           await recarregarTelaConteudo();
           await loadAulas();
         }catch(e){
@@ -3646,14 +3770,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       };
 
       const btnSalvar = painel.querySelector('.pq-salvar');
-      btnSalvar.addEventListener('click', () => enviar(false, btnSalvar));
-
-      const btnRemover = painel.querySelector('.pq-remover');
-      if(btnRemover) btnRemover.addEventListener('click', () => enviar(true, btnRemover));
+      btnSalvar.addEventListener('click', () => enviar(montarCorpo(), btnSalvar));
 
       painel.querySelector('.pq-fechar').addEventListener('click', () => painel.remove());
     }catch(e){
-      painel.innerHTML = `<p class="aulas-pergunta-form">Não foi possível carregar a pergunta: ${esc(e.message)}</p>`;
+      painel.innerHTML = `<p class="aulas-pergunta-form">Não foi possível carregar as perguntas: ${esc(e.message)}</p>`;
     }
   }
 
