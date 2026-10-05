@@ -1364,14 +1364,25 @@
      baixo: o botão sobe pro canto de cima pra não cobrir a barra deles. */
   .vid-player-wrap.tem-controles .vid-fullscreen-btn{ top:10px; bottom:auto; }
   /* Em tela cheia o aviso "Você ainda está aí?" cresce junto. */
-  .vid-player-wrap:fullscreen .vid-presenca-card{ max-width:420px; padding:28px 32px; }
-  .vid-player-wrap:fullscreen .vid-presenca-titulo{ font-size:24px; }
-  .vid-player-wrap:fullscreen .vid-presenca-texto{ font-size:16px; }
+  .vid-player-wrap:fullscreen .vid-presenca-card,
+  .vid-player-wrap.is-tela-cheia-janela .vid-presenca-card{ max-width:420px; padding:28px 32px; }
+  .vid-player-wrap:fullscreen .vid-presenca-titulo,
+  .vid-player-wrap.is-tela-cheia-janela .vid-presenca-titulo{ font-size:24px; }
+  .vid-player-wrap:fullscreen .vid-presenca-texto,
+  .vid-player-wrap.is-tela-cheia-janela .vid-presenca-texto{ font-size:16px; }
   /* Em tela cheia a moldura perde a proporção 16/9 e ocupa o monitor
      inteiro; sem isso o vídeo fica espremido num cantinho. */
   .vid-player-wrap:fullscreen{ aspect-ratio:auto; width:100vw; height:100vh; border-radius:0; margin:0; }
   .vid-player-wrap:fullscreen video,
   .vid-player-wrap:fullscreen iframe{ width:100%; height:100%; }
+  /* Tela cheia "na janela": quando o navegador recusa a tela cheia de
+     verdade (iframe do Portal sem allow="fullscreen"), a moldura cobre a
+     janela da Academy inteira. Acima do modal de Cursos (z-index 200). */
+  .vid-player-wrap.is-tela-cheia-janela{
+    position:fixed; inset:0; z-index:100000;
+    width:100%; height:100%; aspect-ratio:auto;
+    border-radius:0; margin:0; background:#000;
+  }
 
   .vid-watch-bar{
     position:absolute; left:0; right:0; bottom:0; height:5px; background:rgba(255,255,255,0.15); z-index:3;

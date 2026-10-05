@@ -1520,13 +1520,49 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     btn.addEventListener('click', () => {
       const alvo = btn.closest('.vid-player-wrap');
       if(!alvo) return;
-      if(document.fullscreenElement){
+      if(alvo.classList.contains('is-tela-cheia-janela')){
+        sairTelaCheiaNaJanela(alvo);
+      } else if(document.fullscreenElement){
         document.exitFullscreen();
-      } else if(alvo.requestFullscreen){
-        alvo.requestFullscreen().catch(e => console.warn('[tela cheia]', e.message));
+      } else if(document.fullscreenEnabled && alvo.requestFullscreen){
+        alvo.requestFullscreen().catch(e => {
+          console.warn('[tela cheia]', e.message);
+          alternarTelaCheiaNaJanela(alvo);
+        });
+      } else {
+        alternarTelaCheiaNaJanela(alvo);
       }
     });
   }
+
+  // Dentro do Portal a Academy roda num iframe, e sem allow="fullscreen"
+  // nesse iframe o navegador recusa qualquer tela cheia — o botão não
+  // fazia nada. Nesse caso o player ocupa a janela inteira da Academy:
+  // não é o monitor todo, mas é o máximo que o iframe deixa, e o aviso
+  // "Você ainda está aí?" continua por cima porque está dentro da moldura.
+  // Só muda o CSS: mover o iframe do YouTube no DOM recarregaria o vídeo.
+  function alternarTelaCheiaNaJanela(alvo){
+    alvo.classList.add('is-tela-cheia-janela');
+    const btn = alvo.querySelector('.vid-fullscreen-btn');
+    if(btn) btn.setAttribute('aria-label', 'Sair da tela cheia');
+  }
+
+  function sairTelaCheiaNaJanela(alvo){
+    alvo.classList.remove('is-tela-cheia-janela');
+    const btn = alvo.querySelector('.vid-fullscreen-btn');
+    if(btn) btn.setAttribute('aria-label', 'Tela cheia');
+  }
+
+  // Esc sai da tela cheia na janela antes de qualquer outra coisa — sem
+  // isto o Esc fechava o vídeo inteiro (o modal de Cursos escuta o Esc).
+  document.addEventListener('keydown', (e) => {
+    if(e.key !== 'Escape') return;
+    const alvo = document.querySelector('.vid-player-wrap.is-tela-cheia-janela');
+    if(!alvo) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    sairTelaCheiaNaJanela(alvo);
+  }, true);
 
   // Rede de segurança: se o vídeo entrar em tela cheia sozinho, por um
   // caminho que não é o nosso botão (duplo clique no <video>, atalho do
