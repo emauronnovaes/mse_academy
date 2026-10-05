@@ -1179,7 +1179,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   const PRESENCA_INTERVALO_MAX_SEG = 10 * 60;
   const PRESENCA_VIDEO_MIN_SEG = 60; // vídeo mais curto que isso não pergunta
 
-  function sortear(min, max){ return min + Math.random() * (max - min); }
+  // Nome próprio de propósito: já existe um sortear(lista, quantos) mais
+  // abaixo, e a declaração de baixo substituía esta em silêncio.
+  function sortearEntre(min, max){ return min + Math.random() * (max - min); }
 
   /**
    * Liga o aviso num player. O aviso é desenhado dentro da moldura
@@ -1211,7 +1213,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         const total = duracao();
         if(!(total > 0)) return; // duração ainda não carregou
         if(total < PRESENCA_VIDEO_MIN_SEG){ parar(); return; }
-        proximo = Math.min(sortear(0.3, 0.7) * total, PRESENCA_PRIMEIRO_MAX_SEG);
+        proximo = Math.min(sortearEntre(0.3, 0.7) * total, PRESENCA_PRIMEIRO_MAX_SEG);
       }
 
       // Limite de 2s por volta: com a aba em segundo plano o timer atrasa,
@@ -1249,7 +1251,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         aviso.remove();
         aviso = null;
         assistido = 0;
-        proximo = sortear(PRESENCA_INTERVALO_MIN_SEG, PRESENCA_INTERVALO_MAX_SEG);
+        proximo = sortearEntre(PRESENCA_INTERVALO_MIN_SEG, PRESENCA_INTERVALO_MAX_SEG);
         ultimo = Date.now();
         tocar();
       });
