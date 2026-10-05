@@ -416,6 +416,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   let onbMaxWatchedPct = 0;
   let onbVideoUnlocked = false; // true quando >=95% assistido (libera a pergunta)
   let onbYtTimer = null; // consulta a posição do player do YouTube (ele não avisa sozinho)
+  let onbPresenca = null; // aviso "Você ainda está aí?" do módulo aberto
 
   function onbCurrentIndex(){
     // Primeiro módulo OBRIGATÓRIO ainda não concluído. Aula opcional
@@ -842,6 +843,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     onbMaxWatchedPct = 0;
     ultimoPctEnviado = -1; // senão o módulo seguinte herdaria o % do anterior
     clearInterval(onbYtTimer); // sem isso o módulo anterior continuaria contando
+    if(onbPresenca){ onbPresenca.parar(); onbPresenca = null; }
 
     body.innerHTML = '<div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Carregando o vídeo...</div>';
 
@@ -929,6 +931,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         });
         onbPlayer = player;
         ligarBotaoTelaCheia(body);
+        onbPresenca = presencaNoYouTube(body.querySelector('.vid-player-wrap'), player);
         if(isRewatch) return;
 
         const trava = criarTravaDeAvanco(false);
@@ -985,6 +988,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const videoEl = document.getElementById(`onb-video-${mod.id}`);
     onbPlayer = videoEl;
     ligarBotaoTelaCheia(body);
+    onbPresenca = presencaNoVideo(body.querySelector('.vid-player-wrap'), videoEl);
 
     if(isRewatch){
       return; // controles nativos cuidam de tudo — não precisa rastrear progresso
@@ -1145,6 +1149,128 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         return maxSeg;
       }
     };
+  }
+
+  // ================================================================
+  // ---------- "Você ainda está aí?" ----------
+  // ================================================================
+  // De tempos em tempos o vídeo pausa sozinho e pergunta se a pessoa
+  // continua assistindo. Só volta a tocar com o clique em "Estou aqui":
+  // quem deixou a aula rodando e saiu não acumula progresso, porque o
+  // vídeo fica parado até alguém voltar.
+  //
+  // O primeiro aviso cai num ponto sorteado entre 30% e 70% do vídeo — pra
+  // aula curta também ter um — e nunca depois de 8 minutos. Nas aulas
+  // longas, repete a cada 6 a 10 minutos de vídeo tocando. Sorteado pra
+  // não dar pra prever.
+  const PRESENCA_PRIMEIRO_MAX_SEG = 8 * 60;
+  const PRESENCA_INTERVALO_MIN_SEG = 6 * 60;
+  const PRESENCA_INTERVALO_MAX_SEG = 10 * 60;
+  const PRESENCA_VIDEO_MIN_SEG = 60; // vídeo mais curto que isso não pergunta
+
+  function sortear(min, max){ return min + Math.random() * (max - min); }
+
+  /**
+   * Liga o aviso num player. O aviso é desenhado dentro da moldura
+   * (.vid-player-wrap) pra continuar visível na tela cheia da Academy.
+   * `tocando`, `pausar`, `tocar` e `duracao` escondem a diferença entre
+   * o <video> e o player do YouTube.
+   */
+  function criarChecagemDePresenca(wrap, { tocando, pausar, tocar, duracao }){
+    let assistido = 0;  // segundos de vídeo tocando desde o último aviso
+    let proximo = null; // quantos segundos tocando até o próximo aviso
+    let aviso = null;
+    let ultimo = Date.now();
+
+    const timer = setInterval(() => {
+      if(!wrap.isConnected){ parar(); return; } // player saiu da tela
+      const agora = Date.now();
+      const passou = (agora - ultimo) / 1000;
+      ultimo = agora;
+
+      if(aviso){
+        // Esperando o clique: se o vídeo voltar a tocar por outro caminho
+        // (barra de espaço, controles nativos), segura de novo.
+        if(tocando()) pausar();
+        return;
+      }
+      if(!tocando()) return;
+
+      if(proximo === null){
+        const total = duracao();
+        if(!(total > 0)) return; // duração ainda não carregou
+        if(total < PRESENCA_VIDEO_MIN_SEG){ parar(); return; }
+        proximo = Math.min(sortear(0.3, 0.7) * total, PRESENCA_PRIMEIRO_MAX_SEG);
+      }
+
+      // Limite de 2s por volta: com a aba em segundo plano o timer atrasa,
+      // e o "buraco" não pode virar tempo assistido de uma vez.
+      assistido += Math.min(passou, 2);
+      if(assistido >= proximo) perguntar();
+    }, 1000);
+
+    function perguntar(){
+      pausar();
+      // Tela cheia do próprio <video> ou do YouTube esconderia o aviso —
+      // só a tela cheia da moldura (botão da Academy) mostra o que tem dentro.
+      if(document.fullscreenElement && document.fullscreenElement !== wrap){
+        document.exitFullscreen().catch(() => {});
+      }
+
+      aviso = document.createElement('div');
+      aviso.className = 'vid-presenca';
+      aviso.setAttribute('role', 'alertdialog');
+      aviso.setAttribute('aria-label', 'Você ainda está aí?');
+      aviso.innerHTML = `
+        <div class="vid-presenca-card">
+          <p class="vid-presenca-titulo">Você ainda está aí?</p>
+          <p class="vid-presenca-texto">Pausamos o vídeo. Clique abaixo para continuar assistindo.</p>
+          <button type="button" class="vid-presenca-btn">
+            <i class="fa-solid fa-play" aria-hidden="true"></i> Estou aqui
+          </button>
+        </div>
+      `;
+      wrap.appendChild(aviso);
+
+      const btn = aviso.querySelector('.vid-presenca-btn');
+      btn.addEventListener('click', () => {
+        aviso.remove();
+        aviso = null;
+        assistido = 0;
+        proximo = sortear(PRESENCA_INTERVALO_MIN_SEG, PRESENCA_INTERVALO_MAX_SEG);
+        ultimo = Date.now();
+        tocar();
+      });
+      btn.focus();
+    }
+
+    function parar(){
+      clearInterval(timer);
+      if(aviso){ aviso.remove(); aviso = null; }
+    }
+
+    return { parar };
+  }
+
+  // Mesma checagem para os dois tipos de player.
+  function presencaNoVideo(wrap, videoEl){
+    return criarChecagemDePresenca(wrap, {
+      tocando: () => !videoEl.paused && !videoEl.ended,
+      pausar: () => videoEl.pause(),
+      tocar: () => { videoEl.play().catch(() => {}); },
+      duracao: () => videoEl.duration,
+    });
+  }
+
+  function presencaNoYouTube(wrap, player){
+    // Os métodos do player do YouTube só existem depois do onReady.
+    const pronto = () => typeof player.getPlayerState === 'function';
+    return criarChecagemDePresenca(wrap, {
+      tocando: () => pronto() && player.getPlayerState() === YT.PlayerState.PLAYING,
+      pausar: () => { if(pronto()) player.pauseVideo(); },
+      tocar: () => { if(pronto()) player.playVideo(); },
+      duracao: () => (pronto() ? player.getDuration() : 0),
+    });
   }
 
   // A barra própria da primeira vez aceita clique, mas só dentro do trecho
@@ -2344,6 +2470,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       if(detalhe.video_url){
         wrap.innerHTML = `<video src="${detalhe.video_url}" controls playsinline style="width:100%;border-radius:12px"></video>`;
         const v = wrap.querySelector('video');
+        modalState.presenca = presencaNoVideo(wrap, v);
 
         // Os controles nativos ficam visíveis mesmo travado, pra dar pra
         // VOLTAR. O que é bloqueado é só avançar além do que já foi visto —
@@ -2443,6 +2570,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             }
           }
         });
+        modalState.presenca = presencaNoYouTube(wrap, modalState.player);
       });
     }).catch(e => {
       const wrap = videoModalBodyEl.querySelector('.vid-player-wrap');
@@ -2571,6 +2699,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(videoModalEl.hidden) return;
     clearInterval(modalState.travaTimer); // senão segue rodando sobre um player destruído
     modalState.travaTimer = null;
+    if(modalState.presenca){ modalState.presenca.parar(); modalState.presenca = null; }
     if(modalState.player && typeof modalState.player.destroy === 'function'){
       modalState.player.destroy();
     }
