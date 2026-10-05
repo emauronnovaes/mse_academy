@@ -897,7 +897,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       body.innerHTML = isRewatch
         ? `
           <div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Modo revisão — pode avançar a barra à vontade.</div>
-          <div class="vid-player-wrap"><div id="onb-yt-${mod.id}"></div></div>
+          <div class="vid-player-wrap tem-controles">
+            <div id="onb-yt-${mod.id}"></div>
+            <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
+              <i class="fa-solid fa-display" aria-hidden="true"></i>
+            </button>
+          </div>
         `
         : `
           <div class="vid-hint"><i class="fa-solid fa-lock" aria-hidden="true"></i> Assista até o fim para liberar a pergunta. Não é possível avançar a barra.</div>
@@ -915,7 +920,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         const player = new YT.Player(`onb-yt-${mod.id}`, {
           videoId: detalhe.youtube_id,
           playerVars: isRewatch
-            ? { rel: 0, modestbranding: 1 }
+            // fs:0 também na revisão: na tela cheia do YouTube nada da
+            // Academy aparece por cima, nem o "Você ainda está aí?". A tela
+            // cheia fica com o botão da Academy, que expande a moldura.
+            ? { rel: 0, modestbranding: 1, fs: 0 }
             // fs:0 tira o botão de tela cheia DO YOUTUBE. Com ele, quem
             // ia pra tela cheia era o player, e aí o YouTube mostrava a
             // barra dele — dava pra ver e arrastar o vídeo. O botão de
@@ -966,8 +974,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     body.innerHTML = isRewatch
       ? `
         <div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Modo revisão — pode avançar a barra à vontade.</div>
-        <div class="vid-player-wrap">
-          <video id="onb-video-${mod.id}" src="${videoSrc}" controls playsinline></video>
+        <div class="vid-player-wrap tem-controles">
+          <video id="onb-video-${mod.id}" src="${videoSrc}" controls controlslist="nofullscreen" playsinline></video>
+          <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
+            <i class="fa-solid fa-display" aria-hidden="true"></i>
+          </button>
         </div>
       `
       : `
@@ -1211,8 +1222,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     function perguntar(){
       pausar();
-      // Tela cheia do próprio <video> ou do YouTube esconderia o aviso —
-      // só a tela cheia da moldura (botão da Academy) mostra o que tem dentro.
+      // Último recurso: todo player já usa a tela cheia da moldura, que
+      // mostra o aviso por cima. Se mesmo assim o vídeo estiver na tela
+      // cheia dele, ela esconderia o aviso — então sai dela.
       if(document.fullscreenElement && document.fullscreenElement !== wrap){
         document.exitFullscreen().catch(() => {});
       }
@@ -1513,6 +1525,20 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       }
     });
   }
+
+  // Rede de segurança: se o vídeo entrar em tela cheia sozinho, por um
+  // caminho que não é o nosso botão (duplo clique no <video>, atalho do
+  // navegador), a tela cheia passa pra moldura. Na tela cheia do próprio
+  // vídeo nada da página aparece por cima — nem o "Você ainda está aí?".
+  document.addEventListener('fullscreenchange', () => {
+    const el = document.fullscreenElement;
+    if(!el || el.classList.contains('vid-player-wrap')) return;
+    const wrap = el.closest('.vid-player-wrap');
+    if(!wrap) return;
+    document.exitFullscreen()
+      .then(() => wrap.requestFullscreen())
+      .catch(() => {}); // navegador recusou a troca: fica fora da tela cheia
+  });
 
   function onbSetWatchPct(mod, pct){
     onbMaxWatchedPct = Math.max(onbMaxWatchedPct, pct);
@@ -2468,7 +2494,17 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       const trava = criarTravaDeAvanco(jaConcluiu);
 
       if(detalhe.video_url){
-        wrap.innerHTML = `<video src="${detalhe.video_url}" controls playsinline style="width:100%;border-radius:12px"></video>`;
+        // controlslist="nofullscreen": a tela cheia do próprio <video> não
+        // deixa nada da página por cima, nem o "Você ainda está aí?". No
+        // lugar entra o botão da Academy, que expande a moldura inteira.
+        wrap.classList.add('tem-controles');
+        wrap.innerHTML = `
+          <video src="${detalhe.video_url}" controls controlslist="nofullscreen" playsinline style="width:100%;border-radius:12px"></video>
+          <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
+            <i class="fa-solid fa-display" aria-hidden="true"></i>
+          </button>
+        `;
+        ligarBotaoTelaCheia(wrap);
         const v = wrap.querySelector('video');
         modalState.presenca = presencaNoVideo(wrap, v);
 
@@ -2518,22 +2554,21 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       // (.vid-player-wrap), então os controles da Academy vão junto e a
       // barra do YouTube continua escondida.
       //
-      // Só na primeira vez: depois de concluído o player abre com fs:1 e o
-      // botão do próprio YouTube já resolve, sem precisar de dois.
-      if(!jaConcluiu){
-        wrap.insertAdjacentHTML('beforeend', `
-          <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
-            <i class="fa-solid fa-display" aria-hidden="true"></i>
-          </button>
-        ` + marcacaoControlesDeRevisao('catalog'));
-        ligarBotaoTelaCheia(wrap);
-      }
+      // Depois de concluído também: a tela cheia do próprio YouTube não
+      // deixa nada da Academy por cima, nem o "Você ainda está aí?".
+      if(jaConcluiu) wrap.classList.add('tem-controles');
+      wrap.insertAdjacentHTML('beforeend', `
+        <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
+          <i class="fa-solid fa-display" aria-hidden="true"></i>
+        </button>
+      ` + (jaConcluiu ? '' : marcacaoControlesDeRevisao('catalog')));
+      ligarBotaoTelaCheia(wrap);
 
       loadYouTubeApi().then(() => {
         modalState.player = new YT.Player('catalog-yt-player', {
           videoId: detalhe.youtube_id,
           playerVars: jaConcluiu
-            ? { controls: 1, modestbranding: 1, rel: 0, fs: 1 }
+            ? { controls: 1, modestbranding: 1, rel: 0, fs: 0 }
             // fs:0 tira o botão de tela cheia DO YOUTUBE: em tela cheia do
             // player o YouTube mostra a barra dele de volta, e aí controls:0
             // deixaria de valer.
