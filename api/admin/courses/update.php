@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../../src/Cors.php';
 require_once __DIR__ . '/../../../src/Response.php';
 require_once __DIR__ . '/../../../src/Auth.php';
+require_once __DIR__ . '/../../../src/Treinamentos.php';
 
 mse_cors();
 mse_require_admin();
@@ -58,8 +59,15 @@ if (array_key_exists('description', $input)) {
     $valores[] = trim((string) $input['description']);
 }
 
+// Dados de auditoria (tipo, normas, instrutor, conteúdo, assuntos): só
+// os que vierem no corpo são alterados.
+foreach (mse_ler_campos_auditoria($pdo, $input) as $coluna => $valor) {
+    $campos[] = $coluna . ' = ?';
+    $valores[] = $valor;
+}
+
 if (!$campos) {
-    mse_error('Nada para alterar — envie title e/ou description.', 422);
+    mse_error('Nada para alterar — envie title, description ou os dados de auditoria.', 422);
 }
 
 $valores[] = $courseId;

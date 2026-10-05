@@ -32,11 +32,14 @@ $temCursosPorArea = $pdo->query("SHOW TABLES LIKE 'course_areas'")->fetch() !== 
 // tem_quiz evita que o front precise buscar o detalhe de cada aula só
 // pra saber se ela tem pergunta — informação que ele precisa já na
 // listagem, pra decidir se a conclusão vem de assistir ou de responder.
+// Só conta pergunta do FIM: atividade do meio do vídeo (momento_seg) é
+// respondida durante a reprodução e não segura a conclusão por quiz.
 $sql = "SELECT c.id, c.title, c.description, c.youtube_id, c.video_source, c.duration_minutes,
                " . ($temDuracaoSegundos ? 'c.duration_seconds,' : 'NULL AS duration_seconds,') . "
                " . ($temObrigatorio ? 'c.obrigatorio,' : '1 AS obrigatorio,') . "
                c.order_index, c.type, c.area_id, a.slug AS area_slug, a.name AS area_name,
-               EXISTS(SELECT 1 FROM quiz_questions q WHERE q.course_id = c.id) AS tem_quiz
+               EXISTS(SELECT 1 FROM quiz_questions q WHERE q.course_id = c.id"
+                   . (mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg') ? ' AND q.momento_seg IS NULL' : '') . ") AS tem_quiz
         FROM courses c
         LEFT JOIN areas a ON a.id = c.area_id
         WHERE c.is_published = 1";

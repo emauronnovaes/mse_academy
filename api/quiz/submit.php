@@ -25,8 +25,9 @@ $pdo = mse_db();
 
 // Confirma que a opção realmente pertence à pergunta enviada
 // (evita alguém forjar um option_id de outra pergunta pra "acertar" fácil).
+$temMomento = mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg');
 $stmt = $pdo->prepare(
-    'SELECT o.id, o.is_correct, q.course_id
+    'SELECT o.id, o.is_correct, q.course_id, ' . ($temMomento ? 'q.momento_seg' : 'NULL AS momento_seg') . '
      FROM quiz_options o
      JOIN quiz_questions q ON q.id = o.question_id
      WHERE o.id = ? AND o.question_id = ?'
@@ -44,16 +45,40 @@ if (!mse_course_is_unlocked($pdo, (int) $user['id'], $courseId)) {
     mse_error('Este módulo ainda está bloqueado.', 403);
 }
 
-// Exige ter assistido o vídeo (>=95%) antes de aceitar qualquer resposta —
-// mesma regra usada no player, agora reforçada no servidor.
+// Pergunta do fim: exige ter assistido o vídeo (>=95%) antes de aceitar
+// qualquer resposta — mesma regra usada no player, reforçada no servidor.
+//
+// Atividade do meio do vídeo (momento_seg): exige ter chegado àquele
+// ponto. O progresso é gravado de 5 em 5%, então a folga é de 6 pontos —
+// sem ela, quem está exatamente no momento da atividade seria recusado.
+$momento = $option['momento_seg'] === null ? null : (int) $option['momento_seg'];
+
 $stmt = $pdo->prepare(
     'SELECT watched_pct FROM user_course_progress WHERE user_id = ? AND course_id = ?'
 );
 $stmt->execute([$user['id'], $courseId]);
 $progress = $stmt->fetch();
+$pctAssistido = $progress ? (float) $progress['watched_pct'] : 0.0;
 
-if (!$progress || (float) $progress['watched_pct'] < 95) {
-    mse_error('Assista o vídeo até o fim antes de responder.', 403);
+if ($momento === null) {
+    if (!$progress || $pctAssistido < 95) {
+        mse_error('Assista o vídeo até o fim antes de responder.', 403);
+    }
+} else {
+    if (!$progress) {
+        mse_error('Abra o vídeo antes de responder.', 403);
+    }
+    $duracao = 0;
+    if (mse_tem_coluna($pdo, 'courses', 'duration_seconds')) {
+        $stmt = $pdo->prepare('SELECT duration_seconds FROM courses WHERE id = ?');
+        $stmt->execute([$courseId]);
+        $duracao = (int) $stmt->fetchColumn();
+    }
+    // Sem duração conhecida não dá pra converter segundo em %, e aí vale
+    // só ter aberto o vídeo — o player já não deixa adiantar a barra.
+    if ($duracao > 0 && $pctAssistido + 6 < ($momento / $duracao) * 100) {
+        mse_error('Assista até esse ponto do vídeo antes de responder.', 403);
+    }
 }
 
 $isCorrect = (bool) $option['is_correct'];
@@ -63,7 +88,18 @@ $stmt = $pdo->prepare(
 );
 $stmt->execute([$user['id'], $questionId, $optionId, $isCorrect ? 1 : 0]);
 
+// Resposta certa conclui a aula só quando não falta mais nada: pergunta do
+// fim exige as atividades do meio todas acertadas; atividade do meio só
+// conclui se a aula não tem pergunta do fim e o vídeo já foi até o fim.
+$concluiAula = false;
 if ($isCorrect) {
+    $semPendencias = mse_atividades_pendentes($pdo, (int) $user['id'], $courseId) === 0;
+    $concluiAula = $momento === null
+        ? $semPendencias
+        : ($semPendencias && $pctAssistido >= 95 && !mse_tem_pergunta_final($pdo, $courseId));
+}
+
+if ($concluiAula) {
     // Confere se ESSE curso já estava concluído antes dessa resposta —
     // sem isso, responder a mesma pergunta certa várias vezes (ex:
     // clicando rápido, ou reassistindo e respondendo de novo) dava
@@ -106,4 +142,4 @@ if ($isCorrect) {
     }
 }
 
-mse_json(['correct' => $isCorrect]);
+mse_json(['correct' => $isCorrect, 'concluido' => $concluiAula]);

@@ -417,6 +417,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   let onbVideoUnlocked = false; // true quando >=95% assistido (libera a pergunta)
   let onbYtTimer = null; // consulta a posição do player do YouTube (ele não avisa sozinho)
   let onbPresenca = null; // aviso "Você ainda está aí?" do módulo aberto
+  let onbAtividades = null; // atividades durante o vídeo do módulo aberto
 
   function onbCurrentIndex(){
     // Primeiro módulo OBRIGATÓRIO ainda não concluído. Aula opcional
@@ -844,6 +845,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     ultimoPctEnviado = -1; // senão o módulo seguinte herdaria o % do anterior
     clearInterval(onbYtTimer); // sem isso o módulo anterior continuaria contando
     if(onbPresenca){ onbPresenca.parar(); onbPresenca = null; }
+    if(onbAtividades){ onbAtividades.parar(); onbAtividades = null; }
 
     body.innerHTML = '<div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Carregando o vídeo...</div>';
 
@@ -939,8 +941,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         });
         onbPlayer = player;
         ligarBotaoTelaCheia(body);
-        onbPresenca = presencaNoYouTube(body.querySelector('.vid-player-wrap'), player);
+        onbPresenca = presencaNoYouTube(body.querySelector('.vid-player-wrap'), player, mod.id);
         if(isRewatch) return;
+        onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoYouTube(player));
 
         const trava = criarTravaDeAvanco(false);
         ligarControlesDeRevisao(
@@ -999,11 +1002,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const videoEl = document.getElementById(`onb-video-${mod.id}`);
     onbPlayer = videoEl;
     ligarBotaoTelaCheia(body);
-    onbPresenca = presencaNoVideo(body.querySelector('.vid-player-wrap'), videoEl);
+    onbPresenca = presencaNoVideo(body.querySelector('.vid-player-wrap'), videoEl, mod.id);
 
     if(isRewatch){
       return; // controles nativos cuidam de tudo — não precisa rastrear progresso
     }
+    onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoVideo(videoEl));
 
     const trava = criarTravaDeAvanco(false);
     ligarControlesDeRevisao(
@@ -1189,7 +1193,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
    * `tocando`, `pausar`, `tocar` e `duracao` escondem a diferença entre
    * o <video> e o player do YouTube.
    */
-  function criarChecagemDePresenca(wrap, { tocando, pausar, tocar, duracao }){
+  function criarChecagemDePresenca(wrap, { tocando, pausar, tocar, duracao, aoConfirmar }){
     let assistido = 0;  // segundos de vídeo tocando desde o último aviso
     let proximo = null; // quantos segundos tocando até o próximo aviso
     let aviso = null;
@@ -1254,6 +1258,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         proximo = sortearEntre(PRESENCA_INTERVALO_MIN_SEG, PRESENCA_INTERVALO_MAX_SEG);
         ultimo = Date.now();
         tocar();
+        if(aoConfirmar) aoConfirmar();
       });
       btn.focus();
     }
@@ -1266,25 +1271,156 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     return { parar };
   }
 
-  // Mesma checagem para os dois tipos de player.
-  function presencaNoVideo(wrap, videoEl){
-    return criarChecagemDePresenca(wrap, {
+  // O mesmo jeito de mandar no <video> e no player do YouTube, pro aviso de
+  // presença e pras atividades não precisarem saber qual dos dois é.
+  function controlesDoVideo(videoEl){
+    return {
       tocando: () => !videoEl.paused && !videoEl.ended,
       pausar: () => videoEl.pause(),
       tocar: () => { videoEl.play().catch(() => {}); },
       duracao: () => videoEl.duration,
-    });
+      posicao: () => videoEl.currentTime,
+    };
   }
 
-  function presencaNoYouTube(wrap, player){
+  function controlesDoYouTube(player){
     // Os métodos do player do YouTube só existem depois do onReady.
     const pronto = () => typeof player.getPlayerState === 'function';
-    return criarChecagemDePresenca(wrap, {
+    return {
       tocando: () => pronto() && player.getPlayerState() === YT.PlayerState.PLAYING,
       pausar: () => { if(pronto()) player.pauseVideo(); },
       tocar: () => { if(pronto()) player.playVideo(); },
       duracao: () => (pronto() ? player.getDuration() : 0),
-    });
+      posicao: () => (pronto() ? player.getCurrentTime() : NaN),
+    };
+  }
+
+  // Cada "Estou aqui" é registrado no servidor: é a evidência de presença
+  // que aparece na lista de presença do treinamento. Falhar aqui não
+  // atrapalha quem está assistindo.
+  function registrarPresenca(courseId){
+    apiPost('api/progress/presenca.php', { course_id: courseId })
+      .catch(e => console.warn('[presença] não consegui registrar:', e.message));
+  }
+
+  function presencaNoVideo(wrap, videoEl, courseId){
+    return criarChecagemDePresenca(wrap, Object.assign(controlesDoVideo(videoEl), {
+      aoConfirmar: () => registrarPresenca(courseId),
+    }));
+  }
+
+  function presencaNoYouTube(wrap, player, courseId){
+    return criarChecagemDePresenca(wrap, Object.assign(controlesDoYouTube(player), {
+      aoConfirmar: () => registrarPresenca(courseId),
+    }));
+  }
+
+  // ================================================================
+  // ---------- Atividades durante o vídeo ----------
+  // ================================================================
+  // Pergunta com momento_seg aparece no meio do vídeo: no segundo marcado o
+  // vídeo pausa e a pergunta cobre o player. Só volta a tocar depois da
+  // resposta certa — errou, tenta de novo, igual às perguntas do fim. Quem
+  // confere é o servidor (quiz/submit.php), que também exige que a pessoa
+  // tenha chegado àquele ponto do vídeo. A trava de avanço garante que não
+  // dá pra pular por cima: o vídeo passa pelo segundo marcado.
+  function ligarAtividadesNoVideo(wrap, perguntas, { posicao, tocando, pausar, tocar }){
+    const atividades = (perguntas || [])
+      .filter(q => q.momento_seg != null)
+      .sort((a, b) => a.momento_seg - b.momento_seg);
+    const resolvidas = new Set();
+    let aberta = null;
+    const controle = { pendentes: () => atividades.length - resolvidas.size, parar };
+    if(!atividades.length) return controle;
+
+    const timer = setInterval(() => {
+      if(!wrap.isConnected){ parar(); return; } // player saiu da tela
+      if(aberta){
+        // Esperando a resposta: se o vídeo voltar a tocar por outro caminho
+        // (barra de espaço, controles nativos), segura de novo.
+        if(tocando()) pausar();
+        return;
+      }
+      const pos = posicao();
+      if(!isFinite(pos)) return;
+      const proxima = atividades.find(q => !resolvidas.has(q.id) && pos >= q.momento_seg);
+      if(proxima) mostrar(proxima);
+    }, 250);
+
+    function mostrar(q){
+      pausar();
+      // Mesmo cuidado do aviso de presença: na tela cheia do próprio vídeo
+      // a atividade ficaria escondida.
+      if(document.fullscreenElement && document.fullscreenElement !== wrap){
+        document.exitFullscreen().catch(() => {});
+      }
+      const mmss = String(Math.floor(q.momento_seg / 60)).padStart(2, '0') + ':' + String(q.momento_seg % 60).padStart(2, '0');
+      aberta = document.createElement('div');
+      aberta.className = 'vid-atividade';
+      aberta.setAttribute('role', 'dialog');
+      aberta.setAttribute('aria-label', 'Atividade do vídeo');
+      aberta.innerHTML = `
+        <div class="vid-atividade-card">
+          <span class="vid-atividade-tag">Atividade · ${mmss}</span>
+          <p class="vid-atividade-pergunta">${escaparHtml(q.question_text)}</p>
+          <div class="vid-atividade-opcoes">
+            ${q.options.map(o => `
+              <button type="button" class="vid-atividade-opcao" data-option-id="${o.id}">${escaparHtml(o.option_text)}</button>
+            `).join('')}
+          </div>
+          <div class="vid-atividade-feedback" hidden></div>
+        </div>
+      `;
+      wrap.appendChild(aberta);
+
+      const caixa = aberta;
+      const botoes = caixa.querySelectorAll('.vid-atividade-opcao');
+      const fb = caixa.querySelector('.vid-atividade-feedback');
+      botoes.forEach(btn => btn.addEventListener('click', async () => {
+        botoes.forEach(b => { b.disabled = true; });
+        let certo;
+        try{
+          const r = await apiPost('api/quiz/submit.php', {
+            question_id: q.id,
+            option_id: parseInt(btn.dataset.optionId, 10),
+          });
+          certo = !!r.correct;
+        }catch(e){
+          fb.hidden = false;
+          fb.className = 'vid-atividade-feedback bad';
+          fb.textContent = e.message;
+          botoes.forEach(b => { b.disabled = false; });
+          return;
+        }
+        fb.hidden = false;
+        if(certo){
+          btn.classList.add('correct');
+          fb.className = 'vid-atividade-feedback ok';
+          fb.textContent = 'Isso aí! Voltando ao vídeo...';
+          resolvidas.add(q.id);
+          setTimeout(() => {
+            if(aberta === caixa){ caixa.remove(); aberta = null; }
+            tocar();
+          }, 1200);
+        } else {
+          btn.classList.add('incorrect');
+          fb.className = 'vid-atividade-feedback bad';
+          fb.textContent = 'Quase lá — tente de novo.';
+          setTimeout(() => {
+            botoes.forEach(b => { b.disabled = false; b.classList.remove('incorrect'); });
+            fb.hidden = true;
+          }, 1200);
+        }
+      }));
+      if(botoes[0]) botoes[0].focus();
+    }
+
+    function parar(){
+      clearInterval(timer);
+      if(aberta){ aberta.remove(); aberta = null; }
+    }
+
+    return controle;
   }
 
   // A barra própria da primeira vez aceita clique, mas só dentro do trecho
@@ -1585,6 +1721,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     enviarProgresso(mod.id, onbMaxWatchedPct);
 
+    // Atividade do meio do vídeo ainda sem resposta (uma marcada bem no
+    // fim, depois dos 95%) segura a conclusão: o servidor não concluiria
+    // mesmo, e a trilha andaria pro próximo módulo com o vídeo no meio.
+    if(onbAtividades && onbAtividades.pendentes() > 0) return;
+
     if(!onbVideoUnlocked && onbMaxWatchedPct >= ONB_PASS_THRESHOLD){
       onbVideoUnlocked = true;
       if(mod.temQuiz){
@@ -1651,7 +1792,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     quizEl.hidden = false;
     onbSessaoQuiz = { primeira: {}, acertadas: new Set() }; // nova sessão
 
-    const perguntas = mod.questions || [];
+    // Só as perguntas do fim: as atividades (momento_seg) já foram
+    // respondidas durante o vídeo.
+    const perguntas = (mod.questions || []).filter(q => q.momento_seg == null);
     if(!perguntas.length){
       quizEl.hidden = true; // aula sem pergunta cadastrada
       return;
@@ -2488,6 +2631,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     modalState.player = null;
     modalState.quizAnswered = false;
     modalState.acertadas = new Set();
+    // Sem zerar, depois de um vídeo chegar a 100% o progresso do próximo
+    // nunca era enviado na mesma visita (a trilha já zerava, o catálogo não).
+    ultimoPctEnviado = -1;
     modalState.lastFocusedEl = document.activeElement;
 
     videoModalTitleEl.textContent = course.title;
@@ -2544,7 +2690,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         `;
         ligarBotaoTelaCheia(wrap);
         const v = wrap.querySelector('video');
-        modalState.presenca = presencaNoVideo(wrap, v);
+        modalState.presenca = presencaNoVideo(wrap, v, course.id);
+        if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoVideo(v));
 
         // Os controles nativos ficam visíveis mesmo travado, pra dar pra
         // VOLTAR. O que é bloqueado é só avançar além do que já foi visto —
@@ -2643,7 +2790,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             }
           }
         });
-        modalState.presenca = presencaNoYouTube(wrap, modalState.player);
+        modalState.presenca = presencaNoYouTube(wrap, modalState.player, course.id);
+        if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoYouTube(modalState.player));
       });
     }).catch(e => {
       const wrap = videoModalBodyEl.querySelector('.vid-player-wrap');
@@ -2664,8 +2812,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const container = document.getElementById('catalogBonusQuiz');
     if(!container || container.querySelector('.quiz-box')) return;
 
-    const perguntas = course.questions || [];
-    if(!perguntas.length) return; // aula sem pergunta cadastrada
+    // Só as perguntas do fim: as atividades já apareceram durante o vídeo.
+    const perguntas = (course.questions || []).filter(q => q.momento_seg == null);
+    if(!perguntas.length) return; // aula sem pergunta do fim
 
     // Uma aula pode ter várias. Antes só a primeira aparecia, e as outras
     // ficavam gravadas sem ninguém nunca ver.
@@ -2773,6 +2922,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     clearInterval(modalState.travaTimer); // senão segue rodando sobre um player destruído
     modalState.travaTimer = null;
     if(modalState.presenca){ modalState.presenca.parar(); modalState.presenca = null; }
+    if(modalState.atividades){ modalState.atividades.parar(); modalState.atividades = null; }
     if(modalState.player && typeof modalState.player.destroy === 'function'){
       modalState.player.destroy();
     }
@@ -3325,6 +3475,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         body.quiz_options = editorOpcoesVideo ? editorOpcoesVideo.ler() : [];
       }
 
+      Object.assign(body, lerCamposAuditoriaDoModal());
+
       if(origem === 's3'){
         // Vai pra fila em vez de travar o modal: o envio continua no
         // painel e o formulário já fica livre pro próximo vídeo.
@@ -3337,6 +3489,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         document.getElementById('videoModalArquivo').value = '';
         document.getElementById('videoModalPergunta').value = '';
         if(editorOpcoesVideo) editorOpcoesVideo.limpar();
+        limparCamposAuditoriaDoModal();
       } else {
         await apiFetch('api/admin/courses/create.php', {
           method: 'POST',
@@ -3354,6 +3507,30 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       submitBtn.disabled = false;
       submitBtn.textContent = 'Adicionar vídeo';
     }
+  }
+
+  // Só manda o que foi preenchido: campo em branco nem vai, e assim o
+  // cadastro continua funcionando antes da migração 020 rodar no banco.
+  function lerCamposAuditoriaDoModal(){
+    const campos = {};
+    const tipo = document.getElementById('videoModalTipoTreinamento');
+    if(!tipo) return campos;
+    const normas = Array.from(document.querySelectorAll('#videoModalNormas input:checked')).map(i => i.value);
+    const texto = {
+      tipo_treinamento: tipo.value,
+      instrutor: document.getElementById('videoModalInstrutor').value.trim(),
+      conteudo_programatico: document.getElementById('videoModalConteudo').value.trim(),
+      assuntos: document.getElementById('videoModalAssuntos').value.trim(),
+    };
+    Object.entries(texto).forEach(([k, v]) => { if(v) campos[k] = v; });
+    if(normas.length) campos.normas = normas;
+    return campos;
+  }
+  function limparCamposAuditoriaDoModal(){
+    if(!document.getElementById('videoModalTipoTreinamento')) return;
+    ['videoModalTipoTreinamento', 'videoModalInstrutor', 'videoModalConteudo', 'videoModalAssuntos']
+      .forEach(id => { document.getElementById(id).value = ''; });
+    document.querySelectorAll('#videoModalNormas input').forEach(i => { i.checked = false; });
   }
 
   // ---------- Fila de envio de vídeos ----------
@@ -3772,48 +3949,485 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     });
   }
 
-  function openAulasModal(){
+  // ================================================================
+  // ---------- Busca de treinamentos (substituiu "Gerenciar aulas") ----------
+  // ================================================================
+  // Tela de consulta pra auditoria (ISO 9001, 14001 e 45001): cada vídeo é
+  // um treinamento online, com filtros, lista de presença automática e
+  // exportação em CSV e PDF. As ações que a lista antiga tinha continuam em
+  // cada linha — presença, editar, perguntas e atividades, áreas, arquivar
+  // e excluir — e abrem numa janela por cima, sem perder os filtros.
+  const trnEstado = { lista: [], tipos: [], normas: [], auditoriaAtiva: true, timer: null, pedido: 0 };
+
+  // A janela das ações de uma aula. Antes ela era a própria tela de
+  // "Gerenciar aulas"; agora serve a todas as ações da Busca.
+  function abrirDialogoAula(titulo, subtitulo, largo){
+    document.getElementById('aulasModalTitle').textContent = titulo;
+    const sub = document.getElementById('aulasModalSubtitle');
+    sub.textContent = subtitulo || '';
+    sub.hidden = !subtitulo;
+    document.querySelector('#aulasModalOverlay .admin-modal').classList.toggle('admin-modal-xl', !!largo);
     document.getElementById('aulasModalOverlay').hidden = false;
-    loadAulas();
+    return document.getElementById('aulasModalBody');
   }
   function closeAulasModal(){
     document.getElementById('aulasModalOverlay').hidden = true;
+    document.getElementById('aulasModalBody').innerHTML = '';
   }
 
-  async function loadAulas(){
-    const body = document.getElementById('aulasModalBody');
-    body.innerHTML = '<p>Carregando...</p>';
+  function openTreinamentosTela(){
+    document.getElementById('treinamentosTela').hidden = false;
+    document.documentElement.classList.add('trn-aberta');
+    carregarTreinamentos();
+    setTimeout(() => document.getElementById('trnBusca').focus(), 0);
+  }
+  function closeTreinamentosTela(){
+    document.getElementById('treinamentosTela').hidden = true;
+    document.documentElement.classList.remove('trn-aberta');
+  }
+
+  function trnFiltros(){
+    const ativo = document.querySelector('#trnModalidade [aria-pressed="true"]');
+    return {
+      q: document.getElementById('trnBusca').value.trim(),
+      modalidade: ativo ? ativo.dataset.modalidade : '',
+      tipo: document.getElementById('trnTipo').value,
+      norma: document.getElementById('trnNorma').value,
+      data_de: document.getElementById('trnDataDe').value,
+      data_ate: document.getElementById('trnDataAte').value,
+    };
+  }
+  function trnQuery(extra){
+    const p = new URLSearchParams();
+    Object.entries(Object.assign(trnFiltros(), extra || {})).forEach(([k, v]) => { if(v) p.set(k, v); });
+    return p.toString();
+  }
+
+  // "2026-09-17 11:54:44" (como vem do MySQL) → "17/09/2026"
+  function trnFmtData(s){
+    if(!s) return '';
+    const [d] = String(s).split(' ');
+    const [a, m, dia] = d.split('-');
+    return dia && m && a ? `${dia}/${m}/${a}` : s;
+  }
+  function trnFmtDataHora(s){
+    if(!s) return '';
+    const hora = String(s).split(' ')[1] || '';
+    return trnFmtData(s) + (hora ? ' ' + hora.slice(0, 5) : '');
+  }
+  function trnFmtCpf(c){
+    const d = String(c || '').replace(/\D/g, '');
+    return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : (c || '');
+  }
+  function trnFmtTempo(seg){
+    if(seg == null) return '';
+    const m = Math.floor(seg / 60), s = seg % 60;
+    return `${m}min${s ? ' ' + String(s).padStart(2, '0') + 's' : ''}`;
+  }
+  const TRN_STATUS = { concluido: 'Concluído', em_andamento: 'Em andamento', nao_iniciado: 'Só abriu' };
+  function trnStatus(s){ return TRN_STATUS[s] || s || ''; }
+
+  async function carregarTreinamentos(){
+    if(document.getElementById('treinamentosTela').hidden) return;
+    const pedido = ++trnEstado.pedido;
+    const contagem = document.getElementById('trnContagem');
+    contagem.textContent = 'Carregando...';
     try{
-      const data = await apiFetch('api/admin/courses/watchers.php');
-      body.innerHTML = '<ul class="aulas-list"></ul>';
-      const ul = body.querySelector('.aulas-list');
-      data.courses.forEach(c => {
-        const arquivada = c.is_published === 0;
-        const li = document.createElement('li');
-        li.className = 'aulas-item' + (arquivada ? ' is-arquivada' : '');
-        li.innerHTML = `
-          <div class="aulas-info">
-            <div class="aulas-title">${c.title}${arquivada ? ' <span class="aulas-badge">arquivada</span>' : ''}</div>
-            <div class="aulas-meta">${c.area_name || 'Sem área'} · ${c.type === 'onboarding' ? 'Integração' : 'Catálogo'} · <b>${c.total_concluido}</b> concluíram${c.tem_pergunta === false ? ' · <span class="aulas-sem-pergunta">sem pergunta</span>' : ''}</div>
-          </div>
-          <div class="aulas-acoes">
-            <button type="button" class="aulas-btn aulas-btn-areas">Áreas</button>
-            <button type="button" class="aulas-btn aulas-btn-pergunta">Pergunta</button>
-            <button type="button" class="aulas-btn aulas-btn-renomear">Renomear</button>
-            <button type="button" class="aulas-btn aulas-btn-arquivar">${arquivada ? 'Republicar' : 'Arquivar'}</button>
-            <button type="button" class="aulas-btn aulas-btn-excluir">Excluir</button>
-          </div>
-        `;
-        li.querySelector('.aulas-btn-pergunta').addEventListener('click', () => abrirPerguntaDaAula(li, c.id, c.title));
-        li.querySelector('.aulas-btn-areas').addEventListener('click', () => abrirAreasDaAula(c.id, c.title));
-        li.querySelector('.aulas-btn-renomear').addEventListener('click', () => renomearAula(c.id, c.title));
-        li.querySelector('.aulas-btn-arquivar').addEventListener('click', () => arquivarAula(c.id, arquivada));
-        li.querySelector('.aulas-btn-excluir').addEventListener('click', () => excluirAula(c.id));
-        ul.appendChild(li);
+      const d = await apiFetch('api/admin/treinamentos/busca.php?' + trnQuery());
+      if(pedido !== trnEstado.pedido) return; // resposta atrasada de uma busca anterior
+      trnEstado.lista = d.treinamentos || [];
+      trnEstado.auditoriaAtiva = d.auditoria_ativa !== false;
+      document.getElementById('trnAvisoMigracao').hidden = trnEstado.auditoriaAtiva;
+
+      // Opções dos filtros vêm do servidor (a mesma lista que ele valida).
+      [['trnTipo', d.tipos || [], 'tipos'], ['trnNorma', d.normas || [], 'normas']].forEach(([id, opcoes, chave]) => {
+        if(trnEstado[chave].join('|') === opcoes.join('|')) return;
+        trnEstado[chave] = opcoes;
+        const sel = document.getElementById(id);
+        const atual = sel.value;
+        sel.length = 1; // mantém o "Todos/Todas"
+        opcoes.forEach(o => sel.add(new Option(o, o)));
+        sel.value = atual;
       });
+
+      renderTreinamentos();
     }catch(e){
-      body.innerHTML = `<p>Não foi possível carregar: ${e.message}</p>`;
+      if(pedido !== trnEstado.pedido) return;
+      contagem.textContent = 'Não foi possível carregar: ' + e.message;
+      document.getElementById('trnCorpo').innerHTML = '';
     }
+  }
+
+  function renderTreinamentos(){
+    const lista = trnEstado.lista;
+    const filtros = trnFiltros();
+    document.getElementById('trnContagem').textContent =
+      `${lista.length} ${lista.length === 1 ? 'treinamento encontrado' : 'treinamentos encontrados'}`;
+
+    const corpo = document.getElementById('trnCorpo');
+    corpo.innerHTML = '';
+    if(!lista.length){
+      corpo.innerHTML = `<tr><td colspan="10" class="trn-vazio-lista">${
+        filtros.modalidade === 'presencial'
+          ? 'Treinamentos presenciais ainda não são registrados na Academy — aqui estão só os vídeos (online).'
+          : 'Nenhum treinamento com esses filtros.'}</td></tr>`;
+      return;
+    }
+
+    const vazio = '<span class="trn-vazio">—</span>';
+    lista.forEach(t => {
+      const perguntasDoFim = t.total_perguntas - t.total_atividades;
+      const detalhes = [
+        t.trilha ? 'Integração' : (t.area || 'Sem área'),
+        t.total_atividades ? `${t.total_atividades} ${t.total_atividades === 1 ? 'atividade' : 'atividades'} no vídeo` : '',
+        perguntasDoFim > 0 ? `${perguntasDoFim} ${perguntasDoFim === 1 ? 'pergunta' : 'perguntas'} no fim` : '',
+        t.total_perguntas === 0 ? '<span class="aulas-sem-pergunta">sem pergunta</span>' : '',
+      ].filter(Boolean);
+
+      const tr = document.createElement('tr');
+      if(t.arquivado) tr.className = 'is-arquivado';
+      tr.innerHTML = `
+        <td class="trn-nowrap">${esc(trnFmtData(t.data))}</td>
+        <td class="trn-tema">
+          <strong>${esc(t.tema)}</strong>${t.arquivado ? ' <span class="aulas-badge">arquivada</span>' : ''}
+          <span class="trn-sub">${detalhes.map(x => x.startsWith('<span') ? x : esc(x)).join(' · ')}</span>
+        </td>
+        <td><span class="trn-pill trn-pill-online">Online</span></td>
+        <td>${esc(t.tipo)}</td>
+        <td>${t.normas.length ? esc(t.normas.join(' · ')) : vazio}</td>
+        <td>${t.instrutor ? esc(t.instrutor) : vazio}</td>
+        <td class="trn-texto">${t.conteudo_programatico
+          ? `<span class="trn-clamp" title="${esc(t.conteudo_programatico)}">${esc(t.conteudo_programatico)}</span>`
+          : (t.descricao ? `<span class="trn-clamp trn-fallback" title="Ainda sem conteúdo programático — mostrando a descrição do vídeo">${esc(t.descricao)}</span>` : vazio)}</td>
+        <td class="trn-texto">${t.assuntos ? `<span class="trn-clamp" title="${esc(t.assuntos)}">${esc(t.assuntos)}</span>` : vazio}</td>
+        <td class="trn-nowrap">
+          <button type="button" class="trn-link" data-acao="presenca" title="Ver lista de presença">
+            ${t.participantes} ${t.participantes === 1 ? 'pessoa' : 'pessoas'}<br><span class="trn-sub">${t.concluidos} ${t.concluidos === 1 ? 'concluiu' : 'concluíram'}</span>
+          </button>
+        </td>
+        <td class="trn-acoes">
+          <button type="button" class="aulas-btn" data-acao="presenca">Presença</button>
+          <button type="button" class="aulas-btn" data-acao="editar">Editar</button>
+          <button type="button" class="aulas-btn" data-acao="atividades" title="Perguntas do fim e atividades durante o vídeo">Atividades</button>
+          <button type="button" class="aulas-btn" data-acao="areas">Áreas</button>
+          <button type="button" class="aulas-btn" data-acao="arquivar">${t.arquivado ? 'Republicar' : 'Arquivar'}</button>
+          <button type="button" class="aulas-btn aulas-btn-excluir" data-acao="excluir">Excluir</button>
+        </td>
+      `;
+      tr.querySelectorAll('[data-acao]').forEach(btn => btn.addEventListener('click', () => {
+        const acao = btn.dataset.acao;
+        if(acao === 'presenca') abrirPresenca(t);
+        if(acao === 'editar') abrirEditarTreinamento(t);
+        if(acao === 'atividades') abrirPerguntaDaAula(t.id, t.tema);
+        if(acao === 'areas') abrirAreasDaAula(t.id, t.tema);
+        if(acao === 'arquivar') arquivarAula(t.id, t.arquivado);
+        if(acao === 'excluir') excluirAula(t.id);
+      }));
+      corpo.appendChild(tr);
+    });
+  }
+
+  // ---------- Lista de presença de um treinamento ----------
+  // Tudo preenchido sozinho: dados da pessoa vêm do Portal no login; o
+  // resto, do uso do vídeo (abrir, assistir, "Estou aqui", responder).
+  function trnTabelaPresencaHtml(participantes){
+    if(!participantes.length){
+      return '<p class="trn-vazio-lista">Ninguém participou deste treinamento com esses filtros.</p>';
+    }
+    const vazio = '<span class="trn-vazio">—</span>';
+    return `
+      <div class="trn-tabela-wrap">
+        <table class="trn-tabela trn-tabela-presenca">
+          <thead><tr>
+            <th>Participante</th><th>CPF</th><th>Cargo</th><th>Departamento</th>
+            <th title="Primeira vez que abriu o vídeo">Check-in</th><th title="Quando concluiu">Check-out</th>
+            <th>Assistido</th><th title="Vezes que respondeu &quot;Estou aqui&quot; durante o vídeo">Presença confirmada</th>
+            <th title="Perguntas e atividades acertadas">Acertos</th><th>Situação</th>
+          </tr></thead>
+          <tbody>
+            ${participantes.map(p => `
+              <tr>
+                <td><strong>${esc(p.nome)}</strong><span class="trn-sub">${esc(p.email || '')}</span></td>
+                <td class="trn-nowrap">${p.cpf ? esc(trnFmtCpf(p.cpf)) : vazio}</td>
+                <td>${p.cargo ? esc(p.cargo) : vazio}</td>
+                <td>${p.departamento ? esc(p.departamento) : vazio}</td>
+                <td class="trn-nowrap">${p.checkin_em ? esc(trnFmtDataHora(p.checkin_em)) : vazio}</td>
+                <td class="trn-nowrap">${p.checkout_em ? esc(trnFmtDataHora(p.checkout_em)) : vazio}</td>
+                <td class="trn-nowrap">${Math.round(p.watched_pct)}%${p.tempo_assistido_seg != null ? `<span class="trn-sub">≈ ${esc(trnFmtTempo(p.tempo_assistido_seg))}</span>` : ''}</td>
+                <td class="trn-nowrap">${p.confirmacoes_presenca}×${p.ultima_confirmacao_em ? `<span class="trn-sub">última ${esc(trnFmtDataHora(p.ultima_confirmacao_em))}</span>` : ''}</td>
+                <td class="trn-nowrap">${p.total_perguntas ? `${p.acertos}/${p.total_perguntas}` : vazio}${p.tentativas > p.acertos ? `<span class="trn-sub">${p.tentativas} tentativas</span>` : ''}</td>
+                <td><span class="watchers-status ${esc(p.status)}">${esc(trnStatus(p.status))}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function abrirPresenca(t){
+    const body = abrirDialogoAula('Lista de presença', t.tema, true);
+    body.innerHTML = `
+      <div class="admin-filtros">
+        <input type="text" id="presencaBusca" placeholder="Filtrar por nome, e-mail ou CPF...">
+        <button type="button" class="trn-btn" id="presencaCsv">Exportar CSV</button>
+        <button type="button" class="trn-btn" id="presencaPdf">Imprimir / PDF</button>
+      </div>
+      <p class="admin-field-hint" id="presencaLegenda">
+        Check-in: primeira vez que a pessoa abriu o vídeo. Check-out: quando concluiu.
+        Assistido: até onde chegou (o vídeo não deixa adiantar). Presença confirmada: vezes que respondeu "Estou aqui".
+      </p>
+      <div id="presencaTabela"><p>Carregando...</p></div>
+    `;
+    const f = trnFiltros();
+    let participantes = [];
+    let pedido = 0;
+    const carregar = async () => {
+      const meu = ++pedido;
+      const q = new URLSearchParams({ course_id: t.id });
+      const busca = document.getElementById('presencaBusca').value.trim();
+      if(busca) q.set('q', busca);
+      if(f.data_de) q.set('data_de', f.data_de);
+      if(f.data_ate) q.set('data_ate', f.data_ate);
+      try{
+        const d = await apiFetch('api/admin/treinamentos/presenca.php?' + q.toString());
+        if(meu !== pedido) return;
+        participantes = d.participantes || [];
+        if(!d.checkin_disponivel){
+          document.getElementById('presencaLegenda').insertAdjacentHTML('beforeend',
+            ' <strong>O check-in e as confirmações começam a ser gravados depois que a migração 020 rodar no banco.</strong>');
+        }
+        document.getElementById('presencaTabela').innerHTML = trnTabelaPresencaHtml(participantes);
+      }catch(e){
+        document.getElementById('presencaTabela').innerHTML = `<p>Não foi possível carregar: ${esc(e.message)}</p>`;
+      }
+    };
+    let timer = null;
+    document.getElementById('presencaBusca').addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(carregar, 300);
+    });
+    document.getElementById('presencaCsv').addEventListener('click', () => {
+      trnBaixarCsv(`presenca-${t.id}-${new Date().toISOString().slice(0, 10)}.csv`,
+        trnLinhasCsv([Object.assign({}, t, { lista_presenca: participantes })]));
+    });
+    document.getElementById('presencaPdf').addEventListener('click', () => {
+      trnImprimir([Object.assign({}, t, { lista_presenca: participantes })], 'Lista de presença');
+    });
+    carregar();
+  }
+
+  // ---------- Editar os dados de um treinamento ----------
+  function abrirEditarTreinamento(t){
+    const body = abrirDialogoAula('Editar treinamento', t.tema);
+    const auditoria = trnEstado.auditoriaAtiva;
+    const tipos = trnEstado.tipos.length ? trnEstado.tipos : ['Treinamento interno', 'DDS', 'Capacitação externa', 'Integração', 'Outro'];
+    const normas = trnEstado.normas.length ? trnEstado.normas : ['ISO 9001', 'ISO 14001', 'ISO 45001'];
+    const desab = auditoria ? '' : 'disabled';
+    body.innerHTML = `
+      <label class="admin-field-label" for="trnEdTitulo">Tema (título do vídeo)</label>
+      <input type="text" id="trnEdTitulo" maxlength="200" value="${esc(t.tema)}">
+      <label class="admin-field-label" for="trnEdDescricao">Descrição</label>
+      <input type="text" id="trnEdDescricao" value="${esc(t.descricao || '')}">
+      ${auditoria ? '' : '<p class="pq-aviso">Os campos abaixo ficam liberados depois que a migração 020 rodar no banco.</p>'}
+      <label class="admin-field-label" for="trnEdTipo">Tipo</label>
+      <select id="trnEdTipo" ${desab}>
+        <option value="">Automático (${t.trilha ? 'Integração' : 'Treinamento interno'})</option>
+        ${tipos.map(o => `<option ${t.tipo_preenchido && t.tipo === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}
+      </select>
+      <span class="admin-field-label">Normas</span>
+      <div class="admin-normas" id="trnEdNormas">
+        ${normas.map(n => `<label><input type="checkbox" value="${esc(n)}" ${t.normas.includes(n) ? 'checked' : ''} ${desab}> ${esc(n)}</label>`).join('')}
+      </div>
+      <label class="admin-field-label" for="trnEdInstrutor">Instrutor</label>
+      <input type="text" id="trnEdInstrutor" maxlength="150" value="${esc(t.instrutor || '')}" ${desab}>
+      <label class="admin-field-label" for="trnEdConteudo">Conteúdo programático</label>
+      <textarea id="trnEdConteudo" rows="4" maxlength="5000" ${desab}
+        placeholder="${esc(t.descricao ? 'Hoje a busca mostra a descrição: ' + t.descricao : 'Tópicos abordados, na ordem do vídeo')}">${esc(t.conteudo_programatico || '')}</textarea>
+      <label class="admin-field-label" for="trnEdAssuntos">Assuntos</label>
+      <input type="text" id="trnEdAssuntos" maxlength="500" value="${esc(t.assuntos || '')}" placeholder="Ex.: NR-35, ancoragem, resgate" ${desab}>
+      <button type="button" class="admin-modal-submit" id="trnEdSalvar">Salvar</button>
+      <div class="admin-modal-feedback" id="trnEdFeedback" hidden></div>
+    `;
+    const salvar = document.getElementById('trnEdSalvar');
+    salvar.addEventListener('click', async () => {
+      const fb = document.getElementById('trnEdFeedback');
+      const titulo = document.getElementById('trnEdTitulo').value.trim();
+      if(!titulo){
+        fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = 'O tema não pode ficar vazio.';
+        return;
+      }
+      const corpo = {
+        course_id: t.id,
+        title: titulo,
+        description: document.getElementById('trnEdDescricao').value.trim(),
+      };
+      if(auditoria){
+        Object.assign(corpo, {
+          tipo_treinamento: document.getElementById('trnEdTipo').value,
+          normas: Array.from(body.querySelectorAll('#trnEdNormas input:checked')).map(i => i.value),
+          instrutor: document.getElementById('trnEdInstrutor').value.trim(),
+          conteudo_programatico: document.getElementById('trnEdConteudo').value.trim(),
+          assuntos: document.getElementById('trnEdAssuntos').value.trim(),
+        });
+      }
+      salvar.disabled = true;
+      try{
+        await apiFetch('api/admin/courses/update.php', { method: 'POST', body: JSON.stringify(corpo) });
+        fb.hidden = false; fb.className = 'admin-modal-feedback ok'; fb.textContent = 'Treinamento atualizado.';
+        carregarTreinamentos();
+        if(titulo !== t.tema) recarregarTelaConteudo(); // o nome muda na trilha e no catálogo
+        setTimeout(closeAulasModal, 900);
+      }catch(e){
+        fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = e.message;
+        salvar.disabled = false;
+      }
+    });
+  }
+
+  // ---------- Exportar ----------
+  // CSV com uma linha por participante (e uma linha vazia pro treinamento
+  // sem ninguém): é o formato que a auditoria pede e o Excel abre direto.
+  function trnLinhasCsv(treinamentos){
+    const cab = ['Data de publicação', 'Tema', 'Modalidade', 'Tipo', 'Normas', 'Instrutor', 'Conteúdo programático',
+      'Assuntos', 'Participante', 'CPF', 'E-mail', 'Cargo', 'Departamento', 'Check-in', 'Check-out',
+      '% assistido', 'Tempo assistido (estimado)', 'Presença confirmada (vezes)', 'Acertos', 'Perguntas', 'Situação'];
+    const linhas = [cab];
+    treinamentos.forEach(t => {
+      const base = [trnFmtData(t.data), t.tema, 'Online', t.tipo, (t.normas || []).join(' / '), t.instrutor || '',
+        t.conteudo_programatico || t.descricao || '', t.assuntos || ''];
+      const pessoas = t.lista_presenca || [];
+      if(!pessoas.length) linhas.push(base.concat(Array(cab.length - base.length).fill('')));
+      pessoas.forEach(p => linhas.push(base.concat([
+        p.nome, trnFmtCpf(p.cpf), p.email || '', p.cargo || '', p.departamento || '',
+        trnFmtDataHora(p.checkin_em), trnFmtDataHora(p.checkout_em),
+        String(Math.round(p.watched_pct)), trnFmtTempo(p.tempo_assistido_seg), String(p.confirmacoes_presenca),
+        String(p.acertos), String(p.total_perguntas), trnStatus(p.status),
+      ])));
+    });
+    return linhas;
+  }
+
+  // Ponto e vírgula e BOM: é o que o Excel em português abre com as colunas
+  // separadas e os acentos certos.
+  function trnBaixarCsv(nome, linhas){
+    const texto = linhas.map(l => l.map(c => {
+      const v = String(c == null ? '' : c);
+      return /[";\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+    }).join(';')).join('\r\n');
+    const url = URL.createObjectURL(new Blob(['﻿' + texto], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function trnRelatorioHtml(treinamentos, titulo){
+    const f = trnFiltros();
+    const filtros = [
+      f.q && `Busca: "${f.q}"`, f.tipo && `Tipo: ${f.tipo}`, f.norma && `Norma: ${f.norma}`,
+      (f.data_de || f.data_ate) && `Período: ${f.data_de ? trnFmtData(f.data_de) : '…'} a ${f.data_ate ? trnFmtData(f.data_ate) : '…'}`,
+    ].filter(Boolean);
+    const agora = new Date();
+    return `
+      <div class="rel-cabecalho">
+        <div><strong>MSE Academy</strong> · ${esc(titulo)}</div>
+        <div>Gerado em ${agora.toLocaleDateString('pt-BR')} ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
+      </div>
+      <p class="rel-filtros">${filtros.length ? esc(filtros.join(' · ')) : 'Sem filtros'} · ${treinamentos.length} ${treinamentos.length === 1 ? 'treinamento' : 'treinamentos'}</p>
+      ${treinamentos.map(t => `
+        <section class="rel-treinamento">
+          <h2>${esc(t.tema)}${t.arquivado ? ' (arquivado)' : ''}</h2>
+          <dl class="rel-dados">
+            <div><dt>Data de publicação</dt><dd>${esc(trnFmtData(t.data))}</dd></div>
+            <div><dt>Modalidade</dt><dd>Online</dd></div>
+            <div><dt>Tipo</dt><dd>${esc(t.tipo)}</dd></div>
+            <div><dt>Normas</dt><dd>${esc((t.normas || []).join(' · ') || '—')}</dd></div>
+            <div><dt>Instrutor</dt><dd>${esc(t.instrutor || '—')}</dd></div>
+            <div><dt>Assuntos</dt><dd>${esc(t.assuntos || '—')}</dd></div>
+            <div class="rel-largo"><dt>Conteúdo programático</dt><dd>${esc(t.conteudo_programatico || t.descricao || '—')}</dd></div>
+          </dl>
+          ${trnTabelaPresencaHtml(t.lista_presenca || [])}
+        </section>
+      `).join('')}
+    `;
+  }
+
+  // Imprime pela própria página (e não numa janela nova): dentro do Portal
+  // a Academy roda num iframe, onde janela nova pode ser bloqueada. No
+  // diálogo de impressão, "Salvar como PDF" gera o arquivo.
+  function trnImprimir(treinamentos, titulo){
+    document.getElementById('relatorioImpressao')?.remove();
+    const rel = document.createElement('div');
+    rel.id = 'relatorioImpressao';
+    rel.innerHTML = trnRelatorioHtml(treinamentos, titulo);
+    document.body.appendChild(rel);
+    document.body.classList.add('imprimindo-relatorio');
+    const limpar = () => {
+      document.body.classList.remove('imprimindo-relatorio');
+      rel.remove();
+      window.removeEventListener('afterprint', limpar);
+    };
+    window.addEventListener('afterprint', limpar);
+    window.print();
+  }
+
+  async function trnExportar(formato){
+    const btn = document.getElementById(formato === 'csv' ? 'trnExportarCsv' : 'trnExportarPdf');
+    const texto = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Gerando...';
+    try{
+      const d = await apiFetch('api/admin/treinamentos/busca.php?' + trnQuery({ com_participantes: 1 }));
+      const lista = d.treinamentos || [];
+      if(formato === 'csv'){
+        trnBaixarCsv(`treinamentos-${new Date().toISOString().slice(0, 10)}.csv`, trnLinhasCsv(lista));
+      } else {
+        trnImprimir(lista, 'Relatório de treinamentos');
+      }
+    }catch(e){
+      alert('Não foi possível exportar: ' + e.message);
+    }finally{
+      btn.disabled = false;
+      btn.textContent = texto;
+    }
+  }
+
+  function ligarTelaTreinamentos(){
+    const tela = document.getElementById('treinamentosTela');
+    if(!tela) return;
+    document.getElementById('trnFechar').addEventListener('click', closeTreinamentosTela);
+
+    const recarregarEmBreve = () => {
+      clearTimeout(trnEstado.timer);
+      trnEstado.timer = setTimeout(carregarTreinamentos, 300);
+    };
+    document.getElementById('trnBusca').addEventListener('input', recarregarEmBreve);
+    ['trnTipo', 'trnNorma', 'trnDataDe', 'trnDataAte'].forEach(id =>
+      document.getElementById(id).addEventListener('change', carregarTreinamentos));
+    document.querySelectorAll('#trnModalidade button').forEach(b => b.addEventListener('click', () => {
+      document.querySelectorAll('#trnModalidade button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      carregarTreinamentos();
+    }));
+    document.getElementById('trnLimpar').addEventListener('click', () => {
+      ['trnBusca', 'trnTipo', 'trnNorma', 'trnDataDe', 'trnDataAte'].forEach(id => { document.getElementById(id).value = ''; });
+      document.querySelectorAll('#trnModalidade button').forEach((x, i) => x.setAttribute('aria-pressed', String(i === 0)));
+      carregarTreinamentos();
+    });
+    document.getElementById('trnExportarCsv').addEventListener('click', () => trnExportar('csv'));
+    document.getElementById('trnExportarPdf').addEventListener('click', () => trnExportar('pdf'));
+    document.getElementById('trnNovoVideo').addEventListener('click', openVideoModal);
+
+    // Esc fecha a janela de ação primeiro; sem nenhuma aberta, fecha a tela.
+    document.addEventListener('keydown', (e) => {
+      if(e.key !== 'Escape' || tela.hidden) return;
+      if(!document.getElementById('aulasModalOverlay').hidden){ closeAulasModal(); return; }
+      if(!document.getElementById('videoModalOverlay').hidden) return; // o modal de vídeo cuida do Esc dele
+      closeTreinamentosTela();
+    });
   }
 
   // ---------- Pergunta de uma aula já cadastrada ----------
@@ -3834,29 +4448,32 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // perderia o que já estava digitado nos demais.
   const QUIZ_MAX_PERGUNTAS = 10;
 
-  async function abrirPerguntaDaAula(li, courseId, titulo){
-    let painel = li.nextElementSibling;
-    if(painel && painel.classList.contains('aulas-pergunta-painel')){
-      painel.remove();
-      return; // clicar de novo fecha
-    }
+  //
+  // Cada pergunta pode aparecer no fim do vídeo (como sempre foi) ou
+  // DURANTE o vídeo, no minuto e segundo escolhidos: o vídeo pausa ali e só
+  // continua depois da resposta certa. Vale também pra vídeo que já está no
+  // ar — e marcar ou mudar o minuto não apaga as respostas já dadas.
+  function segundosParaMmss(seg){
+    return String(Math.floor(seg / 60)).padStart(2, '0') + ':' + String(seg % 60).padStart(2, '0');
+  }
 
-    // Um painel por vez. São formulários altos: dois abertos ao mesmo tempo
-    // empurram a lista pra longe e dá pra digitar num achando que é o outro.
-    document.querySelectorAll('.aulas-pergunta-painel').forEach(el => el.remove());
-
-    painel = document.createElement('li');
-    painel.className = 'aulas-pergunta-painel';
+  async function abrirPerguntaDaAula(courseId, titulo){
+    const painel = abrirDialogoAula('Perguntas e atividades', titulo);
     painel.innerHTML = '<p>Carregando...</p>';
-    li.insertAdjacentElement('afterend', painel);
 
     try{
       const d = await apiFetch('api/admin/courses/quiz.php?course_id=' + encodeURIComponent(courseId));
       const maxPerguntas = d.max_perguntas || QUIZ_MAX_PERGUNTAS;
 
+      const duracao = d.duracao_seg || 0;
       painel.innerHTML = `
         <div class="aulas-pergunta-form">
-          <div class="pq-titulo">Perguntas de “${esc(titulo)}”</div>
+          <p class="admin-field-hint">
+            <strong>Durante o vídeo:</strong> o vídeo pausa no minuto e segundo escolhidos e só continua depois da resposta certa.
+            <strong>No fim do vídeo:</strong> aparece quando o vídeo termina.
+            ${duracao ? `Duração do vídeo: <strong>${segundosParaMmss(duracao)}</strong>.` : 'A duração do vídeo aparece aqui depois que alguém assistir pela primeira vez.'}
+          </p>
+          ${d.aceita_momento === false ? '<p class="pq-aviso">Perguntas durante o vídeo ficam disponíveis depois que a migração 020 rodar no banco.</p>' : ''}
           <div class="pq-lista"></div>
           <button type="button" class="pq-add-pergunta">+ Adicionar pergunta</button>
           <div class="pq-acoes">
@@ -3908,9 +4525,34 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           </div>
           <input type="text" class="pq-texto" maxlength="500" value="${esc(dados && dados.question || '')}"
                  placeholder="Ex: Qual EPI é obrigatório na obra?">
+          <div class="pq-momento">
+            <label class="pq-momento-rotulo" for="pq-quando-${courseId}-${uid}">Quando aparece</label>
+            <select class="pq-quando" id="pq-quando-${courseId}-${uid}" ${d.aceita_momento === false ? 'disabled' : ''}>
+              <option value="fim">No fim do vídeo</option>
+              <option value="durante">Durante o vídeo, em</option>
+            </select>
+            <span class="pq-tempo" hidden>
+              <input type="number" class="pq-min" min="0" max="999" inputmode="numeric" aria-label="Minuto"> min
+              <input type="number" class="pq-seg" min="0" max="59" inputmode="numeric" aria-label="Segundo"> s
+            </span>
+          </div>
           <div class="pq-opcoes"></div>
         `;
         lista.appendChild(el);
+
+        const quando = el.querySelector('.pq-quando');
+        const tempo = el.querySelector('.pq-tempo');
+        const momento = dados && dados.momento_seg;
+        if(momento != null){
+          quando.value = 'durante';
+          el.querySelector('.pq-min').value = Math.floor(momento / 60);
+          el.querySelector('.pq-seg').value = momento % 60;
+        }
+        tempo.hidden = quando.value !== 'durante';
+        quando.addEventListener('change', () => {
+          tempo.hidden = quando.value !== 'durante';
+          if(!tempo.hidden) el.querySelector('.pq-min').focus();
+        });
 
         const editor = criarEditorDeOpcoes(
           el.querySelector('.pq-opcoes'),
@@ -3938,10 +4580,28 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         el.querySelector('.pq-texto').focus();
       });
 
+      // Momento em segundos, ou null pra "no fim". Erro de digitação volta
+      // como texto, antes de mandar: o servidor confere de novo.
+      const lerMomento = (b, i) => {
+        if(b.el.querySelector('.pq-quando').value !== 'durante') return null;
+        const min = parseInt(b.el.querySelector('.pq-min').value || '0', 10);
+        const seg = parseInt(b.el.querySelector('.pq-seg').value || '0', 10);
+        if(isNaN(min) || isNaN(seg) || min < 0 || seg < 0 || seg > 59){
+          throw new Error(`Pergunta ${i + 1}: o segundo vai de 0 a 59.`);
+        }
+        const total = min * 60 + seg;
+        if(total < 1) throw new Error(`Pergunta ${i + 1}: escolha o minuto e o segundo em que ela aparece (a partir de 00:01).`);
+        if(duracao && total >= duracao){
+          throw new Error(`Pergunta ${i + 1}: ${segundosParaMmss(total)} passa do fim do vídeo (${segundosParaMmss(duracao)}).`);
+        }
+        return total;
+      };
+
       const montarCorpo = () => ({
         course_id: courseId,
-        questions: blocos.map(b => ({
+        questions: blocos.map((b, i) => ({
           question: b.el.querySelector('.pq-texto').value.trim(),
+          momento_seg: lerMomento(b, i),
           options: b.editor.ler(),
         })),
       });
@@ -3962,9 +4622,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             });
           }
           mostrar(r.message, false);
+          botao.disabled = false;
           detalheCache.delete(courseId); // senão a aula volta do cache sem as perguntas novas
           await recarregarTelaConteudo();
-          await loadAulas();
+          carregarTreinamentos();
         }catch(e){
           mostrar(e.message, true);
           botao.disabled = false;
@@ -3972,9 +4633,13 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       };
 
       const btnSalvar = painel.querySelector('.pq-salvar');
-      btnSalvar.addEventListener('click', () => enviar(montarCorpo(), btnSalvar));
+      btnSalvar.addEventListener('click', () => {
+        let corpo;
+        try{ corpo = montarCorpo(); }catch(e){ mostrar(e.message, true); return; }
+        enviar(corpo, btnSalvar);
+      });
 
-      painel.querySelector('.pq-fechar').addEventListener('click', () => painel.remove());
+      painel.querySelector('.pq-fechar').addEventListener('click', closeAulasModal);
     }catch(e){
       painel.innerHTML = `<p class="aulas-pergunta-form">Não foi possível carregar as perguntas: ${esc(e.message)}</p>`;
     }
@@ -4000,22 +4665,18 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // aula de ninguém: quem é de fora continua vendo e podendo assistir,
   // só não conta como pendência dele.
   async function abrirAreasDaAula(courseId, titulo){
-    const body = document.getElementById('aulasModalBody');
-    const anterior = body.innerHTML;
+    const body = abrirDialogoAula('Áreas obrigatórias', titulo);
     body.innerHTML = '<p>Carregando áreas...</p>';
 
     let dados;
     try {
       dados = await apiFetch('api/admin/courses/areas.php?course_id=' + encodeURIComponent(courseId));
     } catch(e){
-      body.innerHTML = `<p>Não foi possível carregar: ${e.message}</p>`;
-      setTimeout(loadAulas, 2500);
+      body.innerHTML = `<p>Não foi possível carregar: ${esc(e.message)}</p>`;
       return;
     }
 
     body.innerHTML = `
-      <button type="button" class="watchers-back-btn" id="areasVoltar">&larr; Voltar</button>
-      <h5 class="areas-aula-titulo">${titulo}</h5>
       <p class="admin-field-hint">Marque as áreas para as quais esta aula é <strong>obrigatória</strong>.
         Sem nenhuma marcada, vale para todos. Quem não é da área marcada continua vendo a aula —
         ela só não entra nas pendências nem na barra de progresso dessa pessoa.</p>
@@ -4023,7 +4684,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         ${dados.areas.map(a => `
           <label class="areas-aula-item">
             <input type="checkbox" value="${a.id}" ${a.marcada ? 'checked' : ''}>
-            <span>${a.name}</span>
+            <span>${esc(a.name)}</span>
           </label>
         `).join('')}
       </div>
@@ -4031,7 +4692,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       <div class="admin-modal-feedback" id="areasFeedback" hidden></div>
     `;
 
-    document.getElementById('areasVoltar').addEventListener('click', loadAulas);
     document.getElementById('areasSalvar').addEventListener('click', async () => {
       const marcadas = Array.from(body.querySelectorAll('.areas-aula-item input:checked'))
         .map(i => parseInt(i.value, 10));
@@ -4045,7 +4705,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         fb.className = 'admin-modal-feedback ok';
         fb.textContent = r.message;
         recarregarTelaConteudo(); // a barra de progresso muda na hora
-        setTimeout(loadAulas, 1200);
+        carregarTreinamentos();
+        setTimeout(closeAulasModal, 1200);
       } catch(e){
         fb.hidden = false;
         fb.className = 'admin-modal-feedback erro';
@@ -4070,7 +4731,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         method: 'POST',
         body: JSON.stringify({ course_id: courseId, title: novo.trim() }),
       });
-      loadAulas();
+      carregarTreinamentos();
       recarregarTelaConteudo(); // o nome muda na trilha sem recarregar a página
     }catch(e){
       alert('Não deu certo: ' + e.message);
@@ -4084,7 +4745,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         body: JSON.stringify({ course_id: courseId, published: estaArquivada ? 1 : 0 }),
       });
       alert(data.message);
-      loadAulas();
+      carregarTreinamentos();
       recarregarTelaConteudo();
     }catch(e){
       alert('Não deu certo: ' + e.message);
@@ -4139,7 +4800,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       }
       alert(`${resultado.message}\n\n${resultado.removido.registros_de_progresso_apagados} registro(s) de progresso apagados.`
         + (resultado.video_mantido_no_s3 ? `\n\nO arquivo do vídeo continua no S3: ${resultado.video_mantido_no_s3}` : ''));
-      loadAulas();
+      carregarTreinamentos();
       recarregarTelaConteudo();
     }catch(e){
       alert('Não deu certo: ' + e.message);
@@ -4404,7 +5065,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     });
 
     const btnAulas = document.getElementById('btnGerenciarAulas');
-    if(btnAulas) btnAulas.addEventListener('click', openAulasModal);
+    if(btnAulas) btnAulas.addEventListener('click', openTreinamentosTela);
+    ligarTelaTreinamentos();
     const btnAulasClose = document.getElementById('aulasModalClose');
     if(btnAulasClose) btnAulasClose.addEventListener('click', closeAulasModal);
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../../src/Cors.php';
 require_once __DIR__ . '/../../../src/Response.php';
 require_once __DIR__ . '/../../../src/Auth.php';
+require_once __DIR__ . '/../../../src/Treinamentos.php';
 
 mse_cors();
 mse_require_admin(); // só quem tem role='admin' passa daqui
@@ -148,6 +149,10 @@ if ($grupoSorteio !== '' && !$temNovas) {
     mse_error('Este servidor ainda não aceita grupo de sorteio. Falta rodar a migração 014 no banco (migrations/014_sorteio_e_playlist.sql).', 409);
 }
 
+// Dados de auditoria (opcionais): validados antes de abrir a transação,
+// pra um tipo ou norma inválida não deixar meio cadastro pra trás.
+$camposAuditoria = mse_ler_campos_auditoria($pdo, $input);
+
 // Curso + pergunta + opções tudo junto numa transação — se qualquer
 // parte falhar, desfaz tudo.
 $pdo->beginTransaction();
@@ -166,6 +171,13 @@ try {
         $stmt->execute([$areaId, $type, $title, $description, $videoSource, $youtubeId, $videoKey ?: null, $durationMinutes, $orderIndex]);
     }
     $courseId = (int) $pdo->lastInsertId();
+
+    if ($camposAuditoria) {
+        $stmt = $pdo->prepare(
+            'UPDATE courses SET ' . implode(' = ?, ', array_keys($camposAuditoria)) . ' = ? WHERE id = ?'
+        );
+        $stmt->execute([...array_values($camposAuditoria), $courseId]);
+    }
 
     $questionId = null;
     if ($quizQuestion !== null && $quizQuestion !== '') {

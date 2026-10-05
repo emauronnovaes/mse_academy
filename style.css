@@ -1697,3 +1697,211 @@
   footer :focus-visible{
     outline-color:#fff;
   }
+
+  /* ================================================================
+     Busca de treinamentos (consulta pra auditoria) — substituiu a lista
+     de "Gerenciar aulas". Tela cheia por cima do site, abaixo dos modais
+     de admin (z-index 300), que abrem por cima dela.
+     ================================================================ */
+  html.trn-aberta, html.trn-aberta body{ overflow:hidden; }
+  .trn-tela{
+    position:fixed; inset:0; z-index:250; overflow-y:auto;
+    background:#F3F2EF; color:var(--ink); font-family:'Inter',sans-serif;
+  }
+  .trn-topo{
+    position:sticky; top:0; z-index:2;
+    display:flex; align-items:center; gap:16px; padding:12px 24px;
+    background:#fff; border-bottom:1px solid var(--line);
+  }
+  .trn-marca{ display:flex; align-items:center; gap:10px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px; }
+  .trn-logo{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:30px; height:30px; border-radius:7px; background:var(--red); color:#fff;
+    font-size:11px; font-weight:700; letter-spacing:-0.02em;
+  }
+  .trn-topo-sub{ margin-left:auto; font-size:12.5px; color:var(--steel); }
+  .trn-fechar{ background:none; border:none; font-size:22px; color:var(--steel); cursor:pointer; padding:4px; line-height:1; }
+  .trn-fechar:hover{ color:var(--ink); }
+  .trn-conteudo{ max-width:1280px; margin:0 auto; padding:28px 24px 48px; }
+  .trn-cabecalho{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }
+  .trn-cabecalho h2{ font-size:26px; margin:0 0 4px; }
+  .trn-cabecalho p{ margin:0; font-size:13px; color:var(--steel); }
+  .trn-chip{
+    flex-shrink:0; border:1px solid #d9a600; background:rgba(240,185,11,0.14); color:#6b4e00;
+    border-radius:100px; padding:4px 12px; font-size:12px; font-weight:600;
+  }
+  .trn-card{
+    background:#fff; border:1px solid var(--line); border-radius:12px;
+    padding:18px 20px; margin-bottom:16px;
+  }
+  .trn-rotulo{ display:block; font-size:12.5px; font-weight:600; margin-bottom:6px; }
+  .trn-input{
+    width:100%; box-sizing:border-box; height:40px; padding:0 12px;
+    border:1px solid rgba(28,27,26,0.25); border-radius:8px; background:#fff;
+    font-family:inherit; font-size:13.5px; color:var(--ink);
+  }
+  .trn-input:focus{ outline:2px solid rgba(196,33,44,0.35); outline-offset:1px; border-color:var(--red); }
+  #trnBusca{ margin-bottom:16px; }
+  .trn-filtros{ display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; }
+  .trn-campo{ min-width:140px; }
+  .trn-campo-cresce{ flex:1; min-width:160px; }
+  .trn-segmento{ display:flex; border:1px solid rgba(28,27,26,0.25); border-radius:8px; overflow:hidden; height:40px; }
+  .trn-segmento button{
+    border:none; background:#fff; padding:0 16px; cursor:pointer;
+    font-family:inherit; font-size:13px; font-weight:600; color:var(--ink);
+  }
+  .trn-segmento button + button{ border-left:1px solid rgba(28,27,26,0.25); }
+  .trn-segmento button[aria-pressed="true"]{ background:var(--ink); color:#fff; }
+  .trn-btn{
+    height:40px; padding:0 14px; border:1px solid rgba(28,27,26,0.25); border-radius:8px;
+    background:#fff; color:var(--ink); cursor:pointer; white-space:nowrap;
+    font-family:inherit; font-size:13px; font-weight:600;
+  }
+  .trn-btn:hover{ border-color:var(--ink); }
+  .trn-btn:disabled{ opacity:0.6; cursor:default; }
+  .trn-dica{ margin:10px 0 0; font-size:12px; color:var(--steel); }
+  .trn-card-tabela{ padding:0; overflow:hidden; }
+  .trn-resultados-topo{
+    display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    padding:14px 20px; font-size:13.5px;
+  }
+  .trn-resultados-acoes{ display:flex; gap:8px; flex-wrap:wrap; }
+  .trn-tabela-wrap{ overflow-x:auto; }
+  .trn-tabela{ width:100%; border-collapse:collapse; font-size:13px; }
+  .trn-tabela th{
+    background:#EFEEEA; text-align:left; padding:10px 12px; white-space:nowrap;
+    font-size:11px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:var(--steel);
+  }
+  .trn-tabela td{ padding:12px; border-top:1px solid var(--line); vertical-align:top; }
+  .trn-tabela tbody tr:hover{ background:#FAFAF8; }
+  .trn-tabela tr.is-arquivado td{ color:var(--steel); }
+  .trn-nowrap{ white-space:nowrap; }
+  .trn-tema{ min-width:200px; }
+  .trn-texto{ min-width:180px; max-width:280px; }
+  .trn-sub{ display:block; margin-top:3px; font-size:11.5px; color:var(--steel); font-weight:400; }
+  .trn-vazio{ color:rgba(28,27,26,0.35); }
+  .trn-fallback{ color:var(--steel); font-style:italic; }
+  .trn-vazio-lista{ padding:24px 20px; text-align:center; color:var(--steel); font-size:13.5px; }
+  .trn-pill{
+    display:inline-block; padding:2px 10px; border-radius:100px; border:1px solid var(--ink);
+    font-size:11.5px; font-weight:700; white-space:nowrap;
+  }
+  .trn-pill-online{ background:var(--ink); color:#fff; }
+  .trn-link{
+    background:none; border:none; padding:0; cursor:pointer; text-align:left;
+    font-family:inherit; font-size:13px; font-weight:600; color:var(--ink);
+    text-decoration:underline; text-decoration-color:var(--line); text-underline-offset:3px;
+  }
+  .trn-link:hover{ text-decoration-color:var(--red); }
+  /* Ações numa linha só: empilhadas, cada linha da tabela ficava com
+     três andares. A tabela rola de lado, como no layout de referência. */
+  .trn-acoes{ white-space:nowrap; }
+  .trn-acoes .aulas-btn{ margin:0 4px 0 0; padding:5px 10px; font-size:12px; }
+  /* Texto longo (conteúdo, assuntos) em até 3 linhas; o completo fica no
+     title e no relatório exportado. */
+  .trn-clamp{ display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  @media (max-width:720px){
+    .trn-topo{ padding:10px 16px; }
+    .trn-topo-sub{ display:none; }
+    .trn-fechar{ margin-left:auto; }
+    .trn-conteudo{ padding:20px 16px 40px; }
+    .trn-cabecalho{ flex-direction:column; }
+    .trn-campo, .trn-campo-cresce{ flex:1 1 100%; }
+    .trn-segmento button{ flex:1; }
+  }
+
+  /* Janela de ação larga (lista de presença) */
+  .admin-modal-xl{ max-width:1240px; }
+  .admin-modal-xl .trn-tabela td, .admin-modal-xl .trn-tabela th{ padding:9px 10px; }
+  .trn-tabela-presenca td{ font-size:12.5px; }
+
+  /* Campos de auditoria no "Adicionar vídeo" e no "Editar" */
+  .admin-auditoria-fields{ margin:4px 0 16px; border:1px solid var(--line); border-radius:8px; padding:10px 14px; }
+  .admin-auditoria-fields summary{ cursor:pointer; font-size:13px; font-weight:700; color:var(--ink); }
+  .admin-auditoria-fields[open] summary{ margin-bottom:12px; }
+  /* Só os campos novos: os select dos modais antigos ficam como estavam. */
+  .admin-modal textarea{
+    width:100%; box-sizing:border-box; padding:10px 12px; margin-bottom:14px;
+    border:1.5px solid var(--line); border-radius:8px; font-family:inherit; font-size:14px; background:#fff;
+    resize:vertical;
+  }
+  .admin-auditoria-fields select, .admin-modal #trnEdTipo{ margin-bottom:14px; }
+  .admin-normas{ display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px; font-size:13.5px; }
+  .admin-normas label{ display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .admin-modal .admin-normas input{ width:16px; height:16px; margin:0; accent-color:var(--red); }
+
+  /* "Quando aparece" de cada pergunta: no fim ou durante o vídeo */
+  .pq-momento{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:-4px 0 10px; font-size:13px; }
+  .pq-momento-rotulo{ font-weight:700; color:var(--steel); font-size:12.5px; }
+  .admin-modal .pq-momento select{ width:auto; margin:0; padding:6px 10px; font-size:13px; }
+  .pq-tempo{ display:inline-flex; align-items:center; gap:4px; }
+  .pq-tempo[hidden]{ display:none; }
+  .admin-modal .pq-tempo input{ width:64px; margin:0; padding:6px 8px; font-size:13px; text-align:center; }
+
+  /* ---------- Atividade durante o vídeo ----------
+     Cobre o player como o aviso de presença, um degrau acima dele. */
+  .vid-atividade{
+    position:absolute; inset:0; z-index:21;
+    display:flex; align-items:center; justify-content:center; padding:16px; overflow-y:auto;
+    background:rgba(25,28,43,0.86);
+    animation:vidPresencaEntra .25s ease-out;
+  }
+  .vid-atividade-card{
+    background:#fff; color:var(--ink); border-radius:12px;
+    padding:20px 22px; max-width:520px; width:100%; max-height:100%; overflow-y:auto;
+    box-shadow:0 10px 30px rgba(0,0,0,0.35);
+  }
+  .vid-atividade-tag{
+    display:inline-block; padding:2px 10px; border-radius:100px; margin-bottom:10px;
+    background:rgba(196,33,44,0.1); color:var(--red-dark); font-size:11.5px; font-weight:700;
+  }
+  .vid-atividade-pergunta{ font-family:'Space Grotesk',sans-serif; font-size:17px; font-weight:700; margin:0 0 14px; line-height:1.35; }
+  .vid-atividade-opcoes{ display:flex; flex-direction:column; gap:8px; }
+  .vid-atividade-opcao{
+    text-align:left; padding:10px 14px; border:1.5px solid var(--line); border-radius:8px;
+    background:#fff; cursor:pointer; font-family:inherit; font-size:14px; color:var(--ink);
+  }
+  .vid-atividade-opcao:hover:not(:disabled){ border-color:var(--red); }
+  .vid-atividade-opcao:focus-visible{ outline:3px solid rgba(196,33,44,0.35); outline-offset:2px; }
+  .vid-atividade-opcao:disabled{ cursor:default; }
+  .vid-atividade-opcao.correct{ border-color:#2e965a; background:rgba(46,150,90,0.08); color:#215f3d; }
+  .vid-atividade-opcao.incorrect{ border-color:#c4212c; background:rgba(196,33,44,0.06); color:#8a1a21; }
+  .vid-atividade-feedback{ margin-top:12px; font-size:13.5px; font-weight:600; }
+  .vid-atividade-feedback.ok{ color:#1e7a41; }
+  .vid-atividade-feedback.bad{ color:var(--red-dark); }
+  .vid-player-wrap:fullscreen .vid-atividade-card,
+  .vid-player-wrap.is-tela-cheia-janela .vid-atividade-card{ max-width:640px; padding:28px 30px; }
+  .vid-player-wrap:fullscreen .vid-atividade-pergunta,
+  .vid-player-wrap.is-tela-cheia-janela .vid-atividade-pergunta{ font-size:21px; }
+  @media (prefers-reduced-motion: reduce){ .vid-atividade{ animation:none; } }
+  @media (max-width: 520px){
+    .vid-atividade{ padding:8px; }
+    .vid-atividade-card{ padding:12px 14px; }
+    .vid-atividade-pergunta{ font-size:14.5px; margin-bottom:8px; }
+    .vid-atividade-opcao{ padding:7px 10px; font-size:13px; }
+  }
+
+  /* ---------- Relatório pra imprimir / salvar em PDF ----------
+     Montado na hora pela tela de treinamentos; no papel só ele aparece. */
+  #relatorioImpressao{ display:none; }
+  @media print{
+    @page{ size:A4 landscape; margin:12mm; }
+    body.imprimindo-relatorio > *:not(#relatorioImpressao){ display:none !important; }
+    body.imprimindo-relatorio{ background:#fff !important; overflow:visible !important; }
+    body.imprimindo-relatorio #relatorioImpressao{ display:block; color:#000; font-family:'Inter',sans-serif; font-size:10.5px; }
+    #relatorioImpressao .rel-cabecalho{ display:flex; justify-content:space-between; border-bottom:2px solid #000; padding-bottom:6px; font-size:12px; }
+    #relatorioImpressao .rel-filtros{ margin:6px 0 14px; color:#444; }
+    #relatorioImpressao .rel-treinamento{ break-inside:avoid-page; margin-bottom:18px; }
+    #relatorioImpressao h2{ font-size:14px; margin:0 0 6px; }
+    #relatorioImpressao .rel-dados{ display:grid; grid-template-columns:repeat(3, 1fr); gap:4px 16px; margin:0 0 8px; }
+    #relatorioImpressao .rel-dados dt{ font-weight:700; font-size:9px; text-transform:uppercase; color:#555; }
+    #relatorioImpressao .rel-dados dd{ margin:0; }
+    #relatorioImpressao .rel-largo{ grid-column:1 / -1; }
+    #relatorioImpressao .trn-tabela{ width:100%; border-collapse:collapse; font-size:9.5px; }
+    #relatorioImpressao .trn-tabela th{ background:#eee; text-align:left; padding:4px 5px; font-size:8.5px; text-transform:uppercase; }
+    #relatorioImpressao .trn-tabela td{ border-top:1px solid #ccc; padding:4px 5px; vertical-align:top; font-size:9.5px; }
+    #relatorioImpressao .trn-tabela tr{ break-inside:avoid; }
+    #relatorioImpressao .trn-sub{ display:block; color:#555; font-size:8.5px; }
+    #relatorioImpressao .watchers-status{ padding:0; background:none; font-weight:700; }
+    #relatorioImpressao .trn-vazio-lista{ color:#555; font-style:italic; }
+  }

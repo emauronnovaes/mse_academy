@@ -63,7 +63,10 @@ unset($course['video_key']); // nunca sai do servidor
 
 // Perguntas + opções, SEM o campo is_correct (isso só é validado no servidor no submit)
 $stmt = $pdo->prepare(
-    'SELECT id, question_text, order_index FROM quiz_questions WHERE course_id = ? ORDER BY order_index ASC'
+    'SELECT id, question_text, order_index, '
+        // momento_seg: em que segundo do vídeo a atividade aparece (NULL = no fim)
+        . (mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg') ? 'momento_seg' : 'NULL AS momento_seg')
+        . ' FROM quiz_questions WHERE course_id = ? ORDER BY order_index ASC'
 );
 $stmt->execute([$courseId]);
 $questions = $stmt->fetchAll();
@@ -74,6 +77,7 @@ foreach ($questions as &$question) {
     );
     $stmt2->execute([$question['id']]);
     $question['id'] = (int) $question['id'];
+    $question['momento_seg'] = $question['momento_seg'] !== null ? (int) $question['momento_seg'] : null;
     $question['options'] = array_map(function ($opt) {
         $opt['id'] = (int) $opt['id'];
         return $opt;

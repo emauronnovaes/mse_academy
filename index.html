@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261005c">
+<link rel="stylesheet" href="style.css?v=20261005d">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -58,7 +58,7 @@
       <i class="fa-solid fa-user" aria-hidden="true"></i> Acessos
     </button>
     <button type="button" id="btnGerenciarAulas" class="btn-add-people btn-gerenciar-aulas" hidden>
-      <i class="fa-solid fa-book" aria-hidden="true"></i> Gerenciar aulas
+      <i class="fa-solid fa-book" aria-hidden="true"></i> Treinamentos
     </button>
     <button type="button" id="btnDepartamentos" class="btn-add-people btn-departamentos" hidden>
       <i class="fa-solid fa-folder-open" aria-hidden="true"></i> Departamentos
@@ -143,6 +143,33 @@
       <p class="admin-field-hint">Aulas com o <strong>mesmo</strong> grupo são alternativas entre si: cada pessoa recebe uma delas por sorteio e nunca vê as outras. Em branco, todo mundo vê esta aula.</p>
     </div>
 
+    <!-- Dados que a auditoria (ISO) pede de cada treinamento. Opcionais:
+         dá pra preencher depois em Treinamentos > Editar. -->
+    <details class="admin-auditoria-fields" id="videoModalAuditoria">
+      <summary>Dados para auditoria (opcional)</summary>
+      <label class="admin-field-label" for="videoModalTipoTreinamento">Tipo de treinamento</label>
+      <select id="videoModalTipoTreinamento">
+        <option value="">Automático (Integração na trilha, Treinamento interno no catálogo)</option>
+        <option>Treinamento interno</option>
+        <option>DDS</option>
+        <option>Capacitação externa</option>
+        <option>Integração</option>
+        <option>Outro</option>
+      </select>
+      <span class="admin-field-label">Normas</span>
+      <div class="admin-normas" id="videoModalNormas">
+        <label><input type="checkbox" value="ISO 9001"> ISO 9001</label>
+        <label><input type="checkbox" value="ISO 14001"> ISO 14001</label>
+        <label><input type="checkbox" value="ISO 45001"> ISO 45001</label>
+      </div>
+      <label class="admin-field-label" for="videoModalInstrutor">Instrutor</label>
+      <input type="text" id="videoModalInstrutor" maxlength="150" placeholder="Quem conduz o treinamento no vídeo">
+      <label class="admin-field-label" for="videoModalConteudo">Conteúdo programático</label>
+      <textarea id="videoModalConteudo" rows="3" maxlength="5000" placeholder="Tópicos abordados, na ordem do vídeo"></textarea>
+      <label class="admin-field-label" for="videoModalAssuntos">Assuntos</label>
+      <input type="text" id="videoModalAssuntos" maxlength="500" placeholder="Ex.: NR-35, ancoragem, resgate">
+    </details>
+
     <div class="admin-quiz-fields">
       <label class="admin-field-label">Pergunta do quiz (opcional)</label>
       <input type="text" id="videoModalPergunta" placeholder="Deixe em branco pra não ter pergunta">
@@ -184,15 +211,94 @@
   <div class="uploads-painel-lista" id="uploadsPainelLista"></div>
 </div>
 
-<!-- Gerenciar aulas — arquivar (reversível, preserva o histórico de quem
-     assistiu) e excluir de vez (irreversível, apaga o histórico junto). -->
+<!-- Busca de treinamentos — substituiu a lista de "Gerenciar aulas".
+     Consulta pra auditoria (filtros, lista de presença, exportar CSV/PDF)
+     e as mesmas ações de antes em cada linha: presença, editar, perguntas
+     e atividades, áreas, arquivar e excluir. -->
+<div class="trn-tela" id="treinamentosTela" hidden role="dialog" aria-modal="true" aria-labelledby="trnTitulo">
+  <div class="trn-topo">
+    <span class="trn-marca"><span class="trn-logo" aria-hidden="true">mse</span> MSE Academy</span>
+    <span class="trn-topo-sub">Registros de treinamento · Consulta para auditoria</span>
+    <button type="button" class="trn-fechar" id="trnFechar" aria-label="Fechar busca de treinamentos">
+      <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
+    </button>
+  </div>
+  <div class="trn-conteudo">
+    <div class="trn-cabecalho">
+      <div>
+        <h2 id="trnTitulo">Busca de treinamentos</h2>
+        <p>Online · ISO 9001, 14001 e 45001 · Evidência por check-in e check-out</p>
+      </div>
+      <span class="trn-chip" id="trnAvisoMigracao" hidden title="Rode migrations/020_auditoria_presenca_atividades.sql no banco">Check-in e dados de auditoria aguardando a migração 020</span>
+    </div>
+
+    <section class="trn-card">
+      <label class="trn-rotulo" for="trnBusca">Buscar por tema, assunto, conteúdo, instrutor, nome ou CPF do participante</label>
+      <input type="search" id="trnBusca" class="trn-input" placeholder="Ex.: trabalho em altura, nome do colaborador, CPF" autocomplete="off">
+      <div class="trn-filtros">
+        <div class="trn-campo">
+          <span class="trn-rotulo">Modalidade</span>
+          <div class="trn-segmento" id="trnModalidade" role="group" aria-label="Modalidade">
+            <button type="button" data-modalidade="" aria-pressed="true">Todas</button>
+            <button type="button" data-modalidade="presencial" aria-pressed="false">Presencial</button>
+            <button type="button" data-modalidade="online" aria-pressed="false">Online</button>
+          </div>
+        </div>
+        <div class="trn-campo trn-campo-cresce">
+          <label class="trn-rotulo" for="trnTipo">Tipo</label>
+          <select id="trnTipo" class="trn-input"><option value="">Todos</option></select>
+        </div>
+        <div class="trn-campo trn-campo-cresce">
+          <label class="trn-rotulo" for="trnNorma">Norma</label>
+          <select id="trnNorma" class="trn-input"><option value="">Todas</option></select>
+        </div>
+        <div class="trn-campo">
+          <label class="trn-rotulo" for="trnDataDe">Data de</label>
+          <input type="date" id="trnDataDe" class="trn-input">
+        </div>
+        <div class="trn-campo">
+          <label class="trn-rotulo" for="trnDataAte">Data até</label>
+          <input type="date" id="trnDataAte" class="trn-input">
+        </div>
+        <button type="button" class="trn-btn" id="trnLimpar">Limpar filtros</button>
+      </div>
+      <p class="trn-dica">As datas filtram pelo período em que as pessoas participaram (check-in, conclusão ou última atividade).</p>
+    </section>
+
+    <section class="trn-card trn-card-tabela">
+      <div class="trn-resultados-topo">
+        <strong id="trnContagem" aria-live="polite">Carregando...</strong>
+        <div class="trn-resultados-acoes">
+          <button type="button" class="trn-btn" id="trnNovoVideo">+ Adicionar vídeo</button>
+          <button type="button" class="trn-btn" id="trnExportarCsv">Exportar CSV</button>
+          <button type="button" class="trn-btn" id="trnExportarPdf">Exportar relatório (PDF)</button>
+        </div>
+      </div>
+      <div class="trn-tabela-wrap">
+        <table class="trn-tabela">
+          <thead>
+            <tr>
+              <th title="Data de publicação do vídeo">Data</th><th>Tema</th><th>Modalidade</th><th>Tipo</th><th>Norma</th>
+              <th>Instrutor</th><th>Conteúdo programático</th><th>Assuntos</th><th>Participantes</th><th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="trnCorpo"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- Janela das ações de uma aula (presença, editar, perguntas e
+     atividades, áreas). Abre por cima da Busca de treinamentos, então os
+     filtros continuam lá ao fechar. -->
 <div class="admin-modal-overlay" id="aulasModalOverlay" hidden>
   <div class="admin-modal admin-modal-wide" role="dialog" aria-modal="true" aria-labelledby="aulasModalTitle">
     <button type="button" class="admin-modal-close" id="aulasModalClose" aria-label="Fechar">
       <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
     </button>
-    <h3 id="aulasModalTitle">Gerenciar aulas</h3>
-    <p id="aulasModalSubtitle">Arquivar tira a aula do ar sem perder nada e pode ser desfeito. Excluir apaga também o registro de quem assistiu.</p>
+    <h3 id="aulasModalTitle">Aula</h3>
+    <p id="aulasModalSubtitle"></p>
     <div id="aulasModalBody"></div>
   </div>
 </div>
@@ -485,7 +591,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261005c"></script>
+<script src="script.js?v=20261005d"></script>
 
 </body>
 </html>

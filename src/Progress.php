@@ -173,3 +173,59 @@ function mse_course_is_unlocked(PDO $pdo, int $userId, int $courseId): bool
 
     return (int) $row['total'] === count($previousIds);
 }
+
+/**
+ * true se a coluna existe. O código chega pelo Git antes de a migração ser
+ * rodada à mão no servidor; sem esta checagem a consulta morre com
+ * "Unknown column". Guarda o resultado pra não repetir a consulta.
+ */
+function mse_tem_coluna(PDO $pdo, string $tabela, string $coluna): bool
+{
+    static $cache = [];
+    $chave = $tabela . '.' . $coluna;
+    if (!array_key_exists($chave, $cache)) {
+        // information_schema e não SHOW COLUMNS ... LIKE ?: com prepared
+        // statement de verdade (EMULATE_PREPARES=false) o MySQL não aceita
+        // parâmetro no SHOW, e a consulta morria com erro de sintaxe.
+        $stmt = $pdo->prepare(
+            'SELECT 1 FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+        );
+        $stmt->execute([$tabela, $coluna]);
+        $cache[$chave] = $stmt->fetchColumn() !== false;
+    }
+    return $cache[$chave];
+}
+
+/**
+ * true se a aula tem pergunta pra responder no FIM do vídeo. Pergunta com
+ * momento_seg é atividade do meio do vídeo e não conta aqui.
+ */
+function mse_tem_pergunta_final(PDO $pdo, int $courseId): bool
+{
+    $filtro = mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg') ? ' AND momento_seg IS NULL' : '';
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM quiz_questions WHERE course_id = ?' . $filtro);
+    $stmt->execute([$courseId]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+/**
+ * Quantas atividades do meio do vídeo esta pessoa ainda não acertou. A aula
+ * só conclui com zero — senão bastaria pular a atividade pela API.
+ */
+function mse_atividades_pendentes(PDO $pdo, int $userId, int $courseId): int
+{
+    if (!mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg')) {
+        return 0;
+    }
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM quiz_questions q
+         WHERE q.course_id = ? AND q.momento_seg IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM quiz_attempts t
+             WHERE t.question_id = q.id AND t.user_id = ? AND t.is_correct = 1
+           )'
+    );
+    $stmt->execute([$courseId, $userId]);
+    return (int) $stmt->fetchColumn();
+}

@@ -39,25 +39,38 @@ if (!mse_course_is_unlocked($pdo, (int) $user['id'], $courseId)) {
 // quiz, então ficaria "em andamento" pra sempre e a trilha nunca
 // avançaria. Nesse caso, assistir até o fim é o que conclui — quem
 // decide é o admin, ao cadastrar (ou não) uma pergunta na aula.
-$stmt = $pdo->prepare('SELECT COUNT(*) FROM quiz_questions WHERE course_id = ?');
-$stmt->execute([$courseId]);
-$temPergunta = (int) $stmt->fetchColumn() > 0;
+//
+// Atividade do meio do vídeo (pergunta com momento_seg) não é pergunta
+// do fim: aula só com atividades conclui assistindo, desde que todas
+// tenham sido acertadas.
+$temPergunta = mse_tem_pergunta_final($pdo, $courseId);
 
-$concluiuAssistindo = !$temPergunta && $watchedPct >= 95;
+$concluiuAssistindo = !$temPergunta && $watchedPct >= 95
+    && mse_atividades_pendentes($pdo, (int) $user['id'], $courseId) === 0;
 
 $status = $concluiuAssistindo ? 'concluido' : ($watchedPct > 0 ? 'em_andamento' : 'nao_iniciado');
-$completedAt = $concluiuAssistindo ? date('Y-m-d H:i:s') : null;
+// Relógio do banco, não do PHP: o check-in e a conclusão por pergunta usam
+// NOW() do MySQL, e se o PHP estiver noutro fuso (o XAMPP vem em Berlim) a
+// lista de presença mostraria check-out antes do check-in.
+$completedAt = $concluiuAssistindo ? (string) $pdo->query('SELECT NOW()')->fetchColumn() : null;
 
 // GREATEST() garante que o percentual nunca regride (ex: se a pessoa voltar
 // e assistir só um trecho de novo, não perde o progresso já feito).
 // O status também só "sobe" — uma vez concluído, nunca volta a em_andamento.
+//
+// checkin_em é a evidência de presença de quando a pessoa abriu o
+// treinamento: o player manda 0% assim que carrega, então a primeira
+// gravação é a abertura. COALESCE mantém a primeira, reassistir não muda.
+$temCheckin = mse_tem_coluna($pdo, 'user_course_progress', 'checkin_em');
 $stmt = $pdo->prepare(
-    "INSERT INTO user_course_progress (user_id, course_id, status, watched_pct, completed_at)
-     VALUES (:uid, :cid, :status, :pct, :completed_at)
+    "INSERT INTO user_course_progress (user_id, course_id, status, watched_pct, completed_at"
+        . ($temCheckin ? ', checkin_em' : '') . ")
+     VALUES (:uid, :cid, :status, :pct, :completed_at" . ($temCheckin ? ', NOW()' : '') . ")
      ON DUPLICATE KEY UPDATE
         watched_pct = GREATEST(watched_pct, VALUES(watched_pct)),
         status = IF(status = 'concluido', 'concluido', VALUES(status)),
         completed_at = COALESCE(completed_at, VALUES(completed_at))"
+        . ($temCheckin ? ', checkin_em = COALESCE(checkin_em, NOW())' : '')
 );
 $stmt->execute([
     'uid' => $user['id'],

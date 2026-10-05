@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../../src/Cors.php';
 require_once __DIR__ . '/../../../src/Response.php';
 require_once __DIR__ . '/../../../src/Auth.php';
+require_once __DIR__ . '/../../../src/Progress.php';
 
 mse_cors();
 mse_require_admin();
@@ -18,26 +19,29 @@ mse_require_admin();
  *
  * MODO DE USO
  *   GET  ?course_id=N                    lê as perguntas atuais
- *   POST {course_id, questions:[...]}    substitui o conjunto inteiro
+ *   POST {course_id, questions:[...]}    grava o conjunto inteiro
  *   POST {course_id, questions:[]}       tira todas
- *   + confirmar:true                     quando já houve respostas
+ *   + confirmar:true                     quando a gravação apagaria respostas
  *
- * Cada item de "questions" é {question, options:[{text,is_correct},...]}.
- *
- * O POST substitui tudo em vez de mexer pergunta a pergunta. A tela edita
- * o conjunto inteiro de uma vez, e casar edição parcial com o que sumiu da
- * tela exigiria mandar ids e tratar pergunta removida, criada e alterada
- * em três caminhos diferentes — mais código pra chegar no mesmo lugar.
+ * Cada item de "questions" é {question, momento_seg, options:[{text,is_correct},...]}.
+ * momento_seg é o segundo do vídeo em que a pergunta aparece (atividade
+ * durante o vídeo); null ou ausente = no fim do vídeo, como sempre foi.
  *
  * O GET devolve is_correct, que api/courses/detail.php esconde de
  * propósito — lá é o colaborador lendo, e a resposta certa não pode sair
  * junto com a pergunta. Aqui é admin, que precisa ver o que está gravado.
  *
- * O PORQUÊ DA CONFIRMAÇÃO
- * quiz_attempts aponta pra quiz_options com ON DELETE CASCADE. Regravar as
- * perguntas apaga as respostas que apontavam pras opções antigas — o
- * registro de quem respondeu o quê some junto, sem aviso. Quem já assistiu
- * NÃO é afetado: isso vive em user_course_progress, que não é tocado aqui.
+ * O QUE O POST PRESERVA
+ * quiz_attempts aponta pra quiz_options com ON DELETE CASCADE: apagar uma
+ * pergunta apaga as respostas dela. Antes o POST apagava e recriava tudo,
+ * então só marcar o minuto de uma atividade num vídeo que já estava no ar
+ * jogava fora o registro de quem respondeu — evidência que a auditoria
+ * pede. Agora pergunta que chega igual (mesmo enunciado e mesmas
+ * alternativas, na mesma ordem) é mantida: só ordem e momento são
+ * atualizados, e as respostas dela continuam. Apaga e recria apenas o que
+ * mudou de texto ou saiu da tela — e só pede confirmação se ISSO tiver
+ * respostas. Quem já assistiu nunca é afetado: isso vive em
+ * user_course_progress, que não é tocado aqui.
  */
 
 $metodo = $_SERVER['REQUEST_METHOD'];
@@ -60,55 +64,66 @@ if ($courseId <= 0) {
     mse_error('Informe course_id.', 422);
 }
 
-$stmt = $pdo->prepare('SELECT id, title FROM courses WHERE id = ?');
+$temMomento = mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg');
+$temDuracao = mse_tem_coluna($pdo, 'courses', 'duration_seconds');
+
+$stmt = $pdo->prepare(
+    'SELECT id, title, ' . ($temDuracao ? 'duration_seconds' : 'NULL AS duration_seconds') . ' FROM courses WHERE id = ?'
+);
 $stmt->execute([$courseId]);
 $curso = $stmt->fetch();
 if (!$curso) {
     mse_error('Aula não encontrada.', 404);
 }
+$duracao = $curso['duration_seconds'] !== null ? (int) $curso['duration_seconds'] : 0;
 
-// Perguntas que já existem, em ordem.
-$stmt = $pdo->prepare('SELECT id, question_text FROM quiz_questions WHERE course_id = ? ORDER BY order_index ASC, id ASC');
+// Perguntas que já existem, em ordem, com as alternativas de cada uma.
+$stmt = $pdo->prepare(
+    'SELECT id, question_text, ' . ($temMomento ? 'momento_seg' : 'NULL AS momento_seg') . '
+     FROM quiz_questions WHERE course_id = ? ORDER BY order_index ASC, id ASC'
+);
 $stmt->execute([$courseId]);
 $atuais = $stmt->fetchAll();
 
-$respostasExistentes = 0;
-if ($atuais) {
-    $ids = array_map(function ($q) { return (int) $q['id']; }, $atuais);
-    $marcas = implode(',', array_fill(0, count($ids), '?'));
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM quiz_attempts WHERE question_id IN ({$marcas})");
-    $stmt->execute($ids);
-    $respostasExistentes = (int) $stmt->fetchColumn();
+$stmtOpcoes = $pdo->prepare(
+    'SELECT option_text, is_correct FROM quiz_options WHERE question_id = ? ORDER BY order_index ASC, id ASC'
+);
+$stmtRespostas = $pdo->prepare('SELECT COUNT(*) FROM quiz_attempts WHERE question_id = ?');
+foreach ($atuais as &$q) {
+    $stmtOpcoes->execute([(int) $q['id']]);
+    $q['opcoes'] = array_map(function ($o) {
+        return ['text' => $o['option_text'], 'is_correct' => (int) $o['is_correct'] === 1];
+    }, $stmtOpcoes->fetchAll());
+    $stmtRespostas->execute([(int) $q['id']]);
+    $q['respostas'] = (int) $stmtRespostas->fetchColumn();
 }
+unset($q);
+
+$respostasExistentes = array_sum(array_column($atuais, 'respostas'));
 
 // ------------------------------------------------------------
 // GET: o que já está gravado
 // ------------------------------------------------------------
 if ($metodo === 'GET') {
-    $lista = [];
-    foreach ($atuais as $q) {
-        $stmt = $pdo->prepare(
-            'SELECT option_text, is_correct FROM quiz_options WHERE question_id = ? ORDER BY order_index ASC, id ASC'
-        );
-        $stmt->execute([(int) $q['id']]);
-        $opcoes = [];
-        foreach ($stmt->fetchAll() as $o) {
-            $opcoes[] = ['text' => $o['option_text'], 'is_correct' => (int) $o['is_correct'] === 1];
-        }
-        $lista[] = ['question' => $q['question_text'], 'options' => $opcoes];
-    }
-
     mse_json([
         'course_id' => $courseId,
         'titulo' => $curso['title'],
-        'questions' => $lista,
+        'duracao_seg' => $duracao ?: null,
+        'aceita_momento' => $temMomento,
+        'questions' => array_map(function ($q) {
+            return [
+                'question' => $q['question_text'],
+                'momento_seg' => $q['momento_seg'] !== null ? (int) $q['momento_seg'] : null,
+                'options' => $q['opcoes'],
+            ];
+        }, $atuais),
         'respostas' => $respostasExistentes,
         'max_perguntas' => QUIZ_MAX_PERGUNTAS,
     ]);
 }
 
 // ------------------------------------------------------------
-// Validação de tudo, antes de qualquer escrita
+// POST: valida tudo antes de gravar qualquer coisa
 // ------------------------------------------------------------
 $recebidas = $input['questions'] ?? null;
 if (!is_array($recebidas)) {
@@ -120,7 +135,7 @@ if (count($recebidas) > QUIZ_MAX_PERGUNTAS) {
 }
 
 $perguntas = [];
-foreach ($recebidas as $pos => $q) {
+foreach (array_values($recebidas) as $pos => $q) {
     $numero = $pos + 1;
     $texto = trim((string) ($q['question'] ?? ''));
 
@@ -163,8 +178,6 @@ foreach ($recebidas as $pos => $q) {
 
     $certas = count(array_filter($opcoes, function ($o) { return $o['is_correct']; }));
     if ($certas !== 1) {
-        // Nenhuma certa deixaria a pergunta impossível; mais de uma faria o
-        // servidor aceitar respostas diferentes como corretas.
         mse_error(
             $certas === 0
                 ? 'Marque qual é a alternativa correta da pergunta ' . $numero . '.'
@@ -173,43 +186,108 @@ foreach ($recebidas as $pos => $q) {
         );
     }
 
-    $perguntas[] = ['texto' => $texto, 'opcoes' => $opcoes];
+    // Momento da atividade. 0 não vale: no segundo zero o vídeo nem
+    // começou, e a pessoa veria a pergunta antes de qualquer conteúdo.
+    $momento = null;
+    if (isset($q['momento_seg']) && $q['momento_seg'] !== '' && $q['momento_seg'] !== null) {
+        if (!$temMomento) {
+            mse_error('Atividade com minuto marcado ainda não está disponível: falta rodar a migração 020 no banco.', 409);
+        }
+        $momento = (int) $q['momento_seg'];
+        if ($momento < 1) {
+            mse_error('O momento da pergunta ' . $numero . ' precisa ser depois do início do vídeo (a partir de 00:01).', 422);
+        }
+        if ($duracao > 0 && $momento >= $duracao) {
+            mse_error(
+                'O momento da pergunta ' . $numero . ' (' . mse_mmss($momento) . ') passa do fim do vídeo ('
+                    . mse_mmss($duracao) . '). Deixe em branco pra ela aparecer no fim.',
+                422
+            );
+        }
+    }
+
+    $perguntas[] = ['texto' => $texto, 'opcoes' => $opcoes, 'momento' => $momento];
+}
+
+function mse_mmss(int $seg): string
+{
+    return sprintf('%02d:%02d', intdiv($seg, 60), $seg % 60);
 }
 
 if (!$perguntas && !$atuais) {
     mse_error('Esta aula não tem pergunta pra tirar.', 409);
 }
 
-// ------------------------------------------------------------
-// Passo 1: avisa antes de mexer no que já foi respondido
-// ------------------------------------------------------------
-if ($respostasExistentes > 0 && empty($input['confirmar'])) {
+// Casa cada pergunta recebida com uma já gravada que seja idêntica (texto e
+// alternativas). As casadas são mantidas; as que sobram, apagadas.
+$assinatura = function (string $texto, array $opcoes): string {
+    return json_encode([$texto, array_map(function ($o) {
+        return [$o['text'], (bool) $o['is_correct']];
+    }, $opcoes)], JSON_UNESCAPED_UNICODE);
+};
+$livres = [];
+foreach ($atuais as $a) {
+    $livres[$assinatura($a['question_text'], $a['opcoes'])][] = $a;
+}
+foreach ($perguntas as &$p) {
+    $chave = $assinatura($p['texto'], $p['opcoes']);
+    $p['manter_id'] = !empty($livres[$chave]) ? (int) array_shift($livres[$chave])['id'] : null;
+}
+unset($p);
+
+$apagar = [];
+foreach ($livres as $sobra) {
+    foreach ($sobra as $a) {
+        $apagar[] = $a;
+    }
+}
+$respostasPerdidas = array_sum(array_column($apagar, 'respostas'));
+
+// Confirmação só quando a gravação apaga respostas de verdade — marcar o
+// minuto de uma pergunta que não mudou não apaga nada e não pergunta.
+if ($respostasPerdidas > 0 && empty($input['confirmar'])) {
     mse_json([
         'precisa_confirmar' => true,
         'course_id' => $courseId,
-        'respostas' => $respostasExistentes,
-        'message' => $respostasExistentes . ' '
-            . ($respostasExistentes === 1 ? 'resposta já foi registrada' : 'respostas já foram registradas')
-            . ' nesta aula. Salvar apaga esse registro de respostas, e isso não tem volta. '
+        'respostas' => $respostasPerdidas,
+        'message' => $respostasPerdidas . ' '
+            . ($respostasPerdidas === 1 ? 'resposta registrada é' : 'respostas registradas são')
+            . ' de perguntas que você alterou ou tirou. Salvar apaga esse registro, e isso não tem volta. '
+            . 'As respostas das perguntas que não mudaram continuam. '
             . 'Quem já assistiu a aula continua constando como assistido — isso não é afetado.',
     ]);
 }
 
 // ------------------------------------------------------------
-// Passo 2: grava
+// Grava tudo numa transação: ou entra o conjunto inteiro, ou nada.
 // ------------------------------------------------------------
 $pdo->beginTransaction();
 try {
-    // Apagar as perguntas leva opções e respostas junto, por cascata. É o
-    // caminho para os dois casos: tirar de vez, ou recriar o conjunto.
-    $stmt = $pdo->prepare('DELETE FROM quiz_questions WHERE course_id = ?');
-    $stmt->execute([$courseId]);
+    $del = $pdo->prepare('DELETE FROM quiz_questions WHERE id = ?');
+    foreach ($apagar as $a) {
+        $del->execute([(int) $a['id']]);
+    }
 
-    $insPergunta = $pdo->prepare('INSERT INTO quiz_questions (course_id, question_text, order_index) VALUES (?, ?, ?)');
+    $insPergunta = $pdo->prepare(
+        $temMomento
+            ? 'INSERT INTO quiz_questions (course_id, question_text, momento_seg, order_index) VALUES (?, ?, ?, ?)'
+            : 'INSERT INTO quiz_questions (course_id, question_text, order_index) VALUES (?, ?, ?)'
+    );
+    $updPergunta = $pdo->prepare(
+        $temMomento
+            ? 'UPDATE quiz_questions SET momento_seg = ?, order_index = ? WHERE id = ?'
+            : 'UPDATE quiz_questions SET order_index = ? WHERE id = ?'
+    );
     $insOpcao = $pdo->prepare('INSERT INTO quiz_options (question_id, option_text, is_correct, order_index) VALUES (?, ?, ?, ?)');
 
     foreach ($perguntas as $i => $p) {
-        $insPergunta->execute([$courseId, $p['texto'], $i + 1]);
+        if ($p['manter_id'] !== null) {
+            $updPergunta->execute($temMomento ? [$p['momento'], $i + 1, $p['manter_id']] : [$i + 1, $p['manter_id']]);
+            continue;
+        }
+        $insPergunta->execute(
+            $temMomento ? [$courseId, $p['texto'], $p['momento'], $i + 1] : [$courseId, $p['texto'], $i + 1]
+        );
         $questionId = (int) $pdo->lastInsertId();
         foreach ($p['opcoes'] as $j => $o) {
             $insOpcao->execute([$questionId, $o['text'], $o['is_correct'] ? 1 : 0, $j + 1]);
@@ -223,10 +301,12 @@ try {
 }
 
 $total = count($perguntas);
+$noMeio = count(array_filter($perguntas, function ($p) { return $p['momento'] !== null; }));
 mse_json([
     'course_id' => $courseId,
     'total_perguntas' => $total,
     'message' => $total === 0
         ? 'As perguntas de "' . $curso['title'] . '" foram removidas.'
-        : $total . ($total === 1 ? ' pergunta salva' : ' perguntas salvas') . ' em "' . $curso['title'] . '".',
+        : $total . ($total === 1 ? ' pergunta salva' : ' perguntas salvas') . ' em "' . $curso['title'] . '"'
+            . ($noMeio > 0 ? ' (' . $noMeio . ' durante o vídeo).' : '.'),
 ]);
