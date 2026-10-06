@@ -4247,9 +4247,14 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   const TRN_EVENTOS = { checkin: 'Check-in (abriu o vídeo)', checkout: 'Check-out (saiu)', presenca: 'Presença confirmada ("Estou aqui")' };
 
-  function trnLogHtml(eventos, comTreinamento){
+  // logDisponivel: a tabela do log existe no banco (migração 021). Sem
+  // ela, nada é gravado; com ela, o log vazio só quer dizer que ninguém
+  // abriu esse vídeo desde que a migração rodou.
+  function trnLogHtml(eventos, comTreinamento, logDisponivel){
     if(!eventos.length){
-      return '<p class="trn-vazio-lista">Nenhum registro no log. O log de check-in e check-out começa a ser gravado depois da migração 021.</p>';
+      return logDisponivel === false
+        ? '<p class="trn-vazio-lista">O log ainda não está sendo gravado: falta rodar a migração 021 (migrations/021_log_checkin_checkout.sql) no banco do site.</p>'
+        : '<p class="trn-vazio-lista">Nenhum check-in ou check-out registrado ainda. O log é gravado a partir de quando a migração 021 rodou: acessos anteriores a ela não aparecem aqui — só a data de conclusão, nas colunas de check-in/check-out.</p>';
     }
     return `
       <table class="trn-tabela trn-tabela-log">
@@ -4295,7 +4300,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       btn.textContent = 'Fechar log';
       try{
         const d = await apiFetch(`api/admin/treinamentos/log.php?user_id=${encodeURIComponent(btn.dataset.user)}&course_id=${encodeURIComponent(btn.dataset.course)}`);
-        linha.firstElementChild.innerHTML = trnLogHtml(d.eventos || [], false);
+        linha.firstElementChild.innerHTML = trnLogHtml(d.eventos || [], false, d.log_disponivel);
       }catch(err){
         linha.firstElementChild.innerHTML = `<p>Não foi possível carregar o log: ${esc(err.message)}</p>`;
       }
@@ -4372,7 +4377,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         if(f.data_ate) qLog.set('data_ate', f.data_ate);
         const log = await apiFetch('api/admin/treinamentos/log.php?' + qLog.toString());
         await trnBaixarPdf(trnRelatorioPessoasHtml([pessoa], 'Ficha de treinamentos')
-          + `<section class="rel-treinamento"><h2>Log de presença (check-in, check-out e "Estou aqui")</h2>${trnLogHtml(log.eventos || [], true)}</section>`,
+          + `<section class="rel-treinamento"><h2>Log de presença (check-in, check-out e "Estou aqui")</h2>${trnLogHtml(log.eventos || [], true, log.log_disponivel)}</section>`,
           trnNomePdf(nomeArquivo));
       }));
     }catch(e){
