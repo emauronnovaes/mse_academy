@@ -1964,3 +1964,10 @@
   .trn-navegador{ color:var(--steel); }
   .lp-modo{ margin:4px 0 10px; width:max-content; }
   .lp-campos label[hidden]{ display:none; }
+
+  /* Formulário por pessoa: coluna TREINAMENTO a mais */
+  .rel-formulario .lp-por-pessoa th:nth-child(1){ width:12%; }
+  .rel-formulario .lp-por-pessoa th:nth-child(2){ width:22%; }
+  .rel-formulario .lp-por-pessoa th:nth-child(3){ width:26%; }
+  .rel-formulario .lp-por-pessoa th:nth-child(4){ width:18%; }
+  .rel-formulario .lp-por-pessoa td{ font-size:8.5px; }

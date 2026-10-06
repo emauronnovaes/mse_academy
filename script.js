@@ -4748,11 +4748,26 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       return el;
     };
     const folhas = Array.isArray(html) ? html : [html];
+    const cssRelatorio = [];
+    Array.from(document.styleSheets).forEach(folha => {
+      let regras;
+      try{ regras = folha.cssRules; }catch(e){ return; } // folha de outro domínio
+      Array.from(regras || []).forEach(r => {
+        if(r.selectorText && /rel-pdf|rel-formulario/.test(r.selectorText)) cssRelatorio.push(r.cssText);
+      });
+    });
     let trabalho = html2pdf().set({
       margin: retrato ? 10 : 8,
       filename: nomeArquivo,
       image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: { scale: 2, backgroundColor: '#ffffff' },
+      // O gerador copia a página e recarrega o style.css; se essa recarga
+      // falha, a folha sai sem formatação. As regras do relatório vão
+      // direto na cópia, sem depender dela.
+      html2canvas: { scale: 2, backgroundColor: '#ffffff', onclone: (doc) => {
+        const tag = doc.createElement('style');
+        tag.textContent = cssRelatorio.join(' ');
+        doc.head.appendChild(tag);
+      } },
       jsPDF: { unit: 'mm', format: 'a4', orientation: retrato ? 'portrait' : 'landscape' },
       // Linha de tabela e blocos de dados nunca cortados no meio da página.
       pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'h2', '.rel-dados', '.lp-cab', '.lp-dados'] },
@@ -5386,7 +5401,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     return `<span class="lp-caixa${marcado ? ' is-marcado' : ''}"></span> ${esc(rotulo)}`;
   }
 
-  function lpFormularioHtml(t, participantes, paginaTexto){
+  // Setor do treinamento: áreas pra quais é obrigatório, a área do vídeo
+  // ou, na integração, todos.
+  function lpSetorDoTreinamento(t){
+    return t.trilha ? 'Todos os setores (integração)' : ((t.areas_obrigatorias || []).join(', ') || t.area || 'Todos os setores');
+  }
+
+  // Formulário. Por pessoa (opcoes.porPessoa), cada linha é um treinamento
+  // e a tabela ganha a coluna TREINAMENTO; t traz os campos já somados.
+  function lpFormularioHtml(t, participantes, paginaTexto, opcoes){
+    const porPessoa = !!(opcoes && opcoes.porPessoa);
     // Data e horários: do primeiro check-in ao último check-out. Num
     // treinamento online cada pessoa assiste num dia — se foram vários,
     // a data vira um intervalo e o horário leva a data junto.
@@ -5400,19 +5424,22 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const data = !dias.length ? '' : umDia ? trnFmtData(dias[0]) : `${trnFmtData(dias[0])} a ${trnFmtData(dias[dias.length - 1])}`;
     const hora = (s) => !s ? '' : umDia ? s.slice(11, 16) : trnFmtDataHora(s);
     const normas = t.normas || [];
-    const setor = t.trilha ? 'Todos os setores (integração)' : ((t.areas_obrigatorias || []).join(', ') || t.area || 'Todos os setores');
+    const setor = t.setorTexto || lpSetorDoTreinamento(t);
 
+    // SETOR da linha: o departamento da pessoa; sem departamento no
+    // cadastro, o setor do treinamento — a coluna não fica em branco.
     const linhas = participantes.map(p => `
       <tr>
-        <td>${esc(p.departamento || '')}</td>
+        <td>${esc(p.departamento || p.setorTreinamento || setor)}</td>
         <td>${esc(p.nome)}</td>
+        ${porPessoa ? `<td>${esc(p.treinamento || '')}</td>` : ''}
         <td>${esc(p.email || '')}</td>
         <td>${esc(trnFmtDataHora(p.checkin_em))}</td>
         <td>${esc(trnFmtDataHora(saida(p)))}</td>
       </tr>`);
-    while(linhas.length < LP_LINHAS_PRIMEIRA_PAGINA){
-      linhas.push('<tr><td></td><td></td><td></td><td></td><td></td></tr>');
-    }
+    const vazia = '<tr>' + '<td></td>'.repeat(porPessoa ? 6 : 5) + '</tr>';
+    while(linhas.length < LP_LINHAS_PRIMEIRA_PAGINA) linhas.push(vazia);
+    const tipos = t.tipos || [t.tipo];
     const paginas = participantes.length <= LP_LINHAS_PRIMEIRA_PAGINA ? 1
       : 1 + Math.ceil((participantes.length - LP_LINHAS_PRIMEIRA_PAGINA) / LP_LINHAS_POR_PAGINA);
 
@@ -5431,12 +5458,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       <table class="lp-dados">
         <colgroup><col><col><col><col><col><col></colgroup>
         <tr>
-          <td colspan="2">${lpCaixa(t.tipo === 'Treinamento interno' || t.tipo === 'Integração', 'TREINAMENTO INTERNO')}</td>
-          <td colspan="2">${lpCaixa(t.tipo === 'DDS', 'DDS')}</td>
-          <td colspan="2">${lpCaixa(t.tipo === 'Capacitação externa', 'CAPACITAÇÃO EXTERNA')}</td>
+          <td colspan="2">${lpCaixa(tipos.includes('Treinamento interno') || tipos.includes('Integração'), 'TREINAMENTO INTERNO')}</td>
+          <td colspan="2">${lpCaixa(tipos.includes('DDS'), 'DDS')}</td>
+          <td colspan="2">${lpCaixa(tipos.includes('Capacitação externa'), 'CAPACITAÇÃO EXTERNA')}</td>
         </tr>
         <tr><td colspan="6"><b>TEMA:</b> ${esc(t.tema)}</td></tr>
-        <tr><td colspan="6"><b>MOTIVO:</b> ${esc(lpMotivo(t))}</td></tr>
+        <tr><td colspan="6"><b>MOTIVO:</b> ${esc(t.motivoTexto || lpMotivo(t))}</td></tr>
         <tr><td colspan="6" class="lp-conteudo"><b>CONTEÚDO PROGRAMÁTICO:</b> ${esc(t.conteudo_programatico || t.descricao || '')}</td></tr>
         <tr>
           <td colspan="5"><b>NORMA:</b> ${esc(normas.join(' · ') || '-')}</td>
@@ -5449,18 +5476,19 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <td colspan="2"><b>HORA INICIAL:</b> ${esc(hora(primeiro))}</td>
           <td colspan="2"><b>HORA FINAL:</b> ${esc(hora(ultimo))}</td>
         </tr>
-        <tr><td colspan="6"><b>CARGA HORÁRIA:</b> ${esc(lpCargaHoraria(t))}</td></tr>
+        <tr><td colspan="6"><b>CARGA HORÁRIA:</b> ${esc(lpCargaHoraria(t))}${porPessoa ? ' (soma dos treinamentos)' : ''}</td></tr>
       </table>
-      <table class="lp-participantes">
-        <thead><tr><th>SETOR</th><th>NOME DO PARTICIPANTE</th><th>DOCUMENTO</th><th>CHECK-IN</th><th>CHECK-OUT</th></tr></thead>
+      <table class="lp-participantes${porPessoa ? ' lp-por-pessoa' : ''}">
+        <thead><tr><th>SETOR</th><th>NOME DO PARTICIPANTE</th>${porPessoa ? '<th>TREINAMENTO</th>' : ''}<th>DOCUMENTO</th><th>CHECK-IN</th><th>CHECK-OUT</th></tr></thead>
         <tbody>${linhas.join('')}</tbody>
       </table>
       <p class="lp-rodape">Registro eletrônico de check-in/check-out (data e hora) substitui a assinatura e é retido como informação documentada.</p>
     `;
   }
 
-  // REH-002-F1 por pessoa: uma folha do formulário pra cada treinamento
-  // que a pessoa fez, com a linha dela preenchida.
+  // REH-002-F1 por pessoa: um formulário só, numa página, com uma linha
+  // por treinamento que a pessoa fez. O cabeçalho junta os treinamentos:
+  // temas, tipos marcados, normas, instrutores, período e carga somada.
   async function gerarListaPresencaPessoa(){
     const fb = document.getElementById('lpFeedback');
     const btn = document.getElementById('lpGerar');
@@ -5485,18 +5513,28 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         return;
       }
       fb.className = 'admin-modal-feedback ok';
-      fb.textContent = `${lista.length} ${lista.length === 1 ? 'treinamento' : 'treinamentos'} de ${pessoa.nome} — uma folha do formulário para cada.`;
+      fb.textContent = `${lista.length} ${lista.length === 1 ? 'treinamento' : 'treinamentos'} de ${pessoa.nome} na lista.`;
       btn.textContent = 'Gerando PDF...';
-      const folhas = lista.map((t, i) => {
-        // Dados do treinamento (setor, áreas, carga horária) vêm da busca.
-        const meta = Object.assign({}, t, lpEstado.treinamentos.find(x => x.id === t.id) || {});
-        const participante = {
-          departamento: pessoa.departamento, nome: pessoa.nome, email: pessoa.email,
-          checkin_em: t.checkin_em, checkout_em: t.checkout_em, ultimo_checkout_em: t.ultimo_checkout_em,
-        };
-        return lpFormularioHtml(meta, [participante], `${i + 1} de ${lista.length}`);
-      });
-      await trnBaixarPdf(folhas,
+      // Dados de cada treinamento (setor, áreas, carga horária) vêm da busca.
+      const metas = lista.map(t => Object.assign({}, t, lpEstado.treinamentos.find(x => x.id === t.id) || {}));
+      const unicos = (valores) => [...new Set(valores.filter(Boolean))];
+      const segundos = metas.reduce((soma, m) => soma + (m.duracao_seg || (m.duracao_min ? m.duracao_min * 60 : 0)), 0);
+      const resumo = {
+        tema: metas.map(m => m.tema).join('; '),
+        tipos: unicos(metas.map(m => m.tipo)),
+        motivoTexto: unicos(metas.map(lpMotivo)).join('; '),
+        conteudo_programatico: metas.map(m => `${m.tema}: ${m.conteudo_programatico || m.descricao || '-'}`).join(' | '),
+        normas: unicos([].concat(...metas.map(m => m.normas || []))),
+        instrutor: unicos(metas.map(m => m.instrutor)).join(', '),
+        setorTexto: pessoa.departamento || unicos(metas.map(lpSetorDoTreinamento)).join(', '),
+        duracao_seg: segundos,
+      };
+      const linhas = metas.map(m => ({
+        departamento: pessoa.departamento, setorTreinamento: lpSetorDoTreinamento(m),
+        nome: pessoa.nome, email: pessoa.email, treinamento: m.tema,
+        checkin_em: m.checkin_em, checkout_em: m.checkout_em, ultimo_checkout_em: m.ultimo_checkout_em,
+      }));
+      await trnBaixarPdf(lpFormularioHtml(resumo, linhas, null, { porPessoa: true }),
         trnNomePdf(`lista-presenca-REH-002-F1-${trnSlug(pessoa.nome) || pessoa.user_id}`), { retrato: true, classe: 'rel-formulario' });
     }catch(e){
       fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = 'Não foi possível gerar: ' + e.message;
