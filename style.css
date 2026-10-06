@@ -1922,3 +1922,42 @@
     #relatorioImpressao .watchers-status{ padding:0; background:none; font-weight:700; }
     #relatorioImpressao .trn-vazio-lista{ color:#555; font-style:italic; }
   }
+
+  /* ---------- Lista de Presença REH-002-F1 (tela Acessos) ---------- */
+  .lp-painel{ border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin:0 0 18px; background:#FAFAF8; }
+  .lp-painel h4{ margin:0 0 4px; font-size:15px; }
+  .lp-campos{ display:grid; grid-template-columns:minmax(260px, 2fr) repeat(2, minmax(140px, 1fr)) auto; gap:10px; align-items:end; }
+  .lp-campos label{ display:flex; flex-direction:column; gap:4px; font-size:12.5px; font-weight:700; color:var(--steel); }
+  .admin-modal .lp-campos input, .admin-modal .lp-campos select{ margin:0; }
+  .lp-campos .admin-modal-submit{ width:auto; padding:11px 18px; }
+  @media (max-width:820px){ .lp-campos{ grid-template-columns:1fr; } }
+
+  @media print{
+    @page formulario{ size:A4 portrait; margin:10mm; }
+    #relatorioImpressao.rel-formulario{ page:formulario; font-family:Arial, Helvetica, sans-serif; font-size:10px; color:#000; }
+    .rel-formulario table{ width:100%; border-collapse:collapse; }
+    .rel-formulario td, .rel-formulario th{ border:1px solid #000; padding:4px 5px; vertical-align:middle; }
+    .rel-formulario .lp-cab td{ height:22px; }
+    .rel-formulario .lp-logo{ width:15%; text-align:center; }
+    .rel-formulario .lp-logo-mse{
+      display:inline-block; background:#E32222; color:#fff; border-radius:9px 9px 14px 14px;
+      font:700 20px/1 Arial, sans-serif; padding:14px 8px 6px; -webkit-print-color-adjust:exact; print-color-adjust:exact;
+    }
+    .rel-formulario .lp-logo-sub{ font-size:9px; margin-top:2px; }
+    .rel-formulario .lp-titulo-a{ text-align:center; font-weight:700; font-size:11px; }
+    .rel-formulario .lp-titulo-b{ text-align:center; font-size:12px; }
+    .rel-formulario .lp-meta{ width:20%; font-size:10px; }
+    .rel-formulario .lp-atencao{ text-align:center; font-size:8.5px; margin:5px 0; }
+    .rel-formulario .lp-dados td{ height:18px; }
+    .rel-formulario .lp-conteudo{ height:42px !important; vertical-align:top; }
+    .rel-formulario .lp-caixa{ display:inline-block; width:9px; height:9px; border:1px solid #000; vertical-align:-1px; margin-right:4px; position:relative; }
+    .rel-formulario .lp-caixa.is-marcado::after{ content:'X'; position:absolute; inset:-2px 0 0 1px; font-size:9px; font-weight:700; line-height:1; }
+    .rel-formulario .lp-participantes{ margin-top:8px; }
+    .rel-formulario .lp-participantes th{ font-weight:700; text-align:center; background:none; text-transform:none; font-size:10px; }
+    .rel-formulario .lp-participantes td{ height:16px; font-size:9.5px; }
+    .rel-formulario .lp-participantes th:nth-child(1){ width:14%; }
+    .rel-formulario .lp-participantes th:nth-child(2){ width:38%; }
+    .rel-formulario .lp-participantes th:nth-child(3){ width:18%; }
+    .rel-formulario .lp-participantes tr{ break-inside:avoid; }
+    .rel-formulario .lp-rodape{ font-size:8.5px; margin-top:6px; }
+  }

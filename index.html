@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261006b">
+<link rel="stylesheet" href="style.css?v=20261006c">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -359,6 +359,24 @@
       </select>
     </div>
 
+    <!-- Lista de Presença no formulário oficial REH-002-F1, preenchida
+         sozinha com os dados do treinamento e o check-in/check-out de
+         cada participante. -->
+    <section class="lp-painel">
+      <h4>Lista de Presença — formulário REH-002-F1</h4>
+      <p class="admin-field-hint">Escolha o treinamento: o formulário sai preenchido com tema, motivo, conteúdo, norma, instrutor, setor, data, horários, carga horária e os participantes com check-in e check-out.</p>
+      <div class="lp-campos">
+        <label class="lp-largo">Treinamento
+          <select id="lpTreinamento"><option value="">Carregando...</option></select>
+        </label>
+        <label>Data de <input type="date" id="lpDataDe"></label>
+        <label>Data até <input type="date" id="lpDataAte"></label>
+        <button type="button" class="admin-modal-submit" id="lpGerar">Gerar lista de presença (PDF)</button>
+      </div>
+      <p class="admin-field-hint">Datas em branco = todos os participantes. No diálogo de impressão, escolha "Salvar como PDF".</p>
+      <div class="admin-modal-feedback" id="lpFeedback" hidden></div>
+    </section>
+
     <div id="acessosModalBody"></div>
   </div>
 </div>
@@ -613,7 +631,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261006b"></script>
+<script src="script.js?v=20261006c"></script>
 
 </body>
 </html>

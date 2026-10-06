@@ -4586,10 +4586,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // Imprime pela própria página (e não numa janela nova): dentro do Portal
   // a Academy roda num iframe, onde janela nova pode ser bloqueada. No
   // diálogo de impressão, "Salvar como PDF" gera o arquivo.
-  function trnImprimir(treinamentos, titulo, htmlPronto){
+  function trnImprimir(treinamentos, titulo, htmlPronto, classe){
     document.getElementById('relatorioImpressao')?.remove();
     const rel = document.createElement('div');
     rel.id = 'relatorioImpressao';
+    if(classe) rel.className = classe; // ex.: formulário em A4 retrato
     rel.innerHTML = htmlPronto || trnRelatorioHtml(treinamentos, titulo);
     document.body.appendChild(rel);
     document.body.classList.add('imprimindo-relatorio');
@@ -5145,6 +5146,153 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('acessosModalOverlay').hidden = false;
     document.getElementById('acessosFiltroNome').value = '';
     loadAcessos();
+    carregarTreinamentosLP();
+  }
+
+  // ---------- Lista de Presença (formulário REH-002-F1) ----------
+  // O formulário oficial de lista de presença, preenchido pelo sistema:
+  // nada é digitado. Os dados do treinamento vêm do cadastro da aula
+  // (Treinamentos > Editar) e os participantes, do check-in/check-out
+  // gravado pelo player.
+  const LP_FORMULARIO = { codigo: 'REH-002-F1', revisao: '04', emissao: '10/2026' };
+  const LP_LINHAS_PRIMEIRA_PAGINA = 26; // como no formulário em papel
+  const LP_LINHAS_POR_PAGINA = 38;
+  const lpEstado = { treinamentos: [] };
+
+  async function carregarTreinamentosLP(){
+    const sel = document.getElementById('lpTreinamento');
+    if(!sel) return;
+    try{
+      const d = await apiFetch('api/admin/treinamentos/busca.php');
+      lpEstado.treinamentos = (d.treinamentos || []).slice().sort((a, b) => a.tema.localeCompare(b.tema, 'pt-BR'));
+      const atual = sel.value;
+      sel.innerHTML = '<option value="">Escolha o treinamento...</option>' + lpEstado.treinamentos.map(t =>
+        `<option value="${t.id}">${esc(t.tema)}${t.arquivado ? ' (arquivada)' : ''} — ${t.participantes} ${t.participantes === 1 ? 'participante' : 'participantes'}</option>`
+      ).join('');
+      sel.value = atual;
+    }catch(e){
+      sel.innerHTML = '<option value="">Não foi possível carregar os treinamentos</option>';
+    }
+  }
+
+  // Motivo não existe no cadastro: sai do tipo do treinamento e das áreas
+  // pra quais a aula é obrigatória.
+  function lpMotivo(t){
+    const areas = (t.areas_obrigatorias || []).join(', ');
+    if(t.tipo === 'DDS') return 'Diálogo Diário de Segurança (DDS)';
+    if(t.tipo === 'Integração' || t.trilha) return 'Integração de novos colaboradores' + (areas ? ` — obrigatório para ${areas}` : '');
+    if(t.tipo === 'Capacitação externa') return 'Capacitação externa' + (areas ? ` — ${areas}` : '');
+    return 'Capacitação e atualização profissional' + (areas ? ` — obrigatório para ${areas}` : (t.area ? ` — ${t.area}` : ''));
+  }
+
+  function lpCargaHoraria(t){
+    const seg = t.duracao_seg || (t.duracao_min ? t.duracao_min * 60 : 0);
+    if(!seg) return '';
+    const h = Math.floor(seg / 3600), m = Math.round((seg % 3600) / 60);
+    return h ? `${h}h${m ? String(m).padStart(2, '0') + 'min' : ''}` : `${Math.max(m, 1)}min`;
+  }
+
+  function lpCaixa(marcado, rotulo){
+    return `<span class="lp-caixa${marcado ? ' is-marcado' : ''}"></span> ${esc(rotulo)}`;
+  }
+
+  function lpFormularioHtml(t, participantes){
+    // Data e horários: do primeiro check-in ao último check-out. Num
+    // treinamento online cada pessoa assiste num dia — se foram vários,
+    // a data vira um intervalo e o horário leva a data junto.
+    const inicios = participantes.map(p => p.checkin_em || p.checkout_em).filter(Boolean).sort();
+    const fins = participantes.map(p => p.checkout_em).filter(Boolean).sort();
+    const primeiro = inicios[0] || '', ultimo = fins[fins.length - 1] || '';
+    const dias = [...new Set(inicios.concat(fins).map(d => d.slice(0, 10)))].sort();
+    const umDia = dias.length <= 1;
+    const data = !dias.length ? '' : umDia ? trnFmtData(dias[0]) : `${trnFmtData(dias[0])} a ${trnFmtData(dias[dias.length - 1])}`;
+    const hora = (s) => !s ? '' : umDia ? s.slice(11, 16) : trnFmtDataHora(s);
+    const normas = t.normas || [];
+    const setor = t.trilha ? 'Todos os setores (integração)' : ((t.areas_obrigatorias || []).join(', ') || t.area || 'Todos os setores');
+
+    const linhas = participantes.map(p => `
+      <tr>
+        <td>${esc(p.departamento || '')}</td>
+        <td>${esc(p.nome)}</td>
+        <td>${esc(p.cpf ? 'CPF ' + trnFmtCpf(p.cpf) : (p.email || ''))}</td>
+        <td>${esc(trnFmtDataHora(p.checkin_em))}</td>
+        <td>${esc(trnFmtDataHora(p.checkout_em))}</td>
+      </tr>`);
+    while(linhas.length < LP_LINHAS_PRIMEIRA_PAGINA){
+      linhas.push('<tr><td></td><td></td><td></td><td></td><td></td></tr>');
+    }
+    const paginas = participantes.length <= LP_LINHAS_PRIMEIRA_PAGINA ? 1
+      : 1 + Math.ceil((participantes.length - LP_LINHAS_PRIMEIRA_PAGINA) / LP_LINHAS_POR_PAGINA);
+
+    return `
+      <table class="lp-cab">
+        <tr>
+          <td rowspan="4" class="lp-logo"><div class="lp-logo-mse">mse</div><div class="lp-logo-sub">lm\\spagnuolo</div></td>
+          <td class="lp-titulo-a">FORMULÁRIO</td>
+          <td class="lp-meta">Código: ${LP_FORMULARIO.codigo}</td>
+        </tr>
+        <tr><td rowspan="3" class="lp-titulo-b">LISTA DE PRESENÇA</td><td class="lp-meta">Revisão: ${LP_FORMULARIO.revisao}</td></tr>
+        <tr><td class="lp-meta">Emissão: ${LP_FORMULARIO.emissao}</td></tr>
+        <tr><td class="lp-meta">Páginas: ${paginas}</td></tr>
+      </table>
+      <p class="lp-atencao">ATENÇÃO: Presença registrada exclusivamente online, por check-in e check-out (identificação do participante, data e hora).</p>
+      <table class="lp-dados">
+        <colgroup><col><col><col><col><col><col></colgroup>
+        <tr>
+          <td colspan="2">${lpCaixa(t.tipo === 'Treinamento interno' || t.tipo === 'Integração', 'TREINAMENTO INTERNO')}</td>
+          <td colspan="2">${lpCaixa(t.tipo === 'DDS', 'DDS')}</td>
+          <td colspan="2">${lpCaixa(t.tipo === 'Capacitação externa', 'CAPACITAÇÃO EXTERNA')}</td>
+        </tr>
+        <tr><td colspan="6"><b>TEMA:</b> ${esc(t.tema)}</td></tr>
+        <tr><td colspan="6"><b>MOTIVO:</b> ${esc(lpMotivo(t))}</td></tr>
+        <tr><td colspan="6" class="lp-conteudo"><b>CONTEÚDO PROGRAMÁTICO:</b> ${esc(t.conteudo_programatico || t.descricao || '')}</td></tr>
+        <tr>
+          <td colspan="5"><b>NORMA:</b> ${esc(normas.join(' · ') || '-')}</td>
+          <td>${lpCaixa(!normas.length, 'Não se aplica')}</td>
+        </tr>
+        <tr><td colspan="6"><b>INSTRUTOR:</b> ${esc(t.instrutor || '')}</td></tr>
+        <tr><td colspan="6"><b>SETOR:</b> ${esc(setor)}</td></tr>
+        <tr>
+          <td colspan="2"><b>DATA:</b> ${esc(data)}</td>
+          <td colspan="2"><b>HORA INICIAL:</b> ${esc(hora(primeiro))}</td>
+          <td colspan="2"><b>HORA FINAL:</b> ${esc(hora(ultimo))}</td>
+        </tr>
+        <tr><td colspan="6"><b>CARGA HORÁRIA:</b> ${esc(lpCargaHoraria(t))}</td></tr>
+      </table>
+      <table class="lp-participantes">
+        <thead><tr><th>SETOR</th><th>NOME DO PARTICIPANTE</th><th>DOCUMENTO</th><th>CHECK-IN</th><th>CHECK-OUT</th></tr></thead>
+        <tbody>${linhas.join('')}</tbody>
+      </table>
+      <p class="lp-rodape">Registro eletrônico de check-in/check-out (data e hora) substitui a assinatura e é retido como informação documentada.</p>
+    `;
+  }
+
+  async function gerarListaPresencaFormulario(){
+    const fb = document.getElementById('lpFeedback');
+    const btn = document.getElementById('lpGerar');
+    const t = lpEstado.treinamentos.find(x => String(x.id) === document.getElementById('lpTreinamento').value);
+    if(!t){
+      fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = 'Escolha o treinamento.';
+      return;
+    }
+    const q = new URLSearchParams({ course_id: t.id });
+    const de = document.getElementById('lpDataDe').value, ate = document.getElementById('lpDataAte').value;
+    if(de) q.set('data_de', de);
+    if(ate) q.set('data_ate', ate);
+    btn.disabled = true;
+    try{
+      const d = await apiFetch('api/admin/treinamentos/presenca.php?' + q.toString());
+      const participantes = d.participantes || [];
+      fb.hidden = false;
+      fb.className = 'admin-modal-feedback ok';
+      fb.textContent = `${participantes.length} ${participantes.length === 1 ? 'participante' : 'participantes'} na lista.`
+        + (d.checkin_disponivel ? '' : ' O check-in só é gravado depois da migração 020 — por enquanto sai só o check-out.');
+      trnImprimir(null, '', lpFormularioHtml(t, participantes), 'rel-formulario');
+    }catch(e){
+      fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = 'Não foi possível gerar: ' + e.message;
+    }finally{
+      btn.disabled = false;
+    }
   }
   function closeAcessosModal(){
     document.getElementById('acessosModalOverlay').hidden = true;
@@ -5324,6 +5472,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       if(e.target === aulasOverlay) closeAulasModal();
     });
 
+    const btnLp = document.getElementById('lpGerar');
+    if(btnLp) btnLp.addEventListener('click', gerarListaPresencaFormulario);
     const btnAcessos = document.getElementById('btnAcessos');
     if(btnAcessos) btnAcessos.addEventListener('click', openAcessosModal);
     const btnAcessosClose = document.getElementById('acessosModalClose');

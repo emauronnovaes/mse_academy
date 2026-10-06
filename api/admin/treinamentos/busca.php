@@ -72,7 +72,7 @@ if ($norma !== '') {
     $params[':norma'] = $norma;
 }
 
-$sql = "SELECT c.id, c.title, c.description, c.type, c.is_published, c.created_at, c.video_source,
+$sql = "SELECT c.id, c.title, c.description, c.type, c.is_published, c.created_at, c.video_source, c.duration_minutes,
                a.name AS area_name, " . mse_sql_tipo_efetivo($pdo) . " AS tipo,
                " . ($auditoria
                     ? 'c.tipo_treinamento, c.normas, c.instrutor, c.conteudo_programatico, c.assuntos'
@@ -92,6 +92,13 @@ foreach ($params as $k => $v) {
 }
 $stmt->execute();
 $cursos = $stmt->fetchAll();
+
+$areasObrigatorias = [];
+if ($pdo->query("SHOW TABLES LIKE 'course_areas'")->fetch() !== false) {
+    foreach ($pdo->query('SELECT ca.course_id, a.name FROM course_areas ca JOIN areas a ON a.id = ca.area_id ORDER BY a.name') as $l) {
+        $areasObrigatorias[(int) $l['course_id']][] = $l['name'];
+    }
+}
 
 // Contagem de participantes por treinamento (respeitando o período).
 $condPresenca = $temCheckin ? "(p.status <> 'nao_iniciado' OR p.checkin_em IS NOT NULL)" : "p.status <> 'nao_iniciado'";
@@ -165,6 +172,10 @@ foreach ($cursos as $c) {
         'arquivado' => (int) $c['is_published'] === 0,
         'video_source' => $c['video_source'],
         'duracao_seg' => $c['duration_seconds'] !== null ? (int) $c['duration_seconds'] : null,
+        'duracao_min' => (int) $c['duration_minutes'],
+        // Áreas pra quais a aula é obrigatória (vazio = todos): vira o
+        // "Motivo" da lista de presença.
+        'areas_obrigatorias' => $areasObrigatorias[$id] ?? [],
         'total_perguntas' => (int) $c['total_perguntas'],
         'total_atividades' => (int) $c['total_atividades'],
         'participantes' => $cont['participantes'],
