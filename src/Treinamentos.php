@@ -137,7 +137,8 @@ function mse_lista_presenca(PDO $pdo, int $courseId, array $filtros = []): array
                    (SELECT COUNT(*) FROM quiz_attempts t
                       JOIN quiz_questions qq ON qq.id = t.question_id
                      WHERE qq.course_id = p.course_id AND t.user_id = p.user_id) AS tentativas,
-                   (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = p.course_id) AS total_perguntas
+                   (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = p.course_id) AS total_perguntas,
+                   " . mse_sql_resumo_log($pdo) . "
             FROM user_course_progress p
             JOIN users u ON u.id = p.user_id
             JOIN courses c ON c.id = p.course_id
@@ -162,8 +163,12 @@ function mse_lista_presenca(PDO $pdo, int $courseId, array $filtros = []): array
             'departamento' => $r['area_name'],
             'status' => $r['status'],
             'watched_pct' => $pct,
-            'checkin_em' => $r['checkin_em'],
+            // Check-in: o gravado no progresso ou, se não houver, o primeiro do log.
+            'checkin_em' => $r['checkin_em'] ?? $r['primeiro_checkin_log'],
             'checkout_em' => $r['completed_at'],
+            // Do log (migração 021): quantas vezes entrou e a última saída.
+            'sessoes' => (int) $r['sessoes'],
+            'ultimo_checkout_em' => $r['ultimo_checkout_log'],
             'ultima_atividade_em' => $r['updated_at'],
             // Estimativa: o sistema guarda até onde a pessoa chegou, não um
             // cronômetro. Com a trava de avanço, chegar a X% exige assistir.
@@ -336,7 +341,8 @@ function mse_treinamentos_da_pessoa(PDO $pdo, int $userId, array $filtros): arra
                      WHERE qq.course_id = c.id AND t.user_id = p.user_id AND t.is_correct = 1) AS acertos,
                    (SELECT COUNT(*) FROM quiz_attempts t JOIN quiz_questions qq ON qq.id = t.question_id
                      WHERE qq.course_id = c.id AND t.user_id = p.user_id) AS tentativas,
-                   (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = c.id) AS total_perguntas
+                   (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = c.id) AS total_perguntas,
+                   " . mse_sql_resumo_log($pdo) . "
             FROM user_course_progress p
             JOIN courses c ON c.id = p.course_id
             WHERE " . implode(' AND ', $where) . "
@@ -364,13 +370,79 @@ function mse_treinamentos_da_pessoa(PDO $pdo, int $userId, array $filtros): arra
             'status' => $r['status'],
             'watched_pct' => $pct,
             'tempo_assistido_seg' => $dur > 0 ? (int) round($dur * $pct / 100) : null,
-            'checkin_em' => $r['checkin_em'],
+            // Check-in: o gravado no progresso ou, se não houver, o primeiro do log.
+            'checkin_em' => $r['checkin_em'] ?? $r['primeiro_checkin_log'],
             'checkout_em' => $r['completed_at'],
+            // Do log (migração 021): quantas vezes entrou e a última saída.
+            'sessoes' => (int) $r['sessoes'],
+            'ultimo_checkout_em' => $r['ultimo_checkout_log'],
             'confirmacoes_presenca' => (int) $r['confirmacoes_presenca'],
             'ultima_confirmacao_em' => $r['ultima_confirmacao_em'],
             'acertos' => (int) $r['acertos'],
             'tentativas' => (int) $r['tentativas'],
             'total_perguntas' => (int) $r['total_perguntas'],
+        ];
+    }, $stmt->fetchAll());
+}
+
+
+/**
+ * Colunas de resumo do log de presença pra um SELECT com p (progresso):
+ * sessões (check-ins), primeiro check-in e último check-out.
+ */
+function mse_sql_resumo_log(PDO $pdo): string
+{
+    if (!mse_tem_tabela($pdo, 'presenca_log')) {
+        return '0 AS sessoes, NULL AS primeiro_checkin_log, NULL AS ultimo_checkout_log';
+    }
+    $base = 'FROM presenca_log l WHERE l.user_id = p.user_id AND l.course_id = p.course_id';
+    return "(SELECT COUNT(*) {$base} AND l.evento = 'checkin') AS sessoes,
+            (SELECT MIN(l.criado_em) {$base} AND l.evento = 'checkin') AS primeiro_checkin_log,
+            (SELECT MAX(l.criado_em) {$base} AND l.evento = 'checkout') AS ultimo_checkout_log";
+}
+
+/**
+ * Log de presença de uma pessoa: cada check-in, check-out e "Estou aqui",
+ * na ordem em que aconteceram. Com course_id, só daquele treinamento.
+ */
+function mse_log_presenca(PDO $pdo, int $userId, ?int $courseId, array $filtros = []): array
+{
+    if (!mse_tem_tabela($pdo, 'presenca_log')) {
+        return [];
+    }
+    $where = ['l.user_id = :uid'];
+    $params = [':uid' => $userId];
+    if ($courseId) {
+        $where[] = 'l.course_id = :cid';
+        $params[':cid'] = $courseId;
+    }
+    $de = mse_data_valida((string) ($filtros['data_de'] ?? ''));
+    $ate = mse_data_valida((string) ($filtros['data_ate'] ?? ''));
+    if ($de !== null) {
+        $where[] = 'l.criado_em >= :de';
+        $params[':de'] = $de . ' 00:00:00';
+    }
+    if ($ate !== null) {
+        $where[] = 'l.criado_em <= :ate';
+        $params[':ate'] = $ate . ' 23:59:59';
+    }
+    $stmt = $pdo->prepare(
+        'SELECT l.course_id, c.title, l.evento, l.watched_pct, l.criado_em, l.user_agent
+         FROM presenca_log l JOIN courses c ON c.id = l.course_id
+         WHERE ' . implode(' AND ', $where) . ' ORDER BY l.criado_em ASC, l.id ASC'
+    );
+    foreach ($params as $k => $v) {
+        $stmt->bindValue($k, $v);
+    }
+    $stmt->execute();
+    return array_map(function ($r) {
+        return [
+            'course_id' => (int) $r['course_id'],
+            'tema' => $r['title'],
+            'evento' => $r['evento'],
+            'watched_pct' => $r['watched_pct'] !== null ? (float) $r['watched_pct'] : null,
+            'em' => $r['criado_em'],
+            'navegador' => $r['user_agent'],
         ];
     }, $stmt->fetchAll());
 }

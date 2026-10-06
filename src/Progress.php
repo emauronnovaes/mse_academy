@@ -229,3 +229,53 @@ function mse_atividades_pendentes(PDO $pdo, int $userId, int $courseId): int
     $stmt->execute([$courseId, $userId]);
     return (int) $stmt->fetchColumn();
 }
+
+/** true se a tabela existe (mesma precaução de mse_tem_coluna, pra migração pendente). */
+function mse_tem_tabela(PDO $pdo, string $tabela): bool
+{
+    static $cache = [];
+    if (!array_key_exists($tabela, $cache)) {
+        $stmt = $pdo->prepare(
+            'SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?'
+        );
+        $stmt->execute([$tabela]);
+        $cache[$tabela] = $stmt->fetchColumn() !== false;
+    }
+    return $cache[$tabela];
+}
+
+/**
+ * Grava um evento no log de presença (migração 021): checkin, checkout ou
+ * presenca ("Estou aqui"). O % assistido sai do progresso gravado, não do
+ * navegador. Sem a tabela, não faz nada — o vídeo segue normalmente.
+ *
+ * O mesmo evento repetido em menos de 5s é ignorado: recarregar a página
+ * ou um clique duplo não vira dois check-ins.
+ */
+function mse_registrar_evento(PDO $pdo, int $userId, int $courseId, string $evento): bool
+{
+    if (!in_array($evento, ['checkin', 'checkout', 'presenca'], true) || !mse_tem_tabela($pdo, 'presenca_log')) {
+        return false;
+    }
+    $stmt = $pdo->prepare(
+        'SELECT 1 FROM presenca_log
+         WHERE user_id = ? AND course_id = ? AND evento = ? AND criado_em >= NOW() - INTERVAL 5 SECOND'
+    );
+    $stmt->execute([$userId, $courseId, $evento]);
+    if ($stmt->fetchColumn() !== false) {
+        return false;
+    }
+    $stmt = $pdo->prepare('SELECT watched_pct FROM user_course_progress WHERE user_id = ? AND course_id = ?');
+    $stmt->execute([$userId, $courseId]);
+    $pct = $stmt->fetchColumn();
+
+    $stmt = $pdo->prepare(
+        'INSERT INTO presenca_log (user_id, course_id, evento, watched_pct, user_agent) VALUES (?, ?, ?, ?, ?)'
+    );
+    $stmt->execute([
+        $userId, $courseId, $evento,
+        $pct === false ? null : $pct,
+        mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255) ?: null,
+    ]);
+    return true;
+}

@@ -846,6 +846,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     clearInterval(onbYtTimer); // sem isso o módulo anterior continuaria contando
     if(onbPresenca){ onbPresenca.parar(); onbPresenca = null; }
     if(onbAtividades){ onbAtividades.parar(); onbAtividades = null; }
+    encerrarSessaoPresenca(); // trocou de módulo: check-out do anterior
 
     body.innerHTML = '<div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Carregando o vídeo...</div>';
 
@@ -918,6 +919,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <div class="quiz-box" id="quiz-box-${mod.id}" hidden></div>
         `;
 
+      iniciarSessaoPresenca(mod.id);
       loadYouTubeApi().then(() => {
         const player = new YT.Player(`onb-yt-${mod.id}`, {
           videoId: detalhe.youtube_id,
@@ -935,7 +937,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             : { controls: 0, disablekb: 1, rel: 0, modestbranding: 1, fs: 0 },
           events: {
             onStateChange: (e) => {
-              if(e.data === YT.PlayerState.ENDED) onbSetWatchPct(mod, 1);
+              if(e.data === YT.PlayerState.ENDED){ onbSetWatchPct(mod, 1); encerrarSessaoPresenca(); }
             }
           }
         });
@@ -1001,6 +1003,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     const videoEl = document.getElementById(`onb-video-${mod.id}`);
     onbPlayer = videoEl;
+    iniciarSessaoPresenca(mod.id);
     ligarBotaoTelaCheia(body);
     onbPresenca = presencaNoVideo(body.querySelector('.vid-player-wrap'), videoEl, mod.id);
 
@@ -1059,7 +1062,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       if(voltarPara !== null) videoEl.currentTime = voltarPara;
       onbSetWatchPct(mod, trava.pct);
     });
-    videoEl.addEventListener('ended', () => onbSetWatchPct(mod, 1));
+    videoEl.addEventListener('ended', () => { onbSetWatchPct(mod, 1); encerrarSessaoPresenca(); });
   }
 
   // O servidor recusa a resposta do quiz de quem não assistiu 95% do
@@ -1302,6 +1305,40 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     apiPost('api/progress/presenca.php', { course_id: courseId })
       .catch(e => console.warn('[presença] não consegui registrar:', e.message));
   }
+
+  // ---------- Log de presença: check-in ao abrir, check-out ao sair ----------
+  // Cada vez que a pessoa abre o vídeo é um check-in; quando sai — fecha o
+  // vídeo, troca de aula, fecha a aba ou o vídeo termina — é um check-out.
+  // Data, hora e % assistido quem grava é o servidor (progress/evento.php).
+  let sessaoPresenca = null; // { courseId } do vídeo aberto agora
+
+  function enviarEventoPresenca(courseId, evento, saindoDaPagina){
+    const token = tokenSessao();
+    fetch('api/progress/evento.php', {
+      method: 'POST',
+      credentials: 'include',
+      // keepalive: a requisição sobrevive à aba sendo fechada — sem isso o
+      // check-out de quem fecha a aba nunca chegava.
+      keepalive: !!saindoDaPagina,
+      headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {}),
+      body: JSON.stringify({ course_id: courseId, evento }),
+    }).catch(e => console.warn('[presença] não consegui registrar ' + evento + ':', e.message));
+  }
+
+  function iniciarSessaoPresenca(courseId){
+    encerrarSessaoPresenca();
+    sessaoPresenca = { courseId };
+    enviarEventoPresenca(courseId, 'checkin');
+  }
+
+  function encerrarSessaoPresenca(saindoDaPagina){
+    if(!sessaoPresenca) return;
+    const { courseId } = sessaoPresenca;
+    sessaoPresenca = null;
+    enviarEventoPresenca(courseId, 'checkout', saindoDaPagina);
+  }
+
+  window.addEventListener('pagehide', () => encerrarSessaoPresenca(true));
 
   function presencaNoVideo(wrap, videoEl, courseId){
     return criarChecagemDePresenca(wrap, Object.assign(controlesDoVideo(videoEl), {
@@ -2681,6 +2718,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         // controlslist="nofullscreen": a tela cheia do próprio <video> não
         // deixa nada da página por cima, nem o "Você ainda está aí?". No
         // lugar entra o botão da Academy, que expande a moldura inteira.
+        iniciarSessaoPresenca(course.id);
         wrap.classList.add('tem-controles');
         wrap.innerHTML = `
           <video src="${detalhe.video_url}" controls controlslist="nofullscreen" playsinline style="width:100%;border-radius:12px"></video>
@@ -2712,7 +2750,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           if(voltarPara !== null) v.currentTime = voltarPara;
           enviarProgresso(course.id, trava.pct);
         });
-        v.addEventListener('ended', () => { enviarProgresso(course.id, 1); showBonusQuiz(); });
+        v.addEventListener('ended', () => { enviarProgresso(course.id, 1); encerrarSessaoPresenca(); showBonusQuiz(); });
         return;
       }
 
@@ -2749,6 +2787,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       ` + (jaConcluiu ? '' : marcacaoControlesDeRevisao('catalog')));
       ligarBotaoTelaCheia(wrap);
 
+      iniciarSessaoPresenca(course.id);
       loadYouTubeApi().then(() => {
         modalState.player = new YT.Player('catalog-yt-player', {
           videoId: detalhe.youtube_id,
@@ -2786,7 +2825,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
               }, 500);
             },
             onStateChange: (e) => {
-              if(e.data === YT.PlayerState.ENDED){ enviarProgresso(course.id, 1); showBonusQuiz(); }
+              if(e.data === YT.PlayerState.ENDED){ enviarProgresso(course.id, 1); encerrarSessaoPresenca(); showBonusQuiz(); }
             }
           }
         });
@@ -2923,6 +2962,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     modalState.travaTimer = null;
     if(modalState.presenca){ modalState.presenca.parar(); modalState.presenca = null; }
     if(modalState.atividades){ modalState.atividades.parar(); modalState.atividades = null; }
+    encerrarSessaoPresenca(); // fechou o vídeo: check-out
     if(modalState.player && typeof modalState.player.destroy === 'function'){
       modalState.player.destroy();
     }
@@ -4183,7 +4223,72 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     `;
   }
 
-  function trnTabelaFichaHtml(treinamentos){
+  // Coluna de sessões (check-ins do log) com o botão que abre o log
+  // completo logo abaixo da linha. No PDF vai só o número.
+  function trnSessoesHtml(r, userId, courseId){
+    const vazio = '<span class="trn-vazio">—</span>';
+    return `${r.sessoes ? r.sessoes + '×' : vazio}${r.ultimo_checkout_em ? `<span class="trn-sub">última saída ${esc(trnFmtDataHora(r.ultimo_checkout_em))}</span>` : ''}`
+      + (userId ? `<button type="button" class="trn-link trn-ver-log" data-user="${userId}" data-course="${courseId}">Ver log</button>` : '');
+  }
+
+  const TRN_EVENTOS = { checkin: 'Check-in (abriu o vídeo)', checkout: 'Check-out (saiu)', presenca: 'Presença confirmada ("Estou aqui")' };
+
+  function trnLogHtml(eventos, comTreinamento){
+    if(!eventos.length){
+      return '<p class="trn-vazio-lista">Nenhum registro no log. O log de check-in e check-out começa a ser gravado depois da migração 021.</p>';
+    }
+    return `
+      <table class="trn-tabela trn-tabela-log">
+        <thead><tr><th>Data e hora</th>${comTreinamento ? '<th>Treinamento</th>' : ''}<th>Evento</th><th>% assistido</th><th>Navegador</th></tr></thead>
+        <tbody>
+          ${eventos.map(ev => `
+            <tr>
+              <td class="trn-nowrap">${esc(trnFmtDataHora(ev.em))}${ev.em ? ':' + esc(String(ev.em).slice(17, 19)) : ''}</td>
+              ${comTreinamento ? `<td>${esc(ev.tema)}</td>` : ''}
+              <td>${esc(TRN_EVENTOS[ev.evento] || ev.evento)}</td>
+              <td>${ev.watched_pct != null ? Math.round(ev.watched_pct) + '%' : ''}</td>
+              <td class="trn-navegador">${esc(trnNavegador(ev.navegador))}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  // "Mozilla/5.0 (Windows NT 10.0...) Chrome/129..." → "Chrome · Windows"
+  function trnNavegador(ua){
+    if(!ua) return '';
+    const nav = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Outro';
+    const so = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : '';
+    return so ? `${nav} · ${so}` : nav;
+  }
+
+  // Clique em "Ver log": abre (ou fecha) a linha com o log logo abaixo.
+  function ligarBotoesLog(escopo){
+    escopo.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.trn-ver-log');
+      if(!btn) return;
+      const tr = btn.closest('tr');
+      if(tr.nextElementSibling && tr.nextElementSibling.classList.contains('trn-log-linha')){
+        tr.nextElementSibling.remove();
+        btn.textContent = 'Ver log';
+        return;
+      }
+      const linha = document.createElement('tr');
+      linha.className = 'trn-log-linha';
+      linha.innerHTML = `<td colspan="${tr.children.length}"><p>Carregando log...</p></td>`;
+      tr.insertAdjacentElement('afterend', linha);
+      btn.textContent = 'Fechar log';
+      try{
+        const d = await apiFetch(`api/admin/treinamentos/log.php?user_id=${encodeURIComponent(btn.dataset.user)}&course_id=${encodeURIComponent(btn.dataset.course)}`);
+        linha.firstElementChild.innerHTML = trnLogHtml(d.eventos || [], false);
+      }catch(err){
+        linha.firstElementChild.innerHTML = `<p>Não foi possível carregar o log: ${esc(err.message)}</p>`;
+      }
+    });
+  }
+
+  function trnTabelaFichaHtml(treinamentos, userId){
     if(!treinamentos.length){
       return '<p class="trn-vazio-lista">Nenhum treinamento com esses filtros.</p>';
     }
@@ -4196,6 +4301,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             <th title="Primeira vez que abriu o vídeo">Check-in</th><th title="Quando concluiu">Check-out</th>
             <th>Assistido</th><th title="Vezes que respondeu &quot;Estou aqui&quot; durante o vídeo">Presença confirmada</th>
             <th title="Perguntas e atividades acertadas">Acertos</th><th>Situação</th>
+            <th title="Vezes que entrou no vídeo (check-ins do log)">Sessões</th>
           </tr></thead>
           <tbody>
             ${treinamentos.map(t => `
@@ -4210,6 +4316,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
                 <td class="trn-nowrap">${t.confirmacoes_presenca}×${t.ultima_confirmacao_em ? `<span class="trn-sub">última ${esc(trnFmtDataHora(t.ultima_confirmacao_em))}</span>` : ''}</td>
                 <td class="trn-nowrap">${t.total_perguntas ? `${t.acertos}/${t.total_perguntas}` : vazio}${t.tentativas > t.acertos ? `<span class="trn-sub">${t.tentativas} tentativas</span>` : ''}</td>
                 <td><span class="watchers-status ${esc(t.status)}">${esc(trnStatus(t.status))}</span></td>
+                <td class="trn-nowrap">${trnSessoesHtml(t, userId, t.id)}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -4232,17 +4339,25 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <span class="trn-ficha-resumo">${pessoa.lista_treinamentos.length} ${pessoa.lista_treinamentos.length === 1 ? 'treinamento' : 'treinamentos'} ·
             ${pessoa.lista_treinamentos.filter(t => t.status === 'concluido').length} concluídos</span>
           <button type="button" class="trn-btn" id="fichaCsv">Exportar CSV</button>
-          <button type="button" class="trn-btn" id="fichaPdf">Imprimir / PDF</button>
+          <button type="button" class="trn-btn" id="fichaPdf">Baixar PDF</button>
         </div>
         ${trnPessoaDadosHtml(pessoa)}
-        ${trnTabelaFichaHtml(pessoa.lista_treinamentos)}
+        ${trnTabelaFichaHtml(pessoa.lista_treinamentos, pessoa.user_id)}
       `;
-      const nomeArquivo = 'ficha-' + String(pessoa.nome || pessoa.user_id).toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      ligarBotoesLog(body);
+      const nomeArquivo = 'ficha-' + (trnSlug(pessoa.nome) || pessoa.user_id);
       document.getElementById('fichaCsv').addEventListener('click', () =>
         trnBaixarCsv(`${nomeArquivo}-${new Date().toISOString().slice(0, 10)}.csv`, trnLinhasCsvPessoas([pessoa])));
-      document.getElementById('fichaPdf').addEventListener('click', () =>
-        trnImprimir(null, 'Ficha de treinamentos', trnRelatorioPessoasHtml([pessoa], 'Ficha de treinamentos')));
+      const btnFichaPdf = document.getElementById('fichaPdf');
+      btnFichaPdf.addEventListener('click', () => trnComBotao(btnFichaPdf, async () => {
+        const qLog = new URLSearchParams({ user_id: pessoa.user_id });
+        if(f.data_de) qLog.set('data_de', f.data_de);
+        if(f.data_ate) qLog.set('data_ate', f.data_ate);
+        const log = await apiFetch('api/admin/treinamentos/log.php?' + qLog.toString());
+        await trnBaixarPdf(trnRelatorioPessoasHtml([pessoa], 'Ficha de treinamentos')
+          + `<section class="rel-treinamento"><h2>Log de presença (check-in, check-out e "Estou aqui")</h2>${trnLogHtml(log.eventos || [], true)}</section>`,
+          trnNomePdf(nomeArquivo));
+      }));
     }catch(e){
       body.innerHTML = `<p>Não foi possível carregar: ${esc(e.message)}</p>`;
     }
@@ -4320,7 +4435,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // ---------- Lista de presença de um treinamento ----------
   // Tudo preenchido sozinho: dados da pessoa vêm do Portal no login; o
   // resto, do uso do vídeo (abrir, assistir, "Estou aqui", responder).
-  function trnTabelaPresencaHtml(participantes){
+  function trnTabelaPresencaHtml(participantes, courseId){
     if(!participantes.length){
       return '<p class="trn-vazio-lista">Ninguém participou deste treinamento com esses filtros.</p>';
     }
@@ -4333,6 +4448,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             <th title="Primeira vez que abriu o vídeo">Check-in</th><th title="Quando concluiu">Check-out</th>
             <th>Assistido</th><th title="Vezes que respondeu &quot;Estou aqui&quot; durante o vídeo">Presença confirmada</th>
             <th title="Perguntas e atividades acertadas">Acertos</th><th>Situação</th>
+            <th title="Vezes que entrou no vídeo (check-ins do log)">Sessões</th>
           </tr></thead>
           <tbody>
             ${participantes.map(p => `
@@ -4347,6 +4463,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
                 <td class="trn-nowrap">${p.confirmacoes_presenca}×${p.ultima_confirmacao_em ? `<span class="trn-sub">última ${esc(trnFmtDataHora(p.ultima_confirmacao_em))}</span>` : ''}</td>
                 <td class="trn-nowrap">${p.total_perguntas ? `${p.acertos}/${p.total_perguntas}` : vazio}${p.tentativas > p.acertos ? `<span class="trn-sub">${p.tentativas} tentativas</span>` : ''}</td>
                 <td><span class="watchers-status ${esc(p.status)}">${esc(trnStatus(p.status))}</span></td>
+                <td class="trn-nowrap">${trnSessoesHtml(p, courseId ? p.user_id : null, courseId)}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -4361,7 +4478,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       <div class="admin-filtros">
         <input type="text" id="presencaBusca" placeholder="Filtrar por nome, e-mail ou CPF...">
         <button type="button" class="trn-btn" id="presencaCsv">Exportar CSV</button>
-        <button type="button" class="trn-btn" id="presencaPdf">Imprimir / PDF</button>
+        <button type="button" class="trn-btn" id="presencaPdf">Baixar PDF</button>
       </div>
       <p class="admin-field-hint" id="presencaLegenda">
         Check-in: primeira vez que a pessoa abriu o vídeo. Check-out: quando concluiu.
@@ -4387,11 +4504,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           document.getElementById('presencaLegenda').insertAdjacentHTML('beforeend',
             ' <strong>O check-in e as confirmações começam a ser gravados depois que a migração 020 rodar no banco.</strong>');
         }
-        document.getElementById('presencaTabela').innerHTML = trnTabelaPresencaHtml(participantes);
+        document.getElementById('presencaTabela').innerHTML = trnTabelaPresencaHtml(participantes, t.id);
       }catch(e){
         document.getElementById('presencaTabela').innerHTML = `<p>Não foi possível carregar: ${esc(e.message)}</p>`;
       }
     };
+    ligarBotoesLog(document.getElementById('presencaTabela'));
     let timer = null;
     document.getElementById('presencaBusca').addEventListener('input', () => {
       clearTimeout(timer);
@@ -4401,9 +4519,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       trnBaixarCsv(`presenca-${t.id}-${new Date().toISOString().slice(0, 10)}.csv`,
         trnLinhasCsv([Object.assign({}, t, { lista_presenca: participantes })]));
     });
-    document.getElementById('presencaPdf').addEventListener('click', () => {
-      trnImprimir([Object.assign({}, t, { lista_presenca: participantes })], 'Lista de presença');
-    });
+    const btnPresencaPdf = document.getElementById('presencaPdf');
+    btnPresencaPdf.addEventListener('click', () => trnComBotao(btnPresencaPdf, () =>
+      trnBaixarPdf(trnRelatorioHtml([Object.assign({}, t, { lista_presenca: participantes })], 'Lista de presença'),
+        trnNomePdf(`presenca-${trnSlug(t.tema) || t.id}`))));
     carregar();
   }
 
@@ -4481,7 +4600,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   function trnLinhasCsv(treinamentos){
     const cab = ['Data de publicação', 'Tema', 'Modalidade', 'Tipo', 'Normas', 'Instrutor', 'Conteúdo programático',
       'Assuntos', 'Participante', 'CPF', 'E-mail', 'Cargo', 'Departamento', 'Check-in', 'Check-out',
-      '% assistido', 'Tempo assistido (estimado)', 'Presença confirmada (vezes)', 'Acertos', 'Perguntas', 'Situação'];
+      '% assistido', 'Tempo assistido (estimado)', 'Presença confirmada (vezes)', 'Acertos', 'Perguntas', 'Situação',
+      'Sessões (check-ins)', 'Última saída (check-out do log)'];
     const linhas = [cab];
     treinamentos.forEach(t => {
       const base = [trnFmtData(t.data), t.tema, 'Online', t.tipo, (t.normas || []).join(' / '), t.instrutor || '',
@@ -4493,6 +4613,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         trnFmtDataHora(p.checkin_em), trnFmtDataHora(p.checkout_em),
         String(Math.round(p.watched_pct)), trnFmtTempo(p.tempo_assistido_seg), String(p.confirmacoes_presenca),
         String(p.acertos), String(p.total_perguntas), trnStatus(p.status),
+        String(p.sessoes || 0), trnFmtDataHora(p.ultimo_checkout_em),
       ])));
     });
     return linhas;
@@ -4520,7 +4641,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   function trnLinhasCsvPessoas(pessoas){
     const cab = ['Participante', 'CPF', 'E-mail', 'Cargo', 'Departamento', 'Treinamento', 'Modalidade', 'Tipo',
       'Normas', 'Instrutor', 'Check-in', 'Check-out', '% assistido', 'Tempo assistido (estimado)',
-      'Presença confirmada (vezes)', 'Acertos', 'Perguntas', 'Situação'];
+      'Presença confirmada (vezes)', 'Acertos', 'Perguntas', 'Situação', 'Sessões (check-ins)', 'Última saída (check-out do log)'];
     const linhas = [cab];
     pessoas.forEach(p => {
       const base = [p.nome, trnFmtCpf(p.cpf), p.email || '', p.cargo || '', p.departamento || ''];
@@ -4530,7 +4651,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         t.tema, 'Online', t.tipo, (t.normas || []).join(' / '), t.instrutor || '',
         trnFmtDataHora(t.checkin_em), trnFmtDataHora(t.checkout_em), String(Math.round(t.watched_pct)),
         trnFmtTempo(t.tempo_assistido_seg), String(t.confirmacoes_presenca), String(t.acertos),
-        String(t.total_perguntas), trnStatus(t.status),
+        String(t.total_perguntas), trnStatus(t.status), String(t.sessoes || 0), trnFmtDataHora(t.ultimo_checkout_em),
       ])));
     });
     return linhas;
@@ -4583,24 +4704,79 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     `;
   }
 
-  // Imprime pela própria página (e não numa janela nova): dentro do Portal
-  // a Academy roda num iframe, onde janela nova pode ser bloqueada. No
-  // diálogo de impressão, "Salvar como PDF" gera o arquivo.
-  function trnImprimir(treinamentos, titulo, htmlPronto, classe){
-    document.getElementById('relatorioImpressao')?.remove();
-    const rel = document.createElement('div');
-    rel.id = 'relatorioImpressao';
-    if(classe) rel.className = classe; // ex.: formulário em A4 retrato
-    rel.innerHTML = htmlPronto || trnRelatorioHtml(treinamentos, titulo);
-    document.body.appendChild(rel);
-    document.body.classList.add('imprimindo-relatorio');
-    const limpar = () => {
-      document.body.classList.remove('imprimindo-relatorio');
-      rel.remove();
-      window.removeEventListener('afterprint', limpar);
+  // ---------- PDF: gera e baixa o arquivo, sem janela de impressão ----------
+  // A biblioteca (html2pdf.js, guardada em js/vendor) só é carregada na
+  // primeira exportação: são ~900 KB que quem só assiste aula nunca baixa.
+  let html2pdfPromise = null;
+  function carregarHtml2pdf(){
+    if(window.html2pdf) return Promise.resolve(window.html2pdf);
+    if(!html2pdfPromise){
+      html2pdfPromise = new Promise((resolve, reject) => {
+        const tag = document.createElement('script');
+        tag.src = 'js/vendor/html2pdf.bundle.min.js';
+        tag.onload = () => resolve(window.html2pdf);
+        tag.onerror = () => { html2pdfPromise = null; reject(new Error('não consegui carregar o gerador de PDF')); };
+        document.head.appendChild(tag);
+      });
+    }
+    return html2pdfPromise;
+  }
+
+  function trnSlug(texto){
+    return String(texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+  }
+  function trnNomePdf(base){
+    return `${base}-${new Date().toISOString().slice(0, 10)}.pdf`;
+  }
+
+  // Relatórios em A4 deitado; o formulário REH-002-F1 em A4 em pé, como
+  // o modelo em papel. "html" pode ser uma lista: cada item vira uma folha
+  // própria (ex.: um formulário por treinamento) — gerar tudo num bloco só
+  // com quebra de página deixava as folhas desalinhadas.
+  async function trnBaixarPdf(html, nomeArquivo, opcoes){
+    const retrato = !!(opcoes && opcoes.retrato);
+    const html2pdf = await carregarHtml2pdf();
+    // Largura fixa, um pouco menor que a área útil da folha: sem isso a
+    // borda direita das tabelas saía cortada.
+    const largura = retrato ? 700 : 1040;
+    const montar = (conteudo) => {
+      const el = document.createElement('div');
+      el.className = 'rel-pdf' + (opcoes && opcoes.classe ? ' ' + opcoes.classe : '');
+      el.style.width = largura + 'px';
+      el.innerHTML = conteudo;
+      return el;
     };
-    window.addEventListener('afterprint', limpar);
-    window.print();
+    const folhas = Array.isArray(html) ? html : [html];
+    let trabalho = html2pdf().set({
+      margin: retrato ? 10 : 8,
+      filename: nomeArquivo,
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: { scale: 2, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: retrato ? 'portrait' : 'landscape' },
+      // Linha de tabela e blocos de dados nunca cortados no meio da página.
+      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'h2', '.rel-dados', '.lp-cab', '.lp-dados'] },
+    }).from(montar(folhas[0])).toPdf();
+    folhas.slice(1).forEach(conteudo => {
+      trabalho = trabalho.get('pdf').then(pdf => { pdf.addPage(); })
+        .from(montar(conteudo)).toContainer().toCanvas().toPdf();
+    });
+    await trabalho.save();
+  }
+
+  // Botão fica "Gerando PDF..." enquanto o arquivo é montado.
+  async function trnComBotao(btn, tarefa){
+    const texto = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Gerando PDF...';
+    try{
+      await tarefa();
+    }catch(e){
+      alert('Não foi possível gerar o PDF: ' + e.message);
+    }finally{
+      btn.disabled = false;
+      btn.textContent = texto;
+    }
   }
 
   async function trnExportar(formato){
@@ -4615,7 +4791,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         if(formato === 'csv'){
           trnBaixarCsv(`treinamentos-por-pessoa-${new Date().toISOString().slice(0, 10)}.csv`, trnLinhasCsvPessoas(pessoas));
         } else {
-          trnImprimir(null, '', trnRelatorioPessoasHtml(pessoas, 'Relatório de treinamentos por pessoa'));
+          btn.textContent = 'Gerando PDF...';
+          await trnBaixarPdf(trnRelatorioPessoasHtml(pessoas, 'Relatório de treinamentos por pessoa'), trnNomePdf('treinamentos-por-pessoa'));
         }
         return;
       }
@@ -4624,7 +4801,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       if(formato === 'csv'){
         trnBaixarCsv(`treinamentos-${new Date().toISOString().slice(0, 10)}.csv`, trnLinhasCsv(lista));
       } else {
-        trnImprimir(lista, 'Relatório de treinamentos');
+        btn.textContent = 'Gerando PDF...';
+        await trnBaixarPdf(trnRelatorioHtml(lista, 'Relatório de treinamentos'), trnNomePdf('treinamentos'));
       }
     }catch(e){
       alert('Não foi possível exportar: ' + e.message);
@@ -5173,6 +5351,18 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }catch(e){
       sel.innerHTML = '<option value="">Não foi possível carregar os treinamentos</option>';
     }
+    // Pessoas, pro formulário por pessoa.
+    const selPessoa = document.getElementById('lpPessoa');
+    try{
+      const d = await apiFetch('api/admin/treinamentos/pessoas.php');
+      const atual = selPessoa.value;
+      selPessoa.innerHTML = '<option value="">Escolha a pessoa...</option>' + (d.pessoas || []).map(p =>
+        `<option value="${p.user_id}">${esc(p.nome)} — ${p.treinamentos} ${p.treinamentos === 1 ? 'treinamento' : 'treinamentos'}</option>`
+      ).join('');
+      selPessoa.value = atual;
+    }catch(e){
+      selPessoa.innerHTML = '<option value="">Não foi possível carregar as pessoas</option>';
+    }
   }
 
   // Motivo não existe no cadastro: sai do tipo do treinamento e das áreas
@@ -5196,12 +5386,14 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     return `<span class="lp-caixa${marcado ? ' is-marcado' : ''}"></span> ${esc(rotulo)}`;
   }
 
-  function lpFormularioHtml(t, participantes){
+  function lpFormularioHtml(t, participantes, paginaTexto){
     // Data e horários: do primeiro check-in ao último check-out. Num
     // treinamento online cada pessoa assiste num dia — se foram vários,
     // a data vira um intervalo e o horário leva a data junto.
     const inicios = participantes.map(p => p.checkin_em || p.checkout_em).filter(Boolean).sort();
-    const fins = participantes.map(p => p.checkout_em).filter(Boolean).sort();
+    // Check-out: a conclusão; sem conclusão, a última saída do log.
+    const saida = (p) => p.checkout_em || p.ultimo_checkout_em || '';
+    const fins = participantes.map(saida).filter(Boolean).sort();
     const primeiro = inicios[0] || '', ultimo = fins[fins.length - 1] || '';
     const dias = [...new Set(inicios.concat(fins).map(d => d.slice(0, 10)))].sort();
     const umDia = dias.length <= 1;
@@ -5214,9 +5406,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       <tr>
         <td>${esc(p.departamento || '')}</td>
         <td>${esc(p.nome)}</td>
-        <td>${esc(p.cpf ? 'CPF ' + trnFmtCpf(p.cpf) : (p.email || ''))}</td>
+        <td>${esc(p.email || '')}</td>
         <td>${esc(trnFmtDataHora(p.checkin_em))}</td>
-        <td>${esc(trnFmtDataHora(p.checkout_em))}</td>
+        <td>${esc(trnFmtDataHora(saida(p)))}</td>
       </tr>`);
     while(linhas.length < LP_LINHAS_PRIMEIRA_PAGINA){
       linhas.push('<tr><td></td><td></td><td></td><td></td><td></td></tr>');
@@ -5233,7 +5425,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         </tr>
         <tr><td rowspan="3" class="lp-titulo-b">LISTA DE PRESENÇA</td><td class="lp-meta">Revisão: ${LP_FORMULARIO.revisao}</td></tr>
         <tr><td class="lp-meta">Emissão: ${LP_FORMULARIO.emissao}</td></tr>
-        <tr><td class="lp-meta">Páginas: ${paginas}</td></tr>
+        <tr><td class="lp-meta">Páginas: ${paginaTexto || paginas}</td></tr>
       </table>
       <p class="lp-atencao">ATENÇÃO: Presença registrada exclusivamente online, por check-in e check-out (identificação do participante, data e hora).</p>
       <table class="lp-dados">
@@ -5267,7 +5459,57 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     `;
   }
 
+  // REH-002-F1 por pessoa: uma folha do formulário pra cada treinamento
+  // que a pessoa fez, com a linha dela preenchida.
+  async function gerarListaPresencaPessoa(){
+    const fb = document.getElementById('lpFeedback');
+    const btn = document.getElementById('lpGerar');
+    const userId = document.getElementById('lpPessoa').value;
+    if(!userId){
+      fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = 'Escolha a pessoa.';
+      return;
+    }
+    const q = new URLSearchParams({ user_id: userId });
+    const de = document.getElementById('lpDataDe').value, ate = document.getElementById('lpDataAte').value;
+    if(de) q.set('data_de', de);
+    if(ate) q.set('data_ate', ate);
+    btn.disabled = true;
+    try{
+      const d = await apiFetch('api/admin/treinamentos/pessoas.php?' + q.toString());
+      const pessoa = d.pessoa;
+      const lista = d.treinamentos || [];
+      fb.hidden = false;
+      if(!lista.length){
+        fb.className = 'admin-modal-feedback erro';
+        fb.textContent = `${pessoa.nome} não tem treinamento${de || ate ? ' nesse período' : ''}.`;
+        return;
+      }
+      fb.className = 'admin-modal-feedback ok';
+      fb.textContent = `${lista.length} ${lista.length === 1 ? 'treinamento' : 'treinamentos'} de ${pessoa.nome} — uma folha do formulário para cada.`;
+      btn.textContent = 'Gerando PDF...';
+      const folhas = lista.map((t, i) => {
+        // Dados do treinamento (setor, áreas, carga horária) vêm da busca.
+        const meta = Object.assign({}, t, lpEstado.treinamentos.find(x => x.id === t.id) || {});
+        const participante = {
+          departamento: pessoa.departamento, nome: pessoa.nome, email: pessoa.email,
+          checkin_em: t.checkin_em, checkout_em: t.checkout_em, ultimo_checkout_em: t.ultimo_checkout_em,
+        };
+        return lpFormularioHtml(meta, [participante], `${i + 1} de ${lista.length}`);
+      });
+      await trnBaixarPdf(folhas,
+        trnNomePdf(`lista-presenca-REH-002-F1-${trnSlug(pessoa.nome) || pessoa.user_id}`), { retrato: true, classe: 'rel-formulario' });
+    }catch(e){
+      fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = 'Não foi possível gerar: ' + e.message;
+    }finally{
+      btn.disabled = false;
+      btn.textContent = 'Gerar lista de presença (PDF)';
+    }
+  }
+
   async function gerarListaPresencaFormulario(){
+    if(document.querySelector('#lpModo [data-modo="pessoa"]').getAttribute('aria-pressed') === 'true'){
+      return gerarListaPresencaPessoa();
+    }
     const fb = document.getElementById('lpFeedback');
     const btn = document.getElementById('lpGerar');
     const t = lpEstado.treinamentos.find(x => String(x.id) === document.getElementById('lpTreinamento').value);
@@ -5287,11 +5529,14 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       fb.className = 'admin-modal-feedback ok';
       fb.textContent = `${participantes.length} ${participantes.length === 1 ? 'participante' : 'participantes'} na lista.`
         + (d.checkin_disponivel ? '' : ' O check-in só é gravado depois da migração 020 — por enquanto sai só o check-out.');
-      trnImprimir(null, '', lpFormularioHtml(t, participantes), 'rel-formulario');
+      btn.textContent = 'Gerando PDF...';
+      await trnBaixarPdf(lpFormularioHtml(t, participantes),
+        trnNomePdf(`lista-presenca-REH-002-F1-${trnSlug(t.tema) || t.id}`), { retrato: true, classe: 'rel-formulario' });
     }catch(e){
       fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = 'Não foi possível gerar: ' + e.message;
     }finally{
       btn.disabled = false;
+      btn.textContent = 'Gerar lista de presença (PDF)';
     }
   }
   function closeAcessosModal(){
@@ -5474,6 +5719,14 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     const btnLp = document.getElementById('lpGerar');
     if(btnLp) btnLp.addEventListener('click', gerarListaPresencaFormulario);
+    // Formulário por treinamento ou por pessoa.
+    document.querySelectorAll('#lpModo button').forEach(b => b.addEventListener('click', () => {
+      document.querySelectorAll('#lpModo button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      const porPessoa = b.dataset.modo === 'pessoa';
+      document.getElementById('lpTreinamentoWrap').hidden = porPessoa;
+      document.getElementById('lpPessoaWrap').hidden = !porPessoa;
+      document.getElementById('lpFeedback').hidden = true;
+    }));
     const btnAcessos = document.getElementById('btnAcessos');
     if(btnAcessos) btnAcessos.addEventListener('click', openAcessosModal);
     const btnAcessosClose = document.getElementById('acessosModalClose');

@@ -39,5 +39,9 @@ $stmt = $pdo->prepare(
      WHERE user_id = ? AND course_id = ?'
 );
 $stmt->execute([$user['id'], $courseId]);
+$gravado = $stmt->rowCount() > 0;
+if ($gravado) {
+    mse_registrar_evento($pdo, (int) $user['id'], $courseId, 'presenca'); // entra no log com data e hora
+}
 
-mse_json(['ok' => true, 'gravado' => $stmt->rowCount() > 0]);
+mse_json(['ok' => true, 'gravado' => $gravado]);
