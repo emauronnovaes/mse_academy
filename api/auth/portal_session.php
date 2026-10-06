@@ -32,14 +32,16 @@ if ($sessao === null) {
 $email = $sessao['email'];
 $nome = $sessao['nome'] ?: $email;
 
-$cpf = null;
-$cargo = null;
+// Cargo, CPF e setor da própria sessão do Portal; a ficha do RH, se
+// responder, tem prioridade logo abaixo.
+$cpf = $sessao['cpf'] ?? null;
+$cargo = $sessao['cargo'] ?? null;
 
 $primeiroNome = mse_first_name_from_email($email);
 
 $pdo = mse_db();
 
-$areaId = null;
+$areaId = !empty($sessao['setor']) ? mse_area_id_por_setor($pdo, $sessao['setor']) : null;
 if ($sessao['nome']) {
     $ficha = null;
     try {

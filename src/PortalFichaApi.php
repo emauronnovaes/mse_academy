@@ -189,12 +189,24 @@ function mse_portal_ficha_consultar(string $termoBusca): array
 
     $ficha = $data['data'][0];
 
-    return ['erro' => null, 'ficha' => [
+    // O cargo pode vir com nomes diferentes conforme a versão da API: antes
+    // só "funcao" era lido, e se viesse como "cargo" o nome chegava e o
+    // cargo não. Usa o primeiro que existir.
+    $cargo = null;
+    foreach (['funcao', 'cargo', 'função', 'nome_funcao', 'funcao_nome', 'desc_funcao', 'descricao_funcao',
+              'nome_cargo', 'cargo_nome', 'desc_cargo', 'descricao_cargo'] as $chave) {
+        if (isset($ficha[$chave]) && is_scalar($ficha[$chave]) && trim((string) $ficha[$chave]) !== '') {
+            $cargo = trim((string) $ficha[$chave]);
+            break;
+        }
+    }
+
+    return ['erro' => null, 'campos' => array_keys($ficha), 'ficha' => [
         'nome' => (string) ($ficha['nome'] ?? ''),
         'cpf' => isset($ficha['cpf']) ? preg_replace('/\D/', '', (string) $ficha['cpf']) : null,
         // "funcao" na ficha é o cargo oficial do RH — mais confiável que
         // o que o token do Portal manda (se mandar).
-        'funcao' => isset($ficha['funcao']) ? trim((string) $ficha['funcao']) : null,
+        'funcao' => $cargo,
         'obras_departamento' => isset($ficha['obras_departamento']) ? trim((string) $ficha['obras_departamento']) : null,
         // Documentação não lista "email" entre os campos, mas alguns
         // registros trazem — pegamos se vier, sem depender disso.

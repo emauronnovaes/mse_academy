@@ -4041,6 +4041,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('trnTabelaPessoas').hidden = !porPessoa;
     document.getElementById('trnNovoVideo').hidden = porPessoa || trnEstado.modo === 'relatorios';
     document.getElementById('trnAtualizarPortal').hidden = !porPessoa;
+    document.getElementById('trnDiagnostico').hidden = !porPessoa;
   }
 
 
@@ -4078,6 +4079,33 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }finally{
       btn.disabled = false;
       btn.textContent = texto;
+    }
+  }
+
+  // Mostra de onde o cargo deveria vir: os campos que a API de ficha
+  // devolve e as variáveis da sessão do Portal — só os nomes.
+  async function diagnosticarPortal(){
+    const fb = document.getElementById('trnPortalFeedback');
+    fb.hidden = false;
+    fb.className = 'admin-modal-feedback';
+    fb.textContent = 'Consultando o Portal...';
+    try{
+      const d = await apiFetch('api/admin/diagnostico_portal.php');
+      const f = d.ficha_api, s = d.sessao_portal;
+      const linhas = [
+        'API de ficha (buscando você por ' + f.buscou_por + '): '
+          + (f.erro ? 'ERRO — ' + f.erro
+            : !f.encontrou ? 'respondeu, mas não encontrou sua ficha.'
+            : 'campos recebidos: ' + (f.campos_recebidos.join(', ') || '(nenhum)') + '. Cargo ' + (f.cargo_lido ? 'lido com sucesso.' : 'NÃO encontrado nesses campos.')),
+        'Sessão do Portal: ' + (s.variaveis.length ? 'variáveis: ' + s.variaveis.join(', ') + '.' : 'nenhuma (Academy e Portal em domínios diferentes).')
+          + (s.achou_login ? (s.achou_cargo ? ' Cargo encontrado na sessão.' : ' Cargo NÃO encontrado na sessão.') : ''),
+        'Seu cadastro na Academy: ' + (d.seu_cadastro.tem_cargo ? 'tem cargo' : 'sem cargo') + ', ' + (d.seu_cadastro.tem_cpf ? 'tem CPF' : 'sem CPF') + '.',
+      ];
+      fb.className = 'admin-modal-feedback ' + (f.erro || !f.cargo_lido ? 'erro' : 'ok');
+      fb.innerHTML = linhas.map(l => esc(l)).join('<br>');
+    }catch(e){
+      fb.className = 'admin-modal-feedback erro';
+      fb.textContent = 'Não foi possível fazer o diagnóstico: ' + e.message;
     }
   }
 
@@ -4883,6 +4911,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       carregarTreinamentos();
     }));
     document.getElementById('trnAtualizarPortal').addEventListener('click', atualizarPeloPortal);
+    document.getElementById('trnDiagnostico').addEventListener('click', diagnosticarPortal);
     document.getElementById('trnExportarCsv').addEventListener('click', () => trnExportar('csv'));
     document.getElementById('trnExportarPdf').addEventListener('click', () => trnExportar('pdf'));
     document.getElementById('trnNovoVideo').addEventListener('click', openVideoModal);

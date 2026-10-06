@@ -42,9 +42,13 @@ if ($nome === '') {
     $nome = $email !== '' ? $email : (string) $cpf;
 }
 
-$cargo = isset($payload['cargo']) && trim((string) $payload['cargo']) !== ''
-    ? trim((string) $payload['cargo'])
-    : null;
+$cargo = null;
+foreach (['cargo', 'funcao', 'função'] as $chaveCargo) { // o Portal pode mandar com qualquer um dos nomes
+    if (isset($payload[$chaveCargo]) && is_scalar($payload[$chaveCargo]) && trim((string) $payload[$chaveCargo]) !== '') {
+        $cargo = trim((string) $payload[$chaveCargo]);
+        break;
+    }
+}
 $areaSlug = isset($payload['area_slug']) && trim((string) $payload['area_slug']) !== ''
     ? trim((string) $payload['area_slug'])
     : null;
