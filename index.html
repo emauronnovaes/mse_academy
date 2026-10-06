@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261005d">
+<link rel="stylesheet" href="style.css?v=20261006a">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -267,7 +267,13 @@
 
     <section class="trn-card trn-card-tabela">
       <div class="trn-resultados-topo">
-        <strong id="trnContagem" aria-live="polite">Carregando...</strong>
+        <div class="trn-resultados-titulo">
+          <div class="trn-segmento" id="trnVisao" role="group" aria-label="Ver relatório">
+            <button type="button" data-visao="treinamentos" aria-pressed="true">Por treinamento</button>
+            <button type="button" data-visao="pessoas" aria-pressed="false">Por pessoa</button>
+          </div>
+          <strong id="trnContagem" aria-live="polite">Carregando...</strong>
+        </div>
         <div class="trn-resultados-acoes">
           <button type="button" class="trn-btn" id="trnNovoVideo">+ Adicionar vídeo</button>
           <button type="button" class="trn-btn" id="trnExportarCsv">Exportar CSV</button>
@@ -275,7 +281,7 @@
         </div>
       </div>
       <div class="trn-tabela-wrap">
-        <table class="trn-tabela">
+        <table class="trn-tabela" id="trnTabelaTreinamentos">
           <thead>
             <tr>
               <th title="Data de publicação do vídeo">Data</th><th>Tema</th><th>Modalidade</th><th>Tipo</th><th>Norma</th>
@@ -283,6 +289,16 @@
             </tr>
           </thead>
           <tbody id="trnCorpo"></tbody>
+        </table>
+        <table class="trn-tabela" id="trnTabelaPessoas" hidden>
+          <thead>
+            <tr>
+              <th>Participante</th><th>CPF</th><th>Cargo</th><th>Departamento</th>
+              <th title="Treinamentos de que participou, dentro dos filtros">Treinamentos</th><th>Concluídos</th>
+              <th>Último acesso</th><th>Relatório</th>
+            </tr>
+          </thead>
+          <tbody id="trnCorpoPessoas"></tbody>
         </table>
       </div>
     </section>
@@ -591,7 +607,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261005d"></script>
+<script src="script.js?v=20261006a"></script>
 
 </body>
 </html>

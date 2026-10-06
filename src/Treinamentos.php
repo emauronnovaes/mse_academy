@@ -232,3 +232,145 @@ function mse_data_valida(string $data): ?string
     [$a, $m, $d] = array_map('intval', explode('-', $data));
     return checkdate($m, $d, $a) ? $data : null;
 }
+
+/**
+ * Filtros de treinamento (tipo, norma) e de período, aplicados sobre
+ * courses c / user_course_progress p. Usado pelo relatório por pessoa.
+ */
+function mse_filtros_treinamento_sql(PDO $pdo, array $filtros, array &$where, array &$params): void
+{
+    $tipo = trim((string) ($filtros['tipo'] ?? ''));
+    $norma = trim((string) ($filtros['norma'] ?? ''));
+    if ($tipo !== '') {
+        $where[] = mse_sql_tipo_efetivo($pdo) . ' = :ft_tipo';
+        $params[':ft_tipo'] = $tipo;
+    }
+    if ($norma !== '') {
+        if (mse_tem_campos_auditoria($pdo)) {
+            $where[] = 'FIND_IN_SET(:ft_norma, c.normas) > 0';
+            $params[':ft_norma'] = $norma;
+        } else {
+            $where[] = '1 = 0'; // migração 020 pendente: nenhum treinamento tem norma
+        }
+    }
+    mse_filtro_periodo_sql($pdo, $filtros, $where, $params);
+}
+
+/** Condição de "participou": abriu o vídeo (com check-in) ou começou a assistir. */
+function mse_sql_participou(PDO $pdo): string
+{
+    return mse_tem_coluna($pdo, 'user_course_progress', 'checkin_em')
+        ? "(p.status <> 'nao_iniciado' OR p.checkin_em IS NOT NULL)"
+        : "p.status <> 'nao_iniciado'";
+}
+
+/**
+ * Relatório por pessoa: todo colaborador ativo, com quantos treinamentos
+ * fez dentro dos filtros. Quem tem zero aparece também — pra auditoria,
+ * saber quem NÃO fez é tão importante quanto quem fez.
+ */
+function mse_lista_pessoas(PDO $pdo, array $filtros): array
+{
+    $cond = [mse_sql_participou($pdo)];
+    $params = [];
+    mse_filtros_treinamento_sql($pdo, $filtros, $cond, $params);
+
+    $where = ['u.active = 1'];
+    if (mse_tem_coluna($pdo, 'users', 'oculto_em_relatorios')) {
+        $where[] = 'u.oculto_em_relatorios = 0';
+    }
+    mse_filtro_pessoa_sql((string) ($filtros['q'] ?? ''), $where, $params);
+
+    // O filtro de treinamento fica no JOIN, não no WHERE: assim quem não
+    // fez nenhum treinamento continua na lista, com zero.
+    $sql = "SELECT u.id, u.name, u.email, u.cpf, u.cargo, a.name AS area_name, u.last_access_date,
+                   COUNT(c.id) AS treinamentos,
+                   COALESCE(SUM(c.id IS NOT NULL AND p.status = 'concluido'), 0) AS concluidos
+            FROM users u
+            LEFT JOIN areas a ON a.id = u.area_id
+            LEFT JOIN user_course_progress p ON p.user_id = u.id
+            LEFT JOIN courses c ON c.id = p.course_id AND " . implode(' AND ', $cond) . "
+            WHERE " . implode(' AND ', $where) . "
+            GROUP BY u.id, u.name, u.email, u.cpf, u.cargo, a.name, u.last_access_date
+            ORDER BY u.name ASC";
+    $stmt = $pdo->prepare($sql);
+    foreach ($params as $k => $v) {
+        $stmt->bindValue($k, $v);
+    }
+    $stmt->execute();
+
+    return array_map(function ($r) {
+        return [
+            'user_id' => (int) $r['id'],
+            'nome' => $r['name'],
+            'email' => $r['email'],
+            'cpf' => $r['cpf'],
+            'cargo' => $r['cargo'],
+            'departamento' => $r['area_name'],
+            'ultimo_acesso' => $r['last_access_date'],
+            'treinamentos' => (int) $r['treinamentos'],
+            'concluidos' => (int) $r['concluidos'],
+        ];
+    }, $stmt->fetchAll());
+}
+
+/** Ficha de uma pessoa: cada treinamento de que participou, com a evidência. */
+function mse_treinamentos_da_pessoa(PDO $pdo, int $userId, array $filtros): array
+{
+    $temCheckin = mse_tem_coluna($pdo, 'user_course_progress', 'checkin_em');
+    $temDuracao = mse_tem_coluna($pdo, 'courses', 'duration_seconds');
+    $auditoria = mse_tem_campos_auditoria($pdo);
+
+    $where = ['p.user_id = :uid', mse_sql_participou($pdo)];
+    $params = [':uid' => $userId];
+    mse_filtros_treinamento_sql($pdo, $filtros, $where, $params);
+
+    $sql = "SELECT c.id, c.title, c.description, c.created_at, c.is_published, " . mse_sql_tipo_efetivo($pdo) . " AS tipo,
+                   " . ($auditoria ? 'c.normas, c.instrutor, c.conteudo_programatico, c.assuntos'
+                                   : 'NULL AS normas, NULL AS instrutor, NULL AS conteudo_programatico, NULL AS assuntos') . ",
+                   " . ($temDuracao ? 'c.duration_seconds' : 'NULL AS duration_seconds') . ",
+                   p.status, p.watched_pct, p.completed_at, p.updated_at,
+                   " . ($temCheckin ? 'p.checkin_em, p.confirmacoes_presenca, p.ultima_confirmacao_em'
+                                    : 'NULL AS checkin_em, 0 AS confirmacoes_presenca, NULL AS ultima_confirmacao_em') . ",
+                   (SELECT COUNT(DISTINCT t.question_id) FROM quiz_attempts t JOIN quiz_questions qq ON qq.id = t.question_id
+                     WHERE qq.course_id = c.id AND t.user_id = p.user_id AND t.is_correct = 1) AS acertos,
+                   (SELECT COUNT(*) FROM quiz_attempts t JOIN quiz_questions qq ON qq.id = t.question_id
+                     WHERE qq.course_id = c.id AND t.user_id = p.user_id) AS tentativas,
+                   (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = c.id) AS total_perguntas
+            FROM user_course_progress p
+            JOIN courses c ON c.id = p.course_id
+            WHERE " . implode(' AND ', $where) . "
+            ORDER BY COALESCE(" . ($temCheckin ? 'p.checkin_em, ' : '') . "p.completed_at, p.updated_at) DESC";
+    $stmt = $pdo->prepare($sql);
+    foreach ($params as $k => $v) {
+        $stmt->bindValue($k, $v);
+    }
+    $stmt->execute();
+
+    return array_map(function ($r) {
+        $pct = (float) $r['watched_pct'];
+        $dur = $r['duration_seconds'] !== null ? (int) $r['duration_seconds'] : 0;
+        return [
+            'id' => (int) $r['id'],
+            'tema' => $r['title'],
+            'descricao' => $r['description'],
+            'data' => $r['created_at'],
+            'arquivado' => (int) $r['is_published'] === 0,
+            'tipo' => $r['tipo'],
+            'normas' => $r['normas'] !== null && $r['normas'] !== '' ? explode(',', $r['normas']) : [],
+            'instrutor' => $r['instrutor'],
+            'conteudo_programatico' => $r['conteudo_programatico'],
+            'assuntos' => $r['assuntos'],
+            'status' => $r['status'],
+            'watched_pct' => $pct,
+            'tempo_assistido_seg' => $dur > 0 ? (int) round($dur * $pct / 100) : null,
+            'checkin_em' => $r['checkin_em'],
+            'checkout_em' => $r['completed_at'],
+            'confirmacoes_presenca' => (int) $r['confirmacoes_presenca'],
+            'ultima_confirmacao_em' => $r['ultima_confirmacao_em'],
+            'acertos' => (int) $r['acertos'],
+            'tentativas' => (int) $r['tentativas'],
+            'total_perguntas' => (int) $r['total_perguntas'],
+        ];
+    }, $stmt->fetchAll());
+}

@@ -3957,7 +3957,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // exportação em CSV e PDF. As ações que a lista antiga tinha continuam em
   // cada linha — presença, editar, perguntas e atividades, áreas, arquivar
   // e excluir — e abrem numa janela por cima, sem perder os filtros.
-  const trnEstado = { lista: [], tipos: [], normas: [], auditoriaAtiva: true, timer: null, pedido: 0 };
+  const trnEstado = { lista: [], pessoas: [], visao: 'treinamentos', tipos: [], normas: [], auditoriaAtiva: true, timer: null, pedido: 0 };
 
   // A janela das ações de uma aula. Antes ela era a própria tela de
   // "Gerenciar aulas"; agora serve a todas as ações da Busca.
@@ -4029,6 +4029,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   async function carregarTreinamentos(){
     if(document.getElementById('treinamentosTela').hidden) return;
+    // Primeira carga sempre pela lista de treinamentos: é ela que traz as
+    // opções de Tipo e Norma pros filtros.
+    if(trnEstado.visao === 'pessoas' && trnEstado.tipos.length) return carregarPessoas();
     const pedido = ++trnEstado.pedido;
     const contagem = document.getElementById('trnContagem');
     contagem.textContent = 'Carregando...';
@@ -4050,11 +4053,144 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         sel.value = atual;
       });
 
+      if(trnEstado.visao === 'pessoas') return carregarPessoas();
       renderTreinamentos();
     }catch(e){
       if(pedido !== trnEstado.pedido) return;
       contagem.textContent = 'Não foi possível carregar: ' + e.message;
       document.getElementById('trnCorpo').innerHTML = '';
+    }
+  }
+
+  // ---------- Relatório por pessoa ----------
+  // Todo colaborador ativo, com quantos treinamentos fez dentro dos
+  // filtros — inclusive quem fez zero: pra auditoria, saber quem NÃO fez
+  // é tão importante quanto quem fez. A ficha de cada um lista os
+  // treinamentos com a mesma evidência da lista de presença.
+  async function carregarPessoas(){
+    const pedido = ++trnEstado.pedido;
+    const contagem = document.getElementById('trnContagem');
+    contagem.textContent = 'Carregando...';
+    try{
+      const d = await apiFetch('api/admin/treinamentos/pessoas.php?' + trnQuery());
+      if(pedido !== trnEstado.pedido) return;
+      trnEstado.pessoas = d.pessoas || [];
+      renderPessoas();
+    }catch(e){
+      if(pedido !== trnEstado.pedido) return;
+      contagem.textContent = 'Não foi possível carregar: ' + e.message;
+      document.getElementById('trnCorpoPessoas').innerHTML = '';
+    }
+  }
+
+  function renderPessoas(){
+    const lista = trnEstado.pessoas;
+    const fizeram = lista.filter(p => p.treinamentos > 0).length;
+    document.getElementById('trnContagem').textContent =
+      `${lista.length} ${lista.length === 1 ? 'pessoa' : 'pessoas'} · ${fizeram} com treinamento nos filtros`;
+    const corpo = document.getElementById('trnCorpoPessoas');
+    corpo.innerHTML = '';
+    if(!lista.length){
+      corpo.innerHTML = `<tr><td colspan="8" class="trn-vazio-lista">${
+        trnFiltros().modalidade === 'presencial'
+          ? 'Treinamentos presenciais ainda não são registrados na Academy.'
+          : 'Ninguém encontrado com essa busca.'}</td></tr>`;
+      return;
+    }
+    const vazio = '<span class="trn-vazio">—</span>';
+    lista.forEach(p => {
+      const tr = document.createElement('tr');
+      if(!p.treinamentos) tr.className = 'is-sem-treinamento';
+      tr.innerHTML = `
+        <td><strong>${esc(p.nome)}</strong><span class="trn-sub">${esc(p.email || '')}</span></td>
+        <td class="trn-nowrap">${p.cpf ? esc(trnFmtCpf(p.cpf)) : vazio}</td>
+        <td>${p.cargo ? esc(p.cargo) : vazio}</td>
+        <td>${p.departamento ? esc(p.departamento) : vazio}</td>
+        <td>${p.treinamentos}</td>
+        <td>${p.concluidos}</td>
+        <td class="trn-nowrap">${p.ultimo_acesso ? esc(trnFmtData(p.ultimo_acesso)) : vazio}</td>
+        <td><button type="button" class="aulas-btn">Ver ficha</button></td>
+      `;
+      tr.querySelector('button').addEventListener('click', () => abrirFichaPessoa(p));
+      corpo.appendChild(tr);
+    });
+  }
+
+  function trnPessoaDadosHtml(p){
+    return `
+      <dl class="rel-dados trn-ficha-dados">
+        <div><dt>Nome</dt><dd>${esc(p.nome)}</dd></div>
+        <div><dt>CPF</dt><dd>${esc(p.cpf ? trnFmtCpf(p.cpf) : '—')}</dd></div>
+        <div><dt>E-mail</dt><dd>${esc(p.email || '—')}</dd></div>
+        <div><dt>Cargo</dt><dd>${esc(p.cargo || '—')}</dd></div>
+        <div><dt>Departamento</dt><dd>${esc(p.departamento || '—')}</dd></div>
+        <div><dt>Último acesso</dt><dd>${esc(p.ultimo_acesso ? trnFmtData(p.ultimo_acesso) : '—')}</dd></div>
+      </dl>
+    `;
+  }
+
+  function trnTabelaFichaHtml(treinamentos){
+    if(!treinamentos.length){
+      return '<p class="trn-vazio-lista">Nenhum treinamento com esses filtros.</p>';
+    }
+    const vazio = '<span class="trn-vazio">—</span>';
+    return `
+      <div class="trn-tabela-wrap">
+        <table class="trn-tabela trn-tabela-presenca">
+          <thead><tr>
+            <th>Treinamento</th><th>Tipo</th><th>Norma</th><th>Instrutor</th>
+            <th title="Primeira vez que abriu o vídeo">Check-in</th><th title="Quando concluiu">Check-out</th>
+            <th>Assistido</th><th title="Vezes que respondeu &quot;Estou aqui&quot; durante o vídeo">Presença confirmada</th>
+            <th title="Perguntas e atividades acertadas">Acertos</th><th>Situação</th>
+          </tr></thead>
+          <tbody>
+            ${treinamentos.map(t => `
+              <tr>
+                <td><strong>${esc(t.tema)}</strong>${t.arquivado ? ' <span class="aulas-badge">arquivada</span>' : ''}<span class="trn-sub">Online</span></td>
+                <td>${esc(t.tipo)}</td>
+                <td>${t.normas.length ? esc(t.normas.join(' · ')) : vazio}</td>
+                <td>${t.instrutor ? esc(t.instrutor) : vazio}</td>
+                <td class="trn-nowrap">${t.checkin_em ? esc(trnFmtDataHora(t.checkin_em)) : vazio}</td>
+                <td class="trn-nowrap">${t.checkout_em ? esc(trnFmtDataHora(t.checkout_em)) : vazio}</td>
+                <td class="trn-nowrap">${Math.round(t.watched_pct)}%${t.tempo_assistido_seg != null ? `<span class="trn-sub">≈ ${esc(trnFmtTempo(t.tempo_assistido_seg))}</span>` : ''}</td>
+                <td class="trn-nowrap">${t.confirmacoes_presenca}×${t.ultima_confirmacao_em ? `<span class="trn-sub">última ${esc(trnFmtDataHora(t.ultima_confirmacao_em))}</span>` : ''}</td>
+                <td class="trn-nowrap">${t.total_perguntas ? `${t.acertos}/${t.total_perguntas}` : vazio}${t.tentativas > t.acertos ? `<span class="trn-sub">${t.tentativas} tentativas</span>` : ''}</td>
+                <td><span class="watchers-status ${esc(t.status)}">${esc(trnStatus(t.status))}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function abrirFichaPessoa(p){
+    const body = abrirDialogoAula('Ficha de treinamentos', p.nome, true);
+    body.innerHTML = '<p>Carregando...</p>';
+    try{
+      const f = trnFiltros();
+      const q = new URLSearchParams({ user_id: p.user_id });
+      ['tipo', 'norma', 'data_de', 'data_ate', 'modalidade'].forEach(k => { if(f[k]) q.set(k, f[k]); });
+      const d = await apiFetch('api/admin/treinamentos/pessoas.php?' + q.toString());
+      const pessoa = Object.assign({}, d.pessoa, { lista_treinamentos: d.treinamentos || [] });
+      body.innerHTML = `
+        <div class="admin-filtros">
+          <span class="trn-ficha-resumo">${pessoa.lista_treinamentos.length} ${pessoa.lista_treinamentos.length === 1 ? 'treinamento' : 'treinamentos'} ·
+            ${pessoa.lista_treinamentos.filter(t => t.status === 'concluido').length} concluídos</span>
+          <button type="button" class="trn-btn" id="fichaCsv">Exportar CSV</button>
+          <button type="button" class="trn-btn" id="fichaPdf">Imprimir / PDF</button>
+        </div>
+        ${trnPessoaDadosHtml(pessoa)}
+        ${trnTabelaFichaHtml(pessoa.lista_treinamentos)}
+      `;
+      const nomeArquivo = 'ficha-' + String(pessoa.nome || pessoa.user_id).toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      document.getElementById('fichaCsv').addEventListener('click', () =>
+        trnBaixarCsv(`${nomeArquivo}-${new Date().toISOString().slice(0, 10)}.csv`, trnLinhasCsvPessoas([pessoa])));
+      document.getElementById('fichaPdf').addEventListener('click', () =>
+        trnImprimir(null, 'Ficha de treinamentos', trnRelatorioPessoasHtml([pessoa], 'Ficha de treinamentos')));
+    }catch(e){
+      body.innerHTML = `<p>Não foi possível carregar: ${esc(e.message)}</p>`;
     }
   }
 
@@ -4105,14 +4241,14 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             ${t.participantes} ${t.participantes === 1 ? 'pessoa' : 'pessoas'}<br><span class="trn-sub">${t.concluidos} ${t.concluidos === 1 ? 'concluiu' : 'concluíram'}</span>
           </button>
         </td>
-        <td class="trn-acoes">
+        <td class="trn-acoes"><div class="trn-acoes-grade">
           <button type="button" class="aulas-btn" data-acao="presenca">Presença</button>
           <button type="button" class="aulas-btn" data-acao="editar">Editar</button>
           <button type="button" class="aulas-btn" data-acao="atividades" title="Perguntas do fim e atividades durante o vídeo">Atividades</button>
           <button type="button" class="aulas-btn" data-acao="areas">Áreas</button>
           <button type="button" class="aulas-btn" data-acao="arquivar">${t.arquivado ? 'Republicar' : 'Arquivar'}</button>
           <button type="button" class="aulas-btn aulas-btn-excluir" data-acao="excluir">Excluir</button>
-        </td>
+        </div></td>
       `;
       tr.querySelectorAll('[data-acao]').forEach(btn => btn.addEventListener('click', () => {
         const acao = btn.dataset.acao;
@@ -4325,7 +4461,28 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  function trnRelatorioHtml(treinamentos, titulo){
+  // Uma linha por pessoa e treinamento; quem não fez nenhum aparece numa
+  // linha só, com os campos do treinamento vazios.
+  function trnLinhasCsvPessoas(pessoas){
+    const cab = ['Participante', 'CPF', 'E-mail', 'Cargo', 'Departamento', 'Treinamento', 'Modalidade', 'Tipo',
+      'Normas', 'Instrutor', 'Check-in', 'Check-out', '% assistido', 'Tempo assistido (estimado)',
+      'Presença confirmada (vezes)', 'Acertos', 'Perguntas', 'Situação'];
+    const linhas = [cab];
+    pessoas.forEach(p => {
+      const base = [p.nome, trnFmtCpf(p.cpf), p.email || '', p.cargo || '', p.departamento || ''];
+      const lista = p.lista_treinamentos || [];
+      if(!lista.length) linhas.push(base.concat(['Nenhum treinamento'], Array(cab.length - base.length - 1).fill('')));
+      lista.forEach(t => linhas.push(base.concat([
+        t.tema, 'Online', t.tipo, (t.normas || []).join(' / '), t.instrutor || '',
+        trnFmtDataHora(t.checkin_em), trnFmtDataHora(t.checkout_em), String(Math.round(t.watched_pct)),
+        trnFmtTempo(t.tempo_assistido_seg), String(t.confirmacoes_presenca), String(t.acertos),
+        String(t.total_perguntas), trnStatus(t.status),
+      ])));
+    });
+    return linhas;
+  }
+
+  function trnCabecalhoRelatorioHtml(titulo, resumo){
     const f = trnFiltros();
     const filtros = [
       f.q && `Busca: "${f.q}"`, f.tipo && `Tipo: ${f.tipo}`, f.norma && `Norma: ${f.norma}`,
@@ -4337,7 +4494,23 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <div><strong>MSE Academy</strong> · ${esc(titulo)}</div>
         <div>Gerado em ${agora.toLocaleDateString('pt-BR')} ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
       </div>
-      <p class="rel-filtros">${filtros.length ? esc(filtros.join(' · ')) : 'Sem filtros'} · ${treinamentos.length} ${treinamentos.length === 1 ? 'treinamento' : 'treinamentos'}</p>
+      <p class="rel-filtros">${filtros.length ? esc(filtros.join(' · ')) : 'Sem filtros'} · ${esc(resumo)}</p>
+    `;
+  }
+
+  function trnRelatorioPessoasHtml(pessoas, titulo){
+    return trnCabecalhoRelatorioHtml(titulo, `${pessoas.length} ${pessoas.length === 1 ? 'pessoa' : 'pessoas'}`)
+      + pessoas.map(p => `
+        <section class="rel-treinamento">
+          <h2>${esc(p.nome)}</h2>
+          ${trnPessoaDadosHtml(p)}
+          ${trnTabelaFichaHtml(p.lista_treinamentos || [])}
+        </section>
+      `).join('');
+  }
+
+  function trnRelatorioHtml(treinamentos, titulo){
+    return trnCabecalhoRelatorioHtml(titulo, `${treinamentos.length} ${treinamentos.length === 1 ? 'treinamento' : 'treinamentos'}`) + `
       ${treinamentos.map(t => `
         <section class="rel-treinamento">
           <h2>${esc(t.tema)}${t.arquivado ? ' (arquivado)' : ''}</h2>
@@ -4359,11 +4532,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // Imprime pela própria página (e não numa janela nova): dentro do Portal
   // a Academy roda num iframe, onde janela nova pode ser bloqueada. No
   // diálogo de impressão, "Salvar como PDF" gera o arquivo.
-  function trnImprimir(treinamentos, titulo){
+  function trnImprimir(treinamentos, titulo, htmlPronto){
     document.getElementById('relatorioImpressao')?.remove();
     const rel = document.createElement('div');
     rel.id = 'relatorioImpressao';
-    rel.innerHTML = trnRelatorioHtml(treinamentos, titulo);
+    rel.innerHTML = htmlPronto || trnRelatorioHtml(treinamentos, titulo);
     document.body.appendChild(rel);
     document.body.classList.add('imprimindo-relatorio');
     const limpar = () => {
@@ -4381,6 +4554,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     btn.disabled = true;
     btn.textContent = 'Gerando...';
     try{
+      if(trnEstado.visao === 'pessoas'){
+        const d = await apiFetch('api/admin/treinamentos/pessoas.php?' + trnQuery({ com_treinamentos: 1 }));
+        const pessoas = d.pessoas || [];
+        if(formato === 'csv'){
+          trnBaixarCsv(`treinamentos-por-pessoa-${new Date().toISOString().slice(0, 10)}.csv`, trnLinhasCsvPessoas(pessoas));
+        } else {
+          trnImprimir(null, '', trnRelatorioPessoasHtml(pessoas, 'Relatório de treinamentos por pessoa'));
+        }
+        return;
+      }
       const d = await apiFetch('api/admin/treinamentos/busca.php?' + trnQuery({ com_participantes: 1 }));
       const lista = d.treinamentos || [];
       if(formato === 'csv'){
@@ -4417,6 +4600,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       document.querySelectorAll('#trnModalidade button').forEach((x, i) => x.setAttribute('aria-pressed', String(i === 0)));
       carregarTreinamentos();
     });
+    // Por treinamento / Por pessoa: os mesmos filtros valem pras duas.
+    document.querySelectorAll('#trnVisao button').forEach(b => b.addEventListener('click', () => {
+      document.querySelectorAll('#trnVisao button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      trnEstado.visao = b.dataset.visao;
+      const porPessoa = trnEstado.visao === 'pessoas';
+      document.getElementById('trnTabelaTreinamentos').hidden = porPessoa;
+      document.getElementById('trnTabelaPessoas').hidden = !porPessoa;
+      document.getElementById('trnNovoVideo').hidden = porPessoa;
+      carregarTreinamentos();
+    }));
     document.getElementById('trnExportarCsv').addEventListener('click', () => trnExportar('csv'));
     document.getElementById('trnExportarPdf').addEventListener('click', () => trnExportar('pdf'));
     document.getElementById('trnNovoVideo').addEventListener('click', openVideoModal);
