@@ -3997,7 +3997,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // exportação em CSV e PDF. As ações que a lista antiga tinha continuam em
   // cada linha — presença, editar, perguntas e atividades, áreas, arquivar
   // e excluir — e abrem numa janela por cima, sem perder os filtros.
-  const trnEstado = { lista: [], pessoas: [], visao: 'treinamentos', tipos: [], normas: [], auditoriaAtiva: true, timer: null, pedido: 0 };
+  // modo: 'gestao' (botão Treinamentos: gerenciar os vídeos) ou
+  // 'relatorios' (botão Relatórios: o que eram Acessos, Quem assistiu e
+  // Relatório por pessoa, numa tela só).
+  const trnEstado = { modo: 'gestao', totalIntegracao: 0, lista: [], pessoas: [], visao: 'treinamentos', tipos: [], normas: [], auditoriaAtiva: true, timer: null, pedido: 0 };
 
   // A janela das ações de uma aula. Antes ela era a própria tela de
   // "Gerenciar aulas"; agora serve a todas as ações da Busca.
@@ -4015,7 +4018,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('aulasModalBody').innerHTML = '';
   }
 
-  function openTreinamentosTela(){
+  function openTreinamentosTela(modo){
+    trnEstado.modo = modo === 'relatorios' ? 'relatorios' : 'gestao';
+    const relatorios = trnEstado.modo === 'relatorios';
+    document.getElementById('trnTitulo').textContent = relatorios ? 'Relatórios de treinamento' : 'Busca de treinamentos';
+    document.querySelector('#treinamentosTela .trn-cabecalho p').textContent = relatorios
+      ? 'Por pessoa e por treinamento · acessos, integração, presença, check-in/check-out e lista REH-002-F1'
+      : 'Online · ISO 9001, 14001 e 45001 · Evidência por check-in e check-out';
+    // Gerenciar vídeos é só por treinamento; relatórios abrem por pessoa.
+    document.getElementById('trnVisao').hidden = !relatorios;
+    trnMudarVisao(relatorios ? 'pessoas' : 'treinamentos');
     document.getElementById('treinamentosTela').hidden = false;
     document.documentElement.classList.add('trn-aberta');
     carregarTreinamentos();
@@ -4027,16 +4039,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const porPessoa = visao === 'pessoas';
     document.getElementById('trnTabelaTreinamentos').hidden = porPessoa;
     document.getElementById('trnTabelaPessoas').hidden = !porPessoa;
-    document.getElementById('trnNovoVideo').hidden = porPessoa;
+    document.getElementById('trnNovoVideo').hidden = porPessoa || trnEstado.modo === 'relatorios';
     document.getElementById('trnAtualizarPortal').hidden = !porPessoa;
   }
 
-  // Botão "Relatório por pessoa" da barra de admin: a mesma tela, já na
-  // visão por pessoa.
-  function abrirRelatorioPorPessoa(){
-    trnMudarVisao('pessoas');
-    openTreinamentosTela();
-  }
 
   // Cargo, CPF e departamento vêm da ficha do Portal, mas o login só grava
   // isso no momento em que a pessoa entra. Aqui atualiza todo mundo, em
@@ -4169,6 +4175,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       const d = await apiFetch('api/admin/treinamentos/pessoas.php?' + trnQuery());
       if(pedido !== trnEstado.pedido) return;
       trnEstado.pessoas = d.pessoas || [];
+      trnEstado.totalIntegracao = d.total_integracao || 0;
       renderPessoas();
     }catch(e){
       if(pedido !== trnEstado.pedido) return;
@@ -4185,7 +4192,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const corpo = document.getElementById('trnCorpoPessoas');
     corpo.innerHTML = '';
     if(!lista.length){
-      corpo.innerHTML = `<tr><td colspan="8" class="trn-vazio-lista">${
+      corpo.innerHTML = `<tr><td colspan="10" class="trn-vazio-lista">${
         trnFiltros().modalidade === 'presencial'
           ? 'Treinamentos presenciais ainda não são registrados na Academy.'
           : 'Ninguém encontrado com essa busca.'}</td></tr>`;
@@ -4200,12 +4207,19 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <td class="trn-nowrap">${p.cpf ? esc(trnFmtCpf(p.cpf)) : vazio}</td>
         <td>${p.cargo ? esc(p.cargo) : vazio}</td>
         <td>${p.departamento ? esc(p.departamento) : vazio}</td>
+        <td>${p.acessos}</td>
+        <td class="trn-nowrap">${trnEstado.totalIntegracao ? `${p.integracao_concluidos} de ${trnEstado.totalIntegracao}${p.integracao_concluidos >= trnEstado.totalIntegracao ? ' ✓' : ''}` : vazio}</td>
         <td>${p.treinamentos}</td>
         <td>${p.concluidos}</td>
         <td class="trn-nowrap">${p.ultimo_acesso ? esc(trnFmtData(p.ultimo_acesso)) : vazio}</td>
-        <td><button type="button" class="aulas-btn">Ver ficha</button></td>
+        <td class="trn-acoes"><div class="trn-acoes-grade">
+          <button type="button" class="aulas-btn" data-acao="ficha">Ver ficha</button>
+          <button type="button" class="aulas-btn" data-acao="reh" title="Lista de presença REH-002-F1 com todos os treinamentos da pessoa">Lista REH</button>
+        </div></td>
       `;
-      tr.querySelector('button').addEventListener('click', () => abrirFichaPessoa(p));
+      tr.querySelector('[data-acao="ficha"]').addEventListener('click', () => abrirFichaPessoa(p));
+      const btnReh = tr.querySelector('[data-acao="reh"]');
+      btnReh.addEventListener('click', () => trnComBotao(btnReh, () => baixarRehPessoa(p.user_id, trnFiltros())));
       corpo.appendChild(tr);
     });
   }
@@ -4340,6 +4354,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             ${pessoa.lista_treinamentos.filter(t => t.status === 'concluido').length} concluídos</span>
           <button type="button" class="trn-btn" id="fichaCsv">Exportar CSV</button>
           <button type="button" class="trn-btn" id="fichaPdf">Baixar PDF</button>
+          <button type="button" class="trn-btn" id="fichaReh">Lista REH-002-F1 (PDF)</button>
         </div>
         ${trnPessoaDadosHtml(pessoa)}
         ${trnTabelaFichaHtml(pessoa.lista_treinamentos, pessoa.user_id)}
@@ -4348,6 +4363,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       const nomeArquivo = 'ficha-' + (trnSlug(pessoa.nome) || pessoa.user_id);
       document.getElementById('fichaCsv').addEventListener('click', () =>
         trnBaixarCsv(`${nomeArquivo}-${new Date().toISOString().slice(0, 10)}.csv`, trnLinhasCsvPessoas([pessoa])));
+      const btnFichaReh = document.getElementById('fichaReh');
+      btnFichaReh.addEventListener('click', () => trnComBotao(btnFichaReh, () => baixarRehPessoa(pessoa.user_id, f)));
       const btnFichaPdf = document.getElementById('fichaPdf');
       btnFichaPdf.addEventListener('click', () => trnComBotao(btnFichaPdf, async () => {
         const qLog = new URLSearchParams({ user_id: pessoa.user_id });
@@ -4410,18 +4427,22 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             ${t.participantes} ${t.participantes === 1 ? 'pessoa' : 'pessoas'}<br><span class="trn-sub">${t.concluidos} ${t.concluidos === 1 ? 'concluiu' : 'concluíram'}</span>
           </button>
         </td>
-        <td class="trn-acoes"><div class="trn-acoes-grade">
+        <td class="trn-acoes"><div class="trn-acoes-grade">${trnEstado.modo === 'relatorios' ? `
+          <button type="button" class="aulas-btn" data-acao="presenca" title="Quem assistiu, com check-in e check-out">Presença</button>
+          <button type="button" class="aulas-btn" data-acao="reh" title="Lista de presença REH-002-F1">Lista REH</button>` : `
           <button type="button" class="aulas-btn" data-acao="presenca">Presença</button>
           <button type="button" class="aulas-btn" data-acao="editar">Editar</button>
           <button type="button" class="aulas-btn" data-acao="atividades" title="Perguntas do fim e atividades durante o vídeo">Atividades</button>
           <button type="button" class="aulas-btn" data-acao="areas">Áreas</button>
           <button type="button" class="aulas-btn" data-acao="arquivar">${t.arquivado ? 'Republicar' : 'Arquivar'}</button>
           <button type="button" class="aulas-btn aulas-btn-excluir" data-acao="excluir">Excluir</button>
+        `}
         </div></td>
       `;
       tr.querySelectorAll('[data-acao]').forEach(btn => btn.addEventListener('click', () => {
         const acao = btn.dataset.acao;
         if(acao === 'presenca') abrirPresenca(t);
+        if(acao === 'reh') trnComBotao(btn, () => baixarRehTreinamento(t, trnFiltros()));
         if(acao === 'editar') abrirEditarTreinamento(t);
         if(acao === 'atividades') abrirPerguntaDaAula(t.id, t.tema);
         if(acao === 'areas') abrirAreasDaAula(t.id, t.tema);
@@ -4479,6 +4500,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <input type="text" id="presencaBusca" placeholder="Filtrar por nome, e-mail ou CPF...">
         <button type="button" class="trn-btn" id="presencaCsv">Exportar CSV</button>
         <button type="button" class="trn-btn" id="presencaPdf">Baixar PDF</button>
+        <button type="button" class="trn-btn" id="presencaReh">Lista REH-002-F1 (PDF)</button>
       </div>
       <p class="admin-field-hint" id="presencaLegenda">
         Check-in: primeira vez que a pessoa abriu o vídeo. Check-out: quando concluiu.
@@ -4519,6 +4541,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       trnBaixarCsv(`presenca-${t.id}-${new Date().toISOString().slice(0, 10)}.csv`,
         trnLinhasCsv([Object.assign({}, t, { lista_presenca: participantes })]));
     });
+    const btnPresencaReh = document.getElementById('presencaReh');
+    btnPresencaReh.addEventListener('click', () => trnComBotao(btnPresencaReh, () => baixarRehTreinamento(t, f)));
     const btnPresencaPdf = document.getElementById('presencaPdf');
     btnPresencaPdf.addEventListener('click', () => trnComBotao(btnPresencaPdf, () =>
       trnBaixarPdf(trnRelatorioHtml([Object.assign({}, t, { lista_presenca: participantes })], 'Lista de presença'),
@@ -5486,62 +5510,80 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     `;
   }
 
+  // Dados dos treinamentos (setor, áreas, carga horária) que o formulário
+  // usa; vêm da busca e ficam guardados.
+  async function garantirTreinamentosLP(){
+    if(!lpEstado.treinamentos.length){
+      const d = await apiFetch('api/admin/treinamentos/busca.php');
+      lpEstado.treinamentos = d.treinamentos || [];
+    }
+    return lpEstado.treinamentos;
+  }
+
+  function lpPeriodo(filtros){
+    const q = new URLSearchParams();
+    if(filtros && filtros.data_de) q.set('data_de', filtros.data_de);
+    if(filtros && filtros.data_ate) q.set('data_ate', filtros.data_ate);
+    return q;
+  }
+
   // REH-002-F1 por pessoa: um formulário só, numa página, com uma linha
   // por treinamento que a pessoa fez. O cabeçalho junta os treinamentos:
   // temas, tipos marcados, normas, instrutores, período e carga somada.
+  async function baixarRehPessoa(userId, filtros){
+    const q = lpPeriodo(filtros);
+    q.set('user_id', userId);
+    const [d] = await Promise.all([apiFetch('api/admin/treinamentos/pessoas.php?' + q.toString()), garantirTreinamentosLP()]);
+    const pessoa = d.pessoa;
+    const lista = d.treinamentos || [];
+    if(!lista.length){
+      throw new Error(`${pessoa.nome} não tem treinamento${filtros && (filtros.data_de || filtros.data_ate) ? ' nesse período' : ''}.`);
+    }
+    const metas = lista.map(t => Object.assign({}, t, lpEstado.treinamentos.find(x => x.id === t.id) || {}));
+    const unicos = (valores) => [...new Set(valores.filter(Boolean))];
+    const segundos = metas.reduce((soma, m) => soma + (m.duracao_seg || (m.duracao_min ? m.duracao_min * 60 : 0)), 0);
+    const resumo = {
+      tema: metas.map(m => m.tema).join('; '),
+      tipos: unicos(metas.map(m => m.tipo)),
+      motivoTexto: unicos(metas.map(lpMotivo)).join('; '),
+      conteudo_programatico: metas.map(m => `${m.tema}: ${m.conteudo_programatico || m.descricao || '-'}`).join(' | '),
+      normas: unicos([].concat(...metas.map(m => m.normas || []))),
+      instrutor: unicos(metas.map(m => m.instrutor)).join(', '),
+      setorTexto: pessoa.departamento || unicos(metas.map(lpSetorDoTreinamento)).join(', '),
+      duracao_seg: segundos,
+    };
+    const linhas = metas.map(m => ({
+      departamento: pessoa.departamento, setorTreinamento: lpSetorDoTreinamento(m),
+      nome: pessoa.nome, email: pessoa.email, treinamento: m.tema,
+      checkin_em: m.checkin_em, checkout_em: m.checkout_em, ultimo_checkout_em: m.ultimo_checkout_em,
+    }));
+    await trnBaixarPdf(lpFormularioHtml(resumo, linhas, null, { porPessoa: true }),
+      trnNomePdf(`lista-presenca-REH-002-F1-${trnSlug(pessoa.nome) || pessoa.user_id}`), { retrato: true, classe: 'rel-formulario' });
+    return lista.length;
+  }
+
+  // REH-002-F1 de um treinamento, com todos os participantes.
+  async function baixarRehTreinamento(t, filtros){
+    const q = lpPeriodo(filtros);
+    q.set('course_id', t.id);
+    const [d] = await Promise.all([apiFetch('api/admin/treinamentos/presenca.php?' + q.toString()), garantirTreinamentosLP()]);
+    const meta = Object.assign({}, lpEstado.treinamentos.find(x => x.id === t.id) || {}, t);
+    const participantes = d.participantes || [];
+    await trnBaixarPdf(lpFormularioHtml(meta, participantes),
+      trnNomePdf(`lista-presenca-REH-002-F1-${trnSlug(meta.tema) || meta.id}`), { retrato: true, classe: 'rel-formulario' });
+    return participantes.length;
+  }
+
   async function gerarListaPresencaPessoa(){
     const fb = document.getElementById('lpFeedback');
-    const btn = document.getElementById('lpGerar');
     const userId = document.getElementById('lpPessoa').value;
     if(!userId){
       fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = 'Escolha a pessoa.';
       return;
     }
-    const q = new URLSearchParams({ user_id: userId });
-    const de = document.getElementById('lpDataDe').value, ate = document.getElementById('lpDataAte').value;
-    if(de) q.set('data_de', de);
-    if(ate) q.set('data_ate', ate);
-    btn.disabled = true;
-    try{
-      const d = await apiFetch('api/admin/treinamentos/pessoas.php?' + q.toString());
-      const pessoa = d.pessoa;
-      const lista = d.treinamentos || [];
-      fb.hidden = false;
-      if(!lista.length){
-        fb.className = 'admin-modal-feedback erro';
-        fb.textContent = `${pessoa.nome} não tem treinamento${de || ate ? ' nesse período' : ''}.`;
-        return;
-      }
-      fb.className = 'admin-modal-feedback ok';
-      fb.textContent = `${lista.length} ${lista.length === 1 ? 'treinamento' : 'treinamentos'} de ${pessoa.nome} na lista.`;
-      btn.textContent = 'Gerando PDF...';
-      // Dados de cada treinamento (setor, áreas, carga horária) vêm da busca.
-      const metas = lista.map(t => Object.assign({}, t, lpEstado.treinamentos.find(x => x.id === t.id) || {}));
-      const unicos = (valores) => [...new Set(valores.filter(Boolean))];
-      const segundos = metas.reduce((soma, m) => soma + (m.duracao_seg || (m.duracao_min ? m.duracao_min * 60 : 0)), 0);
-      const resumo = {
-        tema: metas.map(m => m.tema).join('; '),
-        tipos: unicos(metas.map(m => m.tipo)),
-        motivoTexto: unicos(metas.map(lpMotivo)).join('; '),
-        conteudo_programatico: metas.map(m => `${m.tema}: ${m.conteudo_programatico || m.descricao || '-'}`).join(' | '),
-        normas: unicos([].concat(...metas.map(m => m.normas || []))),
-        instrutor: unicos(metas.map(m => m.instrutor)).join(', '),
-        setorTexto: pessoa.departamento || unicos(metas.map(lpSetorDoTreinamento)).join(', '),
-        duracao_seg: segundos,
-      };
-      const linhas = metas.map(m => ({
-        departamento: pessoa.departamento, setorTreinamento: lpSetorDoTreinamento(m),
-        nome: pessoa.nome, email: pessoa.email, treinamento: m.tema,
-        checkin_em: m.checkin_em, checkout_em: m.checkout_em, ultimo_checkout_em: m.ultimo_checkout_em,
-      }));
-      await trnBaixarPdf(lpFormularioHtml(resumo, linhas, null, { porPessoa: true }),
-        trnNomePdf(`lista-presenca-REH-002-F1-${trnSlug(pessoa.nome) || pessoa.user_id}`), { retrato: true, classe: 'rel-formulario' });
-    }catch(e){
-      fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = 'Não foi possível gerar: ' + e.message;
-    }finally{
-      btn.disabled = false;
-      btn.textContent = 'Gerar lista de presença (PDF)';
-    }
+    await lpGerarNoPainel(() => baixarRehPessoa(userId, {
+      data_de: document.getElementById('lpDataDe').value, data_ate: document.getElementById('lpDataAte').value,
+    }), 'treinamentos');
   }
 
   async function gerarListaPresencaFormulario(){
@@ -5549,27 +5591,24 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       return gerarListaPresencaPessoa();
     }
     const fb = document.getElementById('lpFeedback');
-    const btn = document.getElementById('lpGerar');
     const t = lpEstado.treinamentos.find(x => String(x.id) === document.getElementById('lpTreinamento').value);
     if(!t){
       fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = 'Escolha o treinamento.';
       return;
     }
-    const q = new URLSearchParams({ course_id: t.id });
-    const de = document.getElementById('lpDataDe').value, ate = document.getElementById('lpDataAte').value;
-    if(de) q.set('data_de', de);
-    if(ate) q.set('data_ate', ate);
+    await lpGerarNoPainel(() => baixarRehTreinamento(t, {
+      data_de: document.getElementById('lpDataDe').value, data_ate: document.getElementById('lpDataAte').value,
+    }), 'participantes');
+  }
+
+  async function lpGerarNoPainel(gerar, rotulo){
+    const fb = document.getElementById('lpFeedback');
+    const btn = document.getElementById('lpGerar');
     btn.disabled = true;
+    btn.textContent = 'Gerando PDF...';
     try{
-      const d = await apiFetch('api/admin/treinamentos/presenca.php?' + q.toString());
-      const participantes = d.participantes || [];
-      fb.hidden = false;
-      fb.className = 'admin-modal-feedback ok';
-      fb.textContent = `${participantes.length} ${participantes.length === 1 ? 'participante' : 'participantes'} na lista.`
-        + (d.checkin_disponivel ? '' : ' O check-in só é gravado depois da migração 020 — por enquanto sai só o check-out.');
-      btn.textContent = 'Gerando PDF...';
-      await trnBaixarPdf(lpFormularioHtml(t, participantes),
-        trnNomePdf(`lista-presenca-REH-002-F1-${trnSlug(t.tema) || t.id}`), { retrato: true, classe: 'rel-formulario' });
+      const n = await gerar();
+      fb.hidden = false; fb.className = 'admin-modal-feedback ok'; fb.textContent = `PDF baixado (${n} ${rotulo}).`;
     }catch(e){
       fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = 'Não foi possível gerar: ' + e.message;
     }finally{
@@ -5669,7 +5708,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(isAdmin){
       const toolbar = document.getElementById('adminToolbar');
       if(toolbar) toolbar.hidden = false;
-      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnQuemAssistiu', 'btnAcessos', 'btnGerenciarAulas', 'btnRelatorioPessoas', 'btnDepartamentos'].forEach(id => {
+      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnGerenciarAulas', 'btnRelatorios', 'btnDepartamentos'].forEach(id => {
         const btn = document.getElementById(id);
         if(btn) btn.hidden = false;
       });
@@ -5739,9 +5778,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     });
 
     const btnAulas = document.getElementById('btnGerenciarAulas');
-    if(btnAulas) btnAulas.addEventListener('click', () => { trnMudarVisao('treinamentos'); openTreinamentosTela(); });
-    const btnPessoas = document.getElementById('btnRelatorioPessoas');
-    if(btnPessoas) btnPessoas.addEventListener('click', abrirRelatorioPorPessoa);
+    if(btnAulas) btnAulas.addEventListener('click', () => openTreinamentosTela('gestao'));
+    // Relatórios: Acessos, Quem assistiu e Relatório por pessoa numa tela só.
+    const btnRelatorios = document.getElementById('btnRelatorios');
+    if(btnRelatorios) btnRelatorios.addEventListener('click', () => openTreinamentosTela('relatorios'));
     ligarTelaTreinamentos();
     const btnAulasClose = document.getElementById('aulasModalClose');
     if(btnAulasClose) btnAulasClose.addEventListener('click', closeAulasModal);

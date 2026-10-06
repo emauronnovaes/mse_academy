@@ -289,6 +289,9 @@ function mse_lista_pessoas(PDO $pdo, array $filtros): array
     // O filtro de treinamento fica no JOIN, não no WHERE: assim quem não
     // fez nenhum treinamento continua na lista, com zero.
     $sql = "SELECT u.id, u.name, u.email, u.cpf, u.cargo, a.name AS area_name, u.last_access_date,
+                   u.distinct_access_count,
+                   (SELECT COUNT(*) FROM user_course_progress pi JOIN courses ci ON ci.id = pi.course_id
+                     WHERE pi.user_id = u.id AND ci.type = 'onboarding' AND pi.status = 'concluido') AS integracao_concluidos,
                    COUNT(c.id) AS treinamentos,
                    COALESCE(SUM(c.id IS NOT NULL AND p.status = 'concluido'), 0) AS concluidos
             FROM users u
@@ -296,7 +299,7 @@ function mse_lista_pessoas(PDO $pdo, array $filtros): array
             LEFT JOIN user_course_progress p ON p.user_id = u.id
             LEFT JOIN courses c ON c.id = p.course_id AND " . implode(' AND ', $cond) . "
             WHERE " . implode(' AND ', $where) . "
-            GROUP BY u.id, u.name, u.email, u.cpf, u.cargo, a.name, u.last_access_date
+            GROUP BY u.id, u.name, u.email, u.cpf, u.cargo, a.name, u.last_access_date, u.distinct_access_count
             ORDER BY u.name ASC";
     $stmt = $pdo->prepare($sql);
     foreach ($params as $k => $v) {
@@ -313,6 +316,10 @@ function mse_lista_pessoas(PDO $pdo, array $filtros): array
             'cargo' => $r['cargo'],
             'departamento' => $r['area_name'],
             'ultimo_acesso' => $r['last_access_date'],
+            // O que a antiga tela "Acessos" mostrava: dias em que entrou e
+            // módulos da integração concluídos.
+            'acessos' => (int) $r['distinct_access_count'],
+            'integracao_concluidos' => (int) $r['integracao_concluidos'],
             'treinamentos' => (int) $r['treinamentos'],
             'concluidos' => (int) $r['concluidos'],
         ];

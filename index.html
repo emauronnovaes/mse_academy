@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261006f">
+<link rel="stylesheet" href="style.css?v=20261006g">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -51,17 +51,12 @@
     <button type="button" id="btnAdicionarVideo" class="btn-add-people btn-add-video" hidden>
       <i class="fa-solid fa-circle-play" aria-hidden="true"></i> Adicionar vídeo
     </button>
-    <button type="button" id="btnQuemAssistiu" class="btn-add-people btn-quem-assistiu" hidden>
-      <i class="fa-solid fa-chart-line" aria-hidden="true"></i> Quem assistiu
-    </button>
-    <button type="button" id="btnAcessos" class="btn-add-people btn-acessos" hidden>
-      <i class="fa-solid fa-user" aria-hidden="true"></i> Acessos
-    </button>
     <button type="button" id="btnGerenciarAulas" class="btn-add-people btn-gerenciar-aulas" hidden>
       <i class="fa-solid fa-book" aria-hidden="true"></i> Treinamentos
     </button>
-    <button type="button" id="btnRelatorioPessoas" class="btn-add-people btn-gerenciar-aulas" hidden>
-      <i class="fa-solid fa-user" aria-hidden="true"></i> Relatório por pessoa
+    <!-- Relatórios: substitui Acessos, Quem assistiu e Relatório por pessoa -->
+    <button type="button" id="btnRelatorios" class="btn-add-people btn-quem-assistiu" hidden>
+      <i class="fa-solid fa-chart-line" aria-hidden="true"></i> Relatórios
     </button>
     <button type="button" id="btnDepartamentos" class="btn-add-people btn-departamentos" hidden>
       <i class="fa-solid fa-folder-open" aria-hidden="true"></i> Departamentos
@@ -300,8 +295,9 @@
           <thead>
             <tr>
               <th>Participante</th><th>CPF</th><th>Cargo</th><th>Departamento</th>
+              <th title="Dias em que entrou na Academy">Acessos</th><th title="Módulos da trilha de integração concluídos">Integração</th>
               <th title="Treinamentos de que participou, dentro dos filtros">Treinamentos</th><th>Concluídos</th>
-              <th>Último acesso</th><th>Relatório</th>
+              <th>Último acesso</th><th>Ações</th>
             </tr>
           </thead>
           <tbody id="trnCorpoPessoas"></tbody>
@@ -638,7 +634,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261006f"></script>
+<script src="script.js?v=20261006g"></script>
 
 </body>
 </html>

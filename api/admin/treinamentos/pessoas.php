@@ -65,4 +65,7 @@ if (!empty($_GET['com_treinamentos'])) {
     }
     unset($p);
 }
-mse_json(['pessoas' => $pessoas]);
+mse_json([
+    'pessoas' => $pessoas,
+    'total_integracao' => (int) $pdo->query("SELECT COUNT(*) FROM courses WHERE type = 'onboarding' AND is_published = 1")->fetchColumn(),
+]);
