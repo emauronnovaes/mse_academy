@@ -3981,6 +3981,60 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     carregarTreinamentos();
     setTimeout(() => document.getElementById('trnBusca').focus(), 0);
   }
+  function trnMudarVisao(visao){
+    trnEstado.visao = visao;
+    document.querySelectorAll('#trnVisao button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.visao === visao)));
+    const porPessoa = visao === 'pessoas';
+    document.getElementById('trnTabelaTreinamentos').hidden = porPessoa;
+    document.getElementById('trnTabelaPessoas').hidden = !porPessoa;
+    document.getElementById('trnNovoVideo').hidden = porPessoa;
+    document.getElementById('trnAtualizarPortal').hidden = !porPessoa;
+  }
+
+  // Botão "Relatório por pessoa" da barra de admin: a mesma tela, já na
+  // visão por pessoa.
+  function abrirRelatorioPorPessoa(){
+    trnMudarVisao('pessoas');
+    openTreinamentosTela();
+  }
+
+  // Cargo, CPF e departamento vêm da ficha do Portal, mas o login só grava
+  // isso no momento em que a pessoa entra. Aqui atualiza todo mundo, em
+  // lotes (a API leva até 5s por pessoa), e mostra o motivo se a API falhar.
+  async function atualizarPeloPortal(){
+    const btn = document.getElementById('trnAtualizarPortal');
+    const fb = document.getElementById('trnPortalFeedback');
+    const texto = btn.textContent;
+    btn.disabled = true;
+    fb.hidden = false;
+    fb.className = 'admin-modal-feedback';
+    const junta = { atualizados: [], sem_ficha: [], nome_diferente: [] };
+    let aposId = 0;
+    try{
+      do{
+        const r = await apiFetch('api/admin/treinamentos/atualizar_portal.php', {
+          method: 'POST', body: JSON.stringify({ apos_id: aposId }),
+        });
+        Object.keys(junta).forEach(k => junta[k].push(...(r[k] || [])));
+        btn.textContent = `Atualizando... ${r.processados}/${r.total}`;
+        aposId = r.proximo_apos_id;
+      } while(aposId !== null && aposId !== undefined);
+
+      const partes = [`${junta.atualizados.length} ${junta.atualizados.length === 1 ? 'pessoa atualizada' : 'pessoas atualizadas'}.`];
+      if(junta.sem_ficha.length) partes.push(`Sem ficha no Portal: ${junta.sem_ficha.join(', ')}.`);
+      if(junta.nome_diferente.length) partes.push(`Não atualizadas porque o nome não bateu (sem CPF pra confirmar): ${junta.nome_diferente.join('; ')}.`);
+      fb.className = 'admin-modal-feedback ok';
+      fb.textContent = partes.join(' ');
+      carregarTreinamentos();
+    }catch(e){
+      fb.className = 'admin-modal-feedback erro';
+      fb.textContent = 'Não foi possível atualizar pelo Portal: ' + e.message;
+    }finally{
+      btn.disabled = false;
+      btn.textContent = texto;
+    }
+  }
+
   function closeTreinamentosTela(){
     document.getElementById('treinamentosTela').hidden = true;
     document.documentElement.classList.remove('trn-aberta');
@@ -4602,14 +4656,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     });
     // Por treinamento / Por pessoa: os mesmos filtros valem pras duas.
     document.querySelectorAll('#trnVisao button').forEach(b => b.addEventListener('click', () => {
-      document.querySelectorAll('#trnVisao button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-      trnEstado.visao = b.dataset.visao;
-      const porPessoa = trnEstado.visao === 'pessoas';
-      document.getElementById('trnTabelaTreinamentos').hidden = porPessoa;
-      document.getElementById('trnTabelaPessoas').hidden = !porPessoa;
-      document.getElementById('trnNovoVideo').hidden = porPessoa;
+      trnMudarVisao(b.dataset.visao);
       carregarTreinamentos();
     }));
+    document.getElementById('trnAtualizarPortal').addEventListener('click', atualizarPeloPortal);
     document.getElementById('trnExportarCsv').addEventListener('click', () => trnExportar('csv'));
     document.getElementById('trnExportarPdf').addEventListener('click', () => trnExportar('pdf'));
     document.getElementById('trnNovoVideo').addEventListener('click', openVideoModal);
@@ -5188,7 +5238,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(isAdmin){
       const toolbar = document.getElementById('adminToolbar');
       if(toolbar) toolbar.hidden = false;
-      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnQuemAssistiu', 'btnAcessos', 'btnGerenciarAulas', 'btnDepartamentos'].forEach(id => {
+      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnQuemAssistiu', 'btnAcessos', 'btnGerenciarAulas', 'btnRelatorioPessoas', 'btnDepartamentos'].forEach(id => {
         const btn = document.getElementById(id);
         if(btn) btn.hidden = false;
       });
@@ -5258,7 +5308,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     });
 
     const btnAulas = document.getElementById('btnGerenciarAulas');
-    if(btnAulas) btnAulas.addEventListener('click', openTreinamentosTela);
+    if(btnAulas) btnAulas.addEventListener('click', () => { trnMudarVisao('treinamentos'); openTreinamentosTela(); });
+    const btnPessoas = document.getElementById('btnRelatorioPessoas');
+    if(btnPessoas) btnPessoas.addEventListener('click', abrirRelatorioPorPessoa);
     ligarTelaTreinamentos();
     const btnAulasClose = document.getElementById('aulasModalClose');
     if(btnAulasClose) btnAulasClose.addEventListener('click', closeAulasModal);

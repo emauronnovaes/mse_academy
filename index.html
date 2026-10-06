@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261006a">
+<link rel="stylesheet" href="style.css?v=20261006b">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -59,6 +59,9 @@
     </button>
     <button type="button" id="btnGerenciarAulas" class="btn-add-people btn-gerenciar-aulas" hidden>
       <i class="fa-solid fa-book" aria-hidden="true"></i> Treinamentos
+    </button>
+    <button type="button" id="btnRelatorioPessoas" class="btn-add-people btn-gerenciar-aulas" hidden>
+      <i class="fa-solid fa-user" aria-hidden="true"></i> Relatório por pessoa
     </button>
     <button type="button" id="btnDepartamentos" class="btn-add-people btn-departamentos" hidden>
       <i class="fa-solid fa-folder-open" aria-hidden="true"></i> Departamentos
@@ -263,6 +266,7 @@
         <button type="button" class="trn-btn" id="trnLimpar">Limpar filtros</button>
       </div>
       <p class="trn-dica">As datas filtram pelo período em que as pessoas participaram (check-in, conclusão ou última atividade).</p>
+      <div class="admin-modal-feedback" id="trnPortalFeedback" hidden></div>
     </section>
 
     <section class="trn-card trn-card-tabela">
@@ -276,6 +280,8 @@
         </div>
         <div class="trn-resultados-acoes">
           <button type="button" class="trn-btn" id="trnNovoVideo">+ Adicionar vídeo</button>
+          <button type="button" class="trn-btn" id="trnAtualizarPortal" hidden
+                  title="Busca cargo, CPF e departamento de cada colaborador na ficha do Portal">Atualizar cargos pelo Portal</button>
           <button type="button" class="trn-btn" id="trnExportarCsv">Exportar CSV</button>
           <button type="button" class="trn-btn" id="trnExportarPdf">Exportar relatório (PDF)</button>
         </div>
@@ -607,7 +613,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261006a"></script>
+<script src="script.js?v=20261006b"></script>
 
 </body>
 </html>

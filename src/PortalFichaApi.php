@@ -122,21 +122,40 @@ function mse_area_id_por_cargo(PDO $pdo, ?string $cargo): ?int
  */
 function mse_portal_ficha_buscar(string $termoBusca): ?array
 {
+    $r = mse_portal_ficha_consultar($termoBusca);
+    if ($r['erro'] !== null) {
+        error_log('[mse_portal_ficha_buscar] ' . $r['erro']);
+    }
+    return $r['ficha'];
+}
+
+/**
+ * Mesma busca, mas dizendo POR QUE não veio nada. O login não precisa
+ * saber (segue sem enriquecer); já a atualização de cargos pela tela de
+ * treinamentos precisa mostrar o motivo — antes uma falha aqui deixava o
+ * cargo vazio sem ninguém perceber.
+ *
+ * @return array{ficha: ?array, erro: ?string}  erro null + ficha null = não achou ninguém
+ */
+function mse_portal_ficha_consultar(string $termoBusca): array
+{
     // Se a extensão curl não estiver instalada no PHP do servidor,
     // chamar curl_init() direto quebraria com erro fatal ("Call to
     // undefined function"), derrubando TODO o login (já que essa busca
     // roda em todo método de login, como enriquecimento). Isso é só um
     // extra — sem curl, simplesmente não enriquece, mas o login segue.
     if (!function_exists('curl_init')) {
-        error_log('[mse_portal_ficha_buscar] Extensão curl do PHP não está instalada — pulando enriquecimento.');
-        return null;
+        return ['ficha' => null, 'erro' => 'A extensão curl do PHP não está instalada no servidor.'];
     }
 
     $baseUrl = rtrim(mse_env('PORTAL_FICHA_API_BASE', 'https://portalmse.com.br/microservices/hub_mse/api_ficha'), '/');
     $token = mse_env('PORTAL_FICHA_API_TOKEN', '');
 
-    if ($token === '' || trim($termoBusca) === '') {
-        return null;
+    if ($token === '') {
+        return ['ficha' => null, 'erro' => 'PORTAL_FICHA_API_TOKEN não está configurado no .env do servidor.'];
+    }
+    if (trim($termoBusca) === '') {
+        return ['ficha' => null, 'erro' => null];
     }
 
     $url = $baseUrl . '/v1/ff_infos?' . http_build_query(['busca' => $termoBusca]);
@@ -156,22 +175,21 @@ function mse_portal_ficha_buscar(string $termoBusca): ?array
     curl_close($ch);
 
     if ($response === false || $curlError !== '') {
-        error_log('[mse_portal_ficha_buscar] Falha de rede: ' . $curlError);
-        return null;
+        return ['ficha' => null, 'erro' => 'Falha de rede ao consultar a API do Portal: ' . $curlError];
     }
     if ($httpCode !== 200) {
-        error_log("[mse_portal_ficha_buscar] API respondeu HTTP {$httpCode} pra busca \"{$termoBusca}\"");
-        return null;
+        return ['ficha' => null, 'erro' => "A API do Portal respondeu HTTP {$httpCode}"
+            . ($httpCode === 401 || $httpCode === 403 ? ' (token recusado — confira PORTAL_FICHA_API_TOKEN).' : '.')];
     }
 
     $data = json_decode($response, true);
     if (!is_array($data) || empty($data['data'][0]) || !is_array($data['data'][0])) {
-        return null; // nenhum resultado pra essa busca
+        return ['ficha' => null, 'erro' => null]; // nenhum resultado pra essa busca
     }
 
     $ficha = $data['data'][0];
 
-    return [
+    return ['erro' => null, 'ficha' => [
         'nome' => (string) ($ficha['nome'] ?? ''),
         'cpf' => isset($ficha['cpf']) ? preg_replace('/\D/', '', (string) $ficha['cpf']) : null,
         // "funcao" na ficha é o cargo oficial do RH — mais confiável que
@@ -181,5 +199,5 @@ function mse_portal_ficha_buscar(string $termoBusca): ?array
         // Documentação não lista "email" entre os campos, mas alguns
         // registros trazem — pegamos se vier, sem depender disso.
         'email' => isset($ficha['email']) && $ficha['email'] !== '' ? strtolower(trim((string) $ficha['email'])) : null,
-    ];
+    ]];
 }
