@@ -4057,8 +4057,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     return {
       q: document.getElementById('trnBusca').value.trim(),
       modalidade: ativo ? ativo.dataset.modalidade : '',
-      tipo: document.getElementById('trnTipo').value,
-      norma: document.getElementById('trnNorma').value,
       data_de: document.getElementById('trnDataDe').value,
       data_ate: document.getElementById('trnDataAte').value,
     };
@@ -4109,16 +4107,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       trnEstado.avisoOpcional = d.aviso_opcional !== false;
       document.getElementById('trnAvisoMigracao').hidden = trnEstado.auditoriaAtiva;
 
-      // Opções dos filtros vêm do servidor (a mesma lista que ele valida).
-      [['trnTipo', d.tipos || [], 'tipos'], ['trnNorma', d.normas || [], 'normas']].forEach(([id, opcoes, chave]) => {
-        if(trnEstado[chave].join('|') === opcoes.join('|')) return;
-        trnEstado[chave] = opcoes;
-        const sel = document.getElementById(id);
-        const atual = sel.value;
-        sel.length = 1; // mantém o "Todos/Todas"
-        opcoes.forEach(o => sel.add(new Option(o, o)));
-        sel.value = atual;
-      });
+      // Tipos e normas que o servidor aceita: usados no "Editar".
+      if(d.tipos && d.tipos.length) trnEstado.tipos = d.tipos;
+      if(d.normas && d.normas.length) trnEstado.normas = d.normas;
 
       if(trnEstado.visao === 'pessoas') return carregarPessoas();
       renderTreinamentos();
@@ -4758,10 +4749,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       trnEstado.timer = setTimeout(carregarTreinamentos, 300);
     };
     document.getElementById('trnBusca').addEventListener('input', recarregarEmBreve);
-    ['trnTipo', 'trnNorma', 'trnDataDe', 'trnDataAte'].forEach(id =>
+    ['trnDataDe', 'trnDataAte'].forEach(id =>
       document.getElementById(id).addEventListener('change', carregarTreinamentos));
     document.getElementById('trnLimpar').addEventListener('click', () => {
-      ['trnBusca', 'trnTipo', 'trnNorma', 'trnDataDe', 'trnDataAte'].forEach(id => { document.getElementById(id).value = ''; });
+      ['trnBusca', 'trnDataDe', 'trnDataAte'].forEach(id => { document.getElementById(id).value = ''; });
       carregarTreinamentos();
     });
     // Por treinamento / Por pessoa: os mesmos filtros valem pras duas.
