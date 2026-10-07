@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261007d">
+<link rel="stylesheet" href="style.css?v=20261007e">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -129,6 +129,14 @@
       <input type="file" id="videoModalArquivo" accept=".mp4,.webm,.mov">
     </div>
 
+    <!-- Prévia: o vídeo aparece aqui assim que o link ou o arquivo é
+         escolhido. Dela saem a duração (e o título, no YouTube) e o tempo
+         exato de cada pergunta "durante o vídeo". -->
+    <div class="vm-previa" id="videoModalPrevia" hidden>
+      <div class="vm-previa-player" id="videoModalPreviaPlayer"></div>
+      <p class="admin-field-hint" id="videoModalPreviaInfo">Carregando o vídeo...</p>
+    </div>
+
     <div id="videoModalPlaylistWrap" hidden>
       <label class="admin-field-label">Link da playlist do YouTube</label>
       <input type="text" id="videoModalPlaylistUrl" placeholder="Ex: https://youtube.com/playlist?list=PLxxxxxxxx">
@@ -174,14 +182,15 @@
     </label>
     <p class="admin-field-hint">Desmarcado, o vídeo não pausa pra perguntar se a pessoa continua assistindo.</p>
 
-    <div class="admin-quiz-fields">
-      <label class="admin-field-label">Pergunta do quiz (opcional)</label>
-      <input type="text" id="videoModalPergunta" placeholder="Deixe em branco pra não ter pergunta">
-      <!-- As alternativas são montadas pelo JS. Eram três campos fixos
-           escritos aqui, e quem precisasse de uma quarta não tinha como —
-           o limite era só desta tela, os endpoints já aceitavam qualquer
-           quantidade. -->
-      <div id="videoModalOpcoes"></div>
+    <div class="admin-quiz-fields" id="videoModalPerguntasWrap">
+      <label class="admin-field-label">Perguntas (opcional — quantas quiser)</label>
+      <p class="admin-field-hint">
+        <strong>Durante o vídeo:</strong> ele pausa no minuto e segundo marcados e só continua com a resposta certa.
+        <strong>No fim:</strong> aparece quando o vídeo termina.
+        Dica: pause a prévia no ponto certo e clique em <em>Usar tempo do vídeo</em>.
+      </p>
+      <div id="videoModalPerguntas"></div>
+      <button type="button" class="pq-add-pergunta" id="videoModalAddPergunta">+ Adicionar pergunta</button>
     </div>
 
     <button type="button" id="videoModalSubmit" class="admin-modal-submit">Adicionar vídeo</button>
@@ -620,7 +629,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261007d"></script>
+<script src="script.js?v=20261007e"></script>
 
 </body>
 </html>

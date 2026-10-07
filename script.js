@@ -3398,21 +3398,237 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     };
   }
 
-  // O cadastro de vídeo usa um editor só, recriado a cada abertura do modal.
-  let editorOpcoesVideo = null;
+  // ---------- Adicionar vídeo: prévia e perguntas no minuto ----------
+  // A prévia mostra o vídeo assim que o link ou o arquivo é escolhido; dela
+  // saem a duração, o título (YouTube) e o tempo de cada pergunta. As
+  // perguntas são quantas o admin quiser, cada uma no fim ou num minuto e
+  // segundo do vídeo — as mesmas do "Atividades" da tela Treinamentos.
+  const vmEstado = { blocos: [], uid: 0, duracaoSeg: 0, player: null, video: null, url: null, ultimaFonte: '' };
+
+  function vmFmt(seg){
+    return String(Math.floor(seg / 60)).padStart(2, '0') + ':' + String(Math.floor(seg % 60)).padStart(2, '0');
+  }
+
+  // A API do YouTube pode já ter sido carregada pelo player da trilha;
+  // senão, carrega aqui (sem mexer no onYouTubeIframeAPIReady de lá).
+  function vmCarregarYT(){
+    if(window.YT && window.YT.Player) return Promise.resolve();
+    if(!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')){
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(tag);
+    }
+    return new Promise(resolve => {
+      const t = setInterval(() => { if(window.YT && window.YT.Player){ clearInterval(t); resolve(); } }, 200);
+    });
+  }
+
+  function vmTempoAtual(){
+    if(vmEstado.player && typeof vmEstado.player.getCurrentTime === 'function') return vmEstado.player.getCurrentTime();
+    if(vmEstado.video) return vmEstado.video.currentTime;
+    return null;
+  }
+
+  function vmLimparPrevia(){
+    if(vmEstado.player && typeof vmEstado.player.destroy === 'function') vmEstado.player.destroy();
+    vmEstado.player = null;
+    if(vmEstado.video) vmEstado.video.pause();
+    vmEstado.video = null;
+    if(vmEstado.url){ URL.revokeObjectURL(vmEstado.url); vmEstado.url = null; }
+    vmEstado.duracaoSeg = 0;
+    vmEstado.ultimaFonte = '';
+    document.getElementById('videoModalPreviaPlayer').innerHTML = '';
+    document.getElementById('videoModalPrevia').hidden = true;
+    vmAtualizarBotoesTempo();
+  }
+
+  // Duração conhecida: preenche os minutos e avisa o limite das perguntas.
+  function vmDefinirDuracao(seg){
+    if(!(seg > 0)) return;
+    vmEstado.duracaoSeg = Math.floor(seg);
+    document.getElementById('videoModalDuracao').value = Math.max(1, Math.round(seg / 60));
+    document.getElementById('videoModalPreviaInfo').textContent =
+      `Duração: ${vmFmt(seg)} (preenchida no campo Duração). Pause no ponto em que quer uma pergunta e use "Usar tempo do vídeo".`;
+  }
+
+  function vmAtualizarBotoesTempo(){
+    const temPrevia = !!(vmEstado.player || vmEstado.video);
+    document.querySelectorAll('#videoModalPerguntas .vm-usar-tempo').forEach(b => {
+      b.disabled = !temPrevia;
+      b.title = temPrevia ? 'Preenche com o ponto em que a prévia está' : 'Escolha o vídeo para ver a prévia';
+    });
+  }
+
+  function vmAtualizarPrevia(){
+    const origem = document.getElementById('videoModalOrigem').value;
+    // Playlist não tem prévia nem perguntas: a Academy não controla o que
+    // é assistido dentro dela.
+    document.getElementById('videoModalPerguntasWrap').hidden = origem === 'playlist';
+    if(origem === 'youtube'){
+      const id = extrairYoutubeId(document.getElementById('videoModalYoutubeUrl').value || '');
+      if(!id){ vmLimparPrevia(); return; }
+      if(vmEstado.ultimaFonte === 'yt:' + id) return;
+      vmLimparPrevia();
+      vmEstado.ultimaFonte = 'yt:' + id;
+      document.getElementById('videoModalPrevia').hidden = false;
+      document.getElementById('videoModalPreviaInfo').textContent = 'Carregando o vídeo...';
+      document.getElementById('videoModalPreviaPlayer').innerHTML = '<div id="vmYtPlayer"></div>';
+      vmCarregarYT().then(() => {
+        if(vmEstado.ultimaFonte !== 'yt:' + id) return; // trocou de link no meio
+        vmEstado.player = new YT.Player('vmYtPlayer', {
+          videoId: id,
+          playerVars: { rel: 0, modestbranding: 1 },
+          events: {
+            onReady: (e) => {
+              vmAtualizarBotoesTempo();
+              const titulo = document.getElementById('videoModalTitulo');
+              const dados = typeof e.target.getVideoData === 'function' ? e.target.getVideoData() : null;
+              if(!titulo.value.trim() && dados && dados.title) titulo.value = dados.title;
+              // A duração às vezes só chega um instante depois do onReady.
+              let tentativas = 0;
+              const t = setInterval(() => {
+                const d = typeof e.target.getDuration === 'function' ? e.target.getDuration() : 0;
+                if(d > 0 || ++tentativas > 20){ clearInterval(t); vmDefinirDuracao(d); }
+              }, 250);
+            },
+          },
+        });
+      });
+      return;
+    }
+    if(origem === 's3'){
+      const arquivo = document.getElementById('videoModalArquivo').files[0];
+      if(!arquivo){ vmLimparPrevia(); return; }
+      const chave = 'arq:' + arquivo.name + ':' + arquivo.size;
+      if(vmEstado.ultimaFonte === chave) return;
+      vmLimparPrevia();
+      vmEstado.ultimaFonte = chave;
+      vmEstado.url = URL.createObjectURL(arquivo);
+      document.getElementById('videoModalPrevia').hidden = false;
+      document.getElementById('videoModalPreviaInfo').textContent = 'Carregando o vídeo...';
+      document.getElementById('videoModalPreviaPlayer').innerHTML = `<video src="${vmEstado.url}" controls playsinline></video>`;
+      vmEstado.video = document.querySelector('#videoModalPreviaPlayer video');
+      vmEstado.video.addEventListener('loadedmetadata', () => vmDefinirDuracao(vmEstado.video.duration));
+      vmAtualizarBotoesTempo();
+      return;
+    }
+    vmLimparPrevia();
+  }
+
+  function vmRenumerar(){
+    vmEstado.blocos.forEach((b, i) => { b.el.querySelector('.pq-num').textContent = 'Pergunta ' + (i + 1); });
+    const vazio = document.querySelector('#videoModalPerguntas .pq-vazio');
+    if(vmEstado.blocos.length && vazio) vazio.remove();
+    if(!vmEstado.blocos.length && !vazio){
+      document.getElementById('videoModalPerguntas').innerHTML = '<p class="pq-vazio">Nenhuma pergunta ainda. O vídeo pode ficar sem pergunta.</p>';
+    }
+  }
+
+  function vmAdicionarPergunta(){
+    const uid = vmEstado.uid++;
+    const lista = document.getElementById('videoModalPerguntas');
+    const el = document.createElement('div');
+    el.className = 'pq-bloco';
+    el.innerHTML = `
+      <div class="pq-bloco-topo">
+        <span class="pq-num"></span>
+        <button type="button" class="pq-tirar" title="Tirar esta pergunta">Tirar</button>
+      </div>
+      <input type="text" class="pq-texto" maxlength="500" placeholder="Ex: Qual EPI é obrigatório na obra?">
+      <div class="pq-momento">
+        <label class="pq-momento-rotulo" for="vm-quando-${uid}">Quando aparece</label>
+        <select class="pq-quando" id="vm-quando-${uid}">
+          <option value="durante">Durante o vídeo, em</option>
+          <option value="fim">No fim do vídeo</option>
+        </select>
+        <span class="pq-tempo">
+          <input type="number" class="pq-min" min="0" max="999" inputmode="numeric" aria-label="Minuto" value="0"> min
+          <input type="number" class="pq-seg" min="0" max="59" inputmode="numeric" aria-label="Segundo" value="0"> s
+          <button type="button" class="trn-link vm-usar-tempo">Usar tempo do vídeo</button>
+        </span>
+      </div>
+      <div class="pq-opcoes"></div>
+    `;
+    lista.appendChild(el);
+    const editor = criarEditorDeOpcoes(el.querySelector('.pq-opcoes'), 'vm-certa-' + uid, null);
+
+    const quando = el.querySelector('.pq-quando');
+    const tempo = el.querySelector('.pq-tempo');
+    quando.addEventListener('change', () => { tempo.hidden = quando.value !== 'durante'; });
+    // Começa no ponto em que a prévia está, se houver uma.
+    const agora = vmTempoAtual();
+    if(agora){
+      el.querySelector('.pq-min').value = Math.floor(agora / 60);
+      el.querySelector('.pq-seg').value = Math.floor(agora % 60);
+    }
+    el.querySelector('.vm-usar-tempo').addEventListener('click', () => {
+      const t = vmTempoAtual();
+      if(t == null) return;
+      el.querySelector('.pq-min').value = Math.floor(t / 60);
+      el.querySelector('.pq-seg').value = Math.floor(t % 60);
+    });
+    el.querySelector('.pq-tirar').addEventListener('click', () => {
+      vmEstado.blocos = vmEstado.blocos.filter(b => b.el !== el);
+      el.remove();
+      vmRenumerar();
+    });
+    vmEstado.blocos.push({ el, editor });
+    vmRenumerar();
+    vmAtualizarBotoesTempo();
+    el.querySelector('.pq-texto').focus();
+  }
+
+  // Lê as perguntas do formulário; erro de preenchimento volta como texto.
+  function vmLerPerguntas(){
+    return vmEstado.blocos.map((b, i) => {
+      const texto = b.el.querySelector('.pq-texto').value.trim();
+      const opcoes = b.editor.ler();
+      if(!texto && !opcoes.length) return null; // bloco deixado em branco
+      if(!texto) throw new Error(`Pergunta ${i + 1}: escreva o enunciado.`);
+      if(opcoes.length < 2) throw new Error(`Pergunta ${i + 1}: preencha pelo menos 2 alternativas.`);
+      let momento = null;
+      if(b.el.querySelector('.pq-quando').value === 'durante'){
+        const min = parseInt(b.el.querySelector('.pq-min').value || '0', 10);
+        const seg = parseInt(b.el.querySelector('.pq-seg').value || '0', 10);
+        if(isNaN(min) || isNaN(seg) || min < 0 || seg < 0 || seg > 59) throw new Error(`Pergunta ${i + 1}: o segundo vai de 0 a 59.`);
+        momento = min * 60 + seg;
+        if(momento < 1) throw new Error(`Pergunta ${i + 1}: escolha o minuto e o segundo (a partir de 00:01).`);
+        if(vmEstado.duracaoSeg && momento >= vmEstado.duracaoSeg){
+          throw new Error(`Pergunta ${i + 1}: ${vmFmt(momento)} passa do fim do vídeo (${vmFmt(vmEstado.duracaoSeg)}).`);
+        }
+      }
+      return { question: texto, momento_seg: momento, options: opcoes };
+    }).filter(Boolean);
+  }
+
+  function vmLimparPerguntas(){
+    vmEstado.blocos = [];
+    document.getElementById('videoModalPerguntas').innerHTML = '';
+    vmRenumerar();
+  }
+
+  // Grava as perguntas na aula recém-criada (o cadastro só aceita uma; o
+  // editor de perguntas aceita todas, com o minuto de cada).
+  async function vmSalvarPerguntas(courseId, perguntas){
+    if(!courseId || !perguntas.length) return;
+    await apiFetch('api/admin/courses/quiz.php', {
+      method: 'POST',
+      body: JSON.stringify({ course_id: courseId, questions: perguntas }),
+    });
+  }
 
   function openVideoModal(){
     fillAreaSelect();
-    editorOpcoesVideo = criarEditorDeOpcoes(
-      document.getElementById('videoModalOpcoes'), 'videoModalCorreta', null
-    );
+    vmLimparPerguntas();
     document.getElementById('videoModalOverlay').hidden = false;
     document.getElementById('videoModalFeedback').hidden = true;
     atualizarVisibilidadeArea();
     atualizarVisibilidadeOrigemVideo();
+    vmAtualizarPrevia();
   }
   function closeVideoModal(){
     document.getElementById('videoModalOverlay').hidden = true;
+    vmLimparPrevia(); // senão o vídeo da prévia continua tocando escondido
   }
 
   async function submitAddVideo(){
@@ -3426,8 +3642,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const youtubeEntrada = document.getElementById('videoModalYoutubeUrl').value.trim();
     const playlistEntrada = document.getElementById('videoModalPlaylistUrl').value.trim();
     const grupoSorteio = document.getElementById('videoModalSorteio').value.trim();
-    const pergunta = document.getElementById('videoModalPergunta').value.trim();
     const feedback = document.getElementById('videoModalFeedback');
+    let perguntas = [];
+    try{
+      perguntas = origem === 'playlist' ? [] : vmLerPerguntas();
+    }catch(e){
+      feedback.hidden = false;
+      feedback.className = 'admin-modal-feedback erro';
+      feedback.textContent = e.message;
+      return;
+    }
     const submitBtn = document.getElementById('videoModalSubmit');
 
     if(!titulo){
@@ -3510,34 +3734,43 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         body.grupo_sorteio = grupoSorteio;
       }
 
-      if(pergunta){
-        body.quiz_question = pergunta;
-        body.quiz_options = editorOpcoesVideo ? editorOpcoesVideo.ler() : [];
-      }
-
       Object.assign(body, lerCamposAuditoriaDoModal());
 
       if(origem === 's3'){
         // Vai pra fila em vez de travar o modal: o envio continua no
         // painel e o formulário já fica livre pro próximo vídeo.
-        enfileirarUpload(arquivo, body, titulo);
+        enfileirarUpload(arquivo, body, titulo, perguntas);
         feedback.hidden = false;
         feedback.className = 'admin-modal-feedback ok';
-        feedback.textContent = `"${titulo}" entrou na fila de envio. Pode fechar esta janela e adicionar outro — o envio continua no painel do canto.`;
+        feedback.textContent = `"${titulo}" entrou na fila de envio${perguntas.length ? ` com ${perguntas.length} ${perguntas.length === 1 ? 'pergunta' : 'perguntas'}` : ''}. Pode fechar esta janela e adicionar outro — o envio continua no painel do canto.`;
         document.getElementById('videoModalTitulo').value = '';
         document.getElementById('videoModalDescricao').value = '';
         document.getElementById('videoModalArquivo').value = '';
-        document.getElementById('videoModalPergunta').value = '';
-        if(editorOpcoesVideo) editorOpcoesVideo.limpar();
+        vmLimparPerguntas();
+        vmLimparPrevia();
         limparCamposAuditoriaDoModal();
       } else {
-        await apiFetch('api/admin/courses/create.php', {
+        const criado = await apiFetch('api/admin/courses/create.php', {
           method: 'POST',
           body: JSON.stringify(body),
         });
+        try{
+          await vmSalvarPerguntas(criado && criado.course && criado.course.id, perguntas);
+        }catch(e){
+          throw new Error(`O vídeo foi adicionado, mas as perguntas não foram salvas (${e.message}). Coloque-as em Treinamentos > Atividades.`);
+        }
         feedback.hidden = false;
         feedback.className = 'admin-modal-feedback ok';
-        feedback.textContent = `Vídeo "${titulo}" adicionado com sucesso!`;
+        feedback.textContent = `Vídeo "${titulo}" adicionado${perguntas.length ? ` com ${perguntas.length} ${perguntas.length === 1 ? 'pergunta' : 'perguntas'}` : ''}!`;
+        document.getElementById('videoModalTitulo').value = '';
+        document.getElementById('videoModalDescricao').value = '';
+        document.getElementById('videoModalYoutubeUrl').value = '';
+        document.getElementById('videoModalPlaylistUrl').value = '';
+        vmLimparPerguntas();
+        vmLimparPrevia();
+        limparCamposAuditoriaDoModal();
+        recarregarTelaConteudo();
+        carregarTreinamentos();
       }
     }catch(e){
       feedback.hidden = false;
@@ -3718,10 +3951,15 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     try{
       const videoKey = await enviarEmPedacos(job);
-      await apiFetch('api/admin/courses/create.php', {
+      const criado = await apiFetch('api/admin/courses/create.php', {
         method: 'POST',
         body: JSON.stringify(Object.assign({}, job.dados, { video_source: 's3', video_key: videoKey })),
       });
+      try{
+        await vmSalvarPerguntas(criado && criado.course && criado.course.id, job.perguntas || []);
+      }catch(e){
+        throw new Error('vídeo enviado, mas as perguntas não foram salvas — coloque em Treinamentos > Atividades (' + e.message + ')');
+      }
       job.status = 'concluido';
       job.pct = 100;
       recarregarTelaConteudo(); // a aula nova já aparece sem recarregar a página
@@ -3735,11 +3973,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }
   }
 
-  function enfileirarUpload(arquivo, dados, titulo){
+  function enfileirarUpload(arquivo, dados, titulo, perguntas){
     const nomeLimpo = arquivo.name.replace(/[^a-zA-Z0-9.-]/g, '-');
     const pasta = dados.type === 'onboarding' ? 'onboarding' : 'cursos';
     filaUploads.push({
-      arquivo, dados, titulo,
+      arquivo, dados, titulo, perguntas: perguntas || [],
       key: `${pasta}/${Date.now()}-${nomeLimpo}`,
       status: 'aguardando', pct: 0, enviado: 0, total: arquivo.size, restante: Infinity,
       cancelar: false,
@@ -4787,7 +5025,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // O painel edita o conjunto inteiro e manda tudo de uma vez. Adicionar e
   // tirar mexem só no bloco em questão, sem redesenhar os outros: redesenhar
   // perderia o que já estava digitado nos demais.
-  const QUIZ_MAX_PERGUNTAS = 10;
+  const QUIZ_MAX_PERGUNTAS = 50;
 
   //
   // Cada pergunta pode aparecer no fim do vídeo (como sempre foi) ou
@@ -5653,7 +5891,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(videoTypeSelect) videoTypeSelect.addEventListener('change', atualizarVisibilidadeArea);
 
     const videoOrigemSelect = document.getElementById('videoModalOrigem');
-    if(videoOrigemSelect) videoOrigemSelect.addEventListener('change', atualizarVisibilidadeOrigemVideo);
+    if(videoOrigemSelect) videoOrigemSelect.addEventListener('change', () => { atualizarVisibilidadeOrigemVideo(); vmAtualizarPrevia(); });
+    const vmLink = document.getElementById('videoModalYoutubeUrl');
+    if(vmLink){
+      let t = null;
+      vmLink.addEventListener('input', () => { clearTimeout(t); t = setTimeout(vmAtualizarPrevia, 500); });
+    }
+    const vmArquivo = document.getElementById('videoModalArquivo');
+    if(vmArquivo) vmArquivo.addEventListener('change', vmAtualizarPrevia);
+    const vmAdd = document.getElementById('videoModalAddPergunta');
+    if(vmAdd) vmAdd.addEventListener('click', vmAdicionarPergunta);
     const videoOverlay = document.getElementById('videoModalOverlay');
     if(videoOverlay) videoOverlay.addEventListener('click', (e) => {
       if(e.target === videoOverlay) closeVideoModal();

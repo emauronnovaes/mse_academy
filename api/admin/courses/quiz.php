@@ -49,7 +49,9 @@ if ($metodo !== 'POST' && $metodo !== 'GET') {
     mse_error('Método não permitido.', 405);
 }
 
-const QUIZ_MAX_PERGUNTAS = 10;
+// Com atividades no meio do vídeo, 10 ficava curto: um vídeo longo pode
+// ter uma pergunta a cada poucos minutos.
+const QUIZ_MAX_PERGUNTAS = 50;
 const QUIZ_MIN_OPCOES = 2;
 const QUIZ_MAX_OPCOES = 6;
 
