@@ -151,7 +151,7 @@ if ($grupoSorteio !== '' && !$temNovas) {
 
 // Dados de auditoria (opcionais): validados antes de abrir a transação,
 // pra um tipo ou norma inválida não deixar meio cadastro pra trás.
-$camposAuditoria = mse_ler_campos_auditoria($pdo, $input);
+$camposAuditoria = mse_ler_campos_auditoria($pdo, $input) + mse_ler_aviso_presenca($pdo, $input);
 
 // Curso + pergunta + opções tudo junto numa transação — se qualquer
 // parte falhar, desfaz tudo.

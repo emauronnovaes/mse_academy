@@ -27,6 +27,7 @@ foreach ($pdo->query('SHOW COLUMNS FROM courses') as $col) {
 $stmt = $pdo->prepare(
     'SELECT c.id, c.title, c.description, c.youtube_id, c.video_source, c.video_key,
             c.duration_minutes, ' . ($temDuracaoSegundos ? 'c.duration_seconds' : 'NULL AS duration_seconds') . ', c.type,
+            ' . (mse_tem_coluna($pdo, 'courses', 'aviso_presenca') ? 'c.aviso_presenca' : '1 AS aviso_presenca') . ',
             a.slug AS area_slug, a.name AS area_name
      FROM courses c
      LEFT JOIN areas a ON a.id = c.area_id
@@ -86,6 +87,7 @@ foreach ($questions as &$question) {
 
 $course['id'] = (int) $course['id'];
 $course['duration_minutes'] = (int) $course['duration_minutes'];
+$course['aviso_presenca'] = (int) $course['aviso_presenca'] === 1; // "Você ainda está aí?" ligado neste vídeo
 $course['video_url'] = $videoUrl; // preenchido quando video_source='s3'; null quando é youtube_id mesmo
 $course['questions'] = $questions;
 

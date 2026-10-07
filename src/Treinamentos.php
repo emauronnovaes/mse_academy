@@ -453,3 +453,26 @@ function mse_log_presenca(PDO $pdo, int $userId, ?int $courseId, array $filtros 
         ];
     }, $stmt->fetchAll());
 }
+
+
+/**
+ * "aviso_presenca" do corpo (liga/desliga o "Você ainda está aí?" do
+ * vídeo). Devolve [] quando não veio. Desligar exige a migração 022;
+ * ligar sem ela não muda nada (já é o comportamento de todo vídeo).
+ *
+ * @return array<string, int>
+ */
+function mse_ler_aviso_presenca(PDO $pdo, array $input): array
+{
+    if (!array_key_exists('aviso_presenca', $input)) {
+        return [];
+    }
+    $ligado = !empty($input['aviso_presenca']);
+    if (!mse_tem_coluna($pdo, 'courses', 'aviso_presenca')) {
+        if (!$ligado) {
+            mse_error('Pra desligar o aviso "Você ainda está aí?" falta rodar a migração 022 no banco.', 409);
+        }
+        return [];
+    }
+    return ['aviso_presenca' => $ligado ? 1 : 0];
+}

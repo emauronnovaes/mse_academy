@@ -943,7 +943,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         });
         onbPlayer = player;
         ligarBotaoTelaCheia(body);
-        onbPresenca = presencaNoYouTube(body.querySelector('.vid-player-wrap'), player, mod.id);
+        if(detalhe.aviso_presenca !== false) onbPresenca = presencaNoYouTube(body.querySelector('.vid-player-wrap'), player, mod.id);
         if(isRewatch) return;
         onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoYouTube(player));
 
@@ -1005,7 +1005,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     onbPlayer = videoEl;
     iniciarSessaoPresenca(mod.id);
     ligarBotaoTelaCheia(body);
-    onbPresenca = presencaNoVideo(body.querySelector('.vid-player-wrap'), videoEl, mod.id);
+    if(detalhe.aviso_presenca !== false) onbPresenca = presencaNoVideo(body.querySelector('.vid-player-wrap'), videoEl, mod.id);
 
     if(isRewatch){
       return; // controles nativos cuidam de tudo — não precisa rastrear progresso
@@ -2728,7 +2728,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         `;
         ligarBotaoTelaCheia(wrap);
         const v = wrap.querySelector('video');
-        modalState.presenca = presencaNoVideo(wrap, v, course.id);
+        if(detalhe.aviso_presenca !== false) modalState.presenca = presencaNoVideo(wrap, v, course.id);
         if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoVideo(v));
 
         // Os controles nativos ficam visíveis mesmo travado, pra dar pra
@@ -2829,7 +2829,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             }
           }
         });
-        modalState.presenca = presencaNoYouTube(wrap, modalState.player, course.id);
+        if(detalhe.aviso_presenca !== false) modalState.presenca = presencaNoYouTube(wrap, modalState.player, course.id);
         if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoYouTube(modalState.player));
       });
     }).catch(e => {
@@ -3564,6 +3564,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     };
     Object.entries(texto).forEach(([k, v]) => { if(v) campos[k] = v; });
     if(normas.length) campos.normas = normas;
+    const aviso = document.getElementById('videoModalAviso');
+    if(aviso && !aviso.checked) campos.aviso_presenca = false;
     return campos;
   }
   function limparCamposAuditoriaDoModal(){
@@ -3571,6 +3573,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     ['videoModalTipoTreinamento', 'videoModalInstrutor', 'videoModalConteudo', 'videoModalAssuntos']
       .forEach(id => { document.getElementById(id).value = ''; });
     document.querySelectorAll('#videoModalNormas input').forEach(i => { i.checked = false; });
+    const aviso = document.getElementById('videoModalAviso');
+    if(aviso) aviso.checked = true;
   }
 
   // ---------- Fila de envio de vídeos ----------
@@ -4168,6 +4172,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       if(pedido !== trnEstado.pedido) return; // resposta atrasada de uma busca anterior
       trnEstado.lista = d.treinamentos || [];
       trnEstado.auditoriaAtiva = d.auditoria_ativa !== false;
+      trnEstado.avisoOpcional = d.aviso_opcional !== false;
       document.getElementById('trnAvisoMigracao').hidden = trnEstado.auditoriaAtiva;
 
       // Opções dos filtros vêm do servidor (a mesma lista que ele valida).
@@ -4437,6 +4442,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         t.total_atividades ? `${t.total_atividades} ${t.total_atividades === 1 ? 'atividade' : 'atividades'} no vídeo` : '',
         perguntasDoFim > 0 ? `${perguntasDoFim} ${perguntasDoFim === 1 ? 'pergunta' : 'perguntas'} no fim` : '',
         t.total_perguntas === 0 ? '<span class="aulas-sem-pergunta">sem pergunta</span>' : '',
+        t.aviso_presenca === false ? 'sem aviso de presença' : '',
       ].filter(Boolean);
 
       const tr = document.createElement('tr');
@@ -4612,6 +4618,13 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         placeholder="${esc(t.descricao ? 'Hoje a busca mostra a descrição: ' + t.descricao : 'Tópicos abordados, na ordem do vídeo')}">${esc(t.conteudo_programatico || '')}</textarea>
       <label class="admin-field-label" for="trnEdAssuntos">Assuntos</label>
       <input type="text" id="trnEdAssuntos" maxlength="500" value="${esc(t.assuntos || '')}" placeholder="Ex.: NR-35, ancoragem, resgate" ${desab}>
+      <label class="admin-check">
+        <input type="checkbox" id="trnEdAviso" ${t.aviso_presenca !== false ? 'checked' : ''} ${trnEstado.avisoOpcional === false ? 'disabled' : ''}>
+        Aviso "Você ainda está aí?" durante o vídeo
+      </label>
+      <p class="admin-field-hint">${trnEstado.avisoOpcional === false
+        ? 'Pra poder desligar, falta rodar a migração 022 no banco. Por enquanto o aviso fica ligado em todos os vídeos.'
+        : 'Ligado: o vídeo pausa de tempos em tempos e só continua quando a pessoa clica em "Estou aqui" — cada clique vira evidência de presença.'}</p>
       <button type="button" class="admin-modal-submit" id="trnEdSalvar">Salvar</button>
       <div class="admin-modal-feedback" id="trnEdFeedback" hidden></div>
     `;
@@ -4628,6 +4641,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         title: titulo,
         description: document.getElementById('trnEdDescricao').value.trim(),
       };
+      if(trnEstado.avisoOpcional !== false) corpo.aviso_presenca = document.getElementById('trnEdAviso').checked;
       if(auditoria){
         Object.assign(corpo, {
           tipo_treinamento: document.getElementById('trnEdTipo').value,

@@ -51,6 +51,8 @@ $resposta = [
     // false = migração 020 ainda não rodou: a tela avisa que os campos de
     // auditoria e o check-in ainda não estão sendo gravados.
     'auditoria_ativa' => $auditoria && $temCheckin && $temMomento,
+    // false = migração 022 pendente: o aviso fica ligado em todos.
+    'aviso_opcional' => mse_tem_coluna($pdo, 'courses', 'aviso_presenca'),
 ];
 
 // Presencial não existe na Academy (todo treinamento aqui é um vídeo).
@@ -72,7 +74,9 @@ if ($norma !== '') {
     $params[':norma'] = $norma;
 }
 
+$temAviso = mse_tem_coluna($pdo, 'courses', 'aviso_presenca');
 $sql = "SELECT c.id, c.title, c.description, c.type, c.is_published, c.created_at, c.video_source, c.duration_minutes,
+               " . ($temAviso ? 'c.aviso_presenca' : '1 AS aviso_presenca') . ",
                a.name AS area_name, " . mse_sql_tipo_efetivo($pdo) . " AS tipo,
                " . ($auditoria
                     ? 'c.tipo_treinamento, c.normas, c.instrutor, c.conteudo_programatico, c.assuntos'
@@ -162,6 +166,7 @@ foreach ($cursos as $c) {
         'modalidade' => 'Online',
         'tipo' => $c['tipo'],
         'tipo_preenchido' => $c['tipo_treinamento'] !== null,
+        'aviso_presenca' => (int) $c['aviso_presenca'] === 1,
         'normas' => $c['normas'] !== null && $c['normas'] !== '' ? explode(',', $c['normas']) : [],
         'instrutor' => $c['instrutor'],
         'conteudo_programatico' => $c['conteudo_programatico'],

@@ -61,7 +61,7 @@ if (array_key_exists('description', $input)) {
 
 // Dados de auditoria (tipo, normas, instrutor, conteúdo, assuntos): só
 // os que vierem no corpo são alterados.
-foreach (mse_ler_campos_auditoria($pdo, $input) as $coluna => $valor) {
+foreach (mse_ler_campos_auditoria($pdo, $input) + mse_ler_aviso_presenca($pdo, $input) as $coluna => $valor) {
     $campos[] = $coluna . ' = ?';
     $valores[] = $valor;
 }

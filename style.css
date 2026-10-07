@@ -1971,3 +1971,7 @@
   .rel-formulario .lp-por-pessoa th:nth-child(3){ width:26%; }
   .rel-formulario .lp-por-pessoa th:nth-child(4){ width:18%; }
   .rel-formulario .lp-por-pessoa td{ font-size:8.5px; }
+
+  /* Caixa de marcar nos formulários de admin (ex.: aviso de presença) */
+  .admin-check{ display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; margin:2px 0 4px; cursor:pointer; }
+  .admin-modal .admin-check input{ width:16px; height:16px; margin:0; accent-color:var(--red); }
