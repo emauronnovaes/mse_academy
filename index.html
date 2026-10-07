@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261007b">
+<link rel="stylesheet" href="style.css?v=20261007c">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -240,14 +240,6 @@
       <label class="trn-rotulo" for="trnBusca">Buscar por tema, assunto, conteúdo, instrutor, nome ou CPF do participante</label>
       <input type="search" id="trnBusca" class="trn-input" placeholder="Ex.: trabalho em altura, nome do colaborador, CPF" autocomplete="off">
       <div class="trn-filtros">
-        <div class="trn-campo" id="trnCampoModalidade">
-          <span class="trn-rotulo">Modalidade</span>
-          <div class="trn-segmento" id="trnModalidade" role="group" aria-label="Modalidade">
-            <button type="button" data-modalidade="" aria-pressed="true">Todas</button>
-            <button type="button" data-modalidade="presencial" aria-pressed="false">Presencial</button>
-            <button type="button" data-modalidade="online" aria-pressed="false">Online</button>
-          </div>
-        </div>
         <div class="trn-campo trn-campo-cresce">
           <label class="trn-rotulo" for="trnTipo">Tipo</label>
           <select id="trnTipo" class="trn-input"><option value="">Todos</option></select>
@@ -267,7 +259,6 @@
         <button type="button" class="trn-btn" id="trnLimpar">Limpar filtros</button>
       </div>
       <p class="trn-dica">As datas filtram pelo período em que as pessoas participaram (check-in, conclusão ou última atividade).</p>
-      <div class="admin-modal-feedback" id="trnPortalFeedback" hidden></div>
     </section>
 
     <section class="trn-card trn-card-tabela">
@@ -281,20 +272,7 @@
         </div>
         <div class="trn-resultados-acoes">
           <button type="button" class="trn-btn" id="trnNovoVideo">+ Adicionar vídeo</button>
-          <details class="trn-menu" id="trnMenuPortal" hidden>
-            <summary class="trn-btn">Portal ▾</summary>
-            <div class="trn-menu-lista">
-              <button type="button" id="trnAtualizarPortal" title="Busca cargo, CPF e departamento de cada colaborador na ficha do Portal">Atualizar cargos pelo Portal</button>
-              <button type="button" id="trnDiagnostico" title="Mostra de onde o cargo deveria vir (só nomes de campos, nunca valores)">Diagnóstico do Portal</button>
-            </div>
-          </details>
-          <details class="trn-menu">
-            <summary class="trn-btn">Exportar ▾</summary>
-            <div class="trn-menu-lista">
-              <button type="button" id="trnExportarCsv">Planilha (CSV)</button>
-              <button type="button" id="trnExportarPdf">Relatório (PDF)</button>
-            </div>
-          </details>
+
         </div>
       </div>
       <div class="trn-tabela-wrap">
@@ -650,7 +628,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261007b"></script>
+<script src="script.js?v=20261007c"></script>
 
 </body>
 </html>

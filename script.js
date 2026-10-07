@@ -4031,12 +4031,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       : 'Online · ISO 9001, 14001 e 45001 · Evidência por check-in e check-out';
     // Gerenciar vídeos é só por treinamento; relatórios abrem por pessoa.
     document.getElementById('trnVisao').hidden = !relatorios;
-    // Modalidade: na Academy tudo é online — nos relatórios o filtro só
-    // ocupava espaço.
-    document.getElementById('trnCampoModalidade').hidden = relatorios;
-    if(relatorios){
-      document.querySelectorAll('#trnModalidade button').forEach((x, i) => x.setAttribute('aria-pressed', String(i === 0)));
-    }
     trnMudarVisao(relatorios ? 'pessoas' : 'treinamentos');
     document.getElementById('treinamentosTela').hidden = false;
     document.documentElement.classList.add('trn-aberta');
@@ -4050,73 +4044,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('trnTabelaTreinamentos').hidden = porPessoa;
     document.getElementById('trnTabelaPessoas').hidden = !porPessoa;
     document.getElementById('trnNovoVideo').hidden = porPessoa || trnEstado.modo === 'relatorios';
-    document.getElementById('trnMenuPortal').hidden = !porPessoa;
   }
 
-
-  // Cargo, CPF e departamento vêm da ficha do Portal, mas o login só grava
-  // isso no momento em que a pessoa entra. Aqui atualiza todo mundo, em
-  // lotes (a API leva até 5s por pessoa), e mostra o motivo se a API falhar.
-  async function atualizarPeloPortal(){
-    const btn = document.getElementById('trnAtualizarPortal');
-    const fb = document.getElementById('trnPortalFeedback');
-    const texto = btn.textContent;
-    btn.disabled = true;
-    fb.hidden = false;
-    fb.className = 'admin-modal-feedback';
-    const junta = { atualizados: [], sem_ficha: [], nome_diferente: [] };
-    let aposId = 0;
-    try{
-      do{
-        const r = await apiFetch('api/admin/treinamentos/atualizar_portal.php', {
-          method: 'POST', body: JSON.stringify({ apos_id: aposId }),
-        });
-        Object.keys(junta).forEach(k => junta[k].push(...(r[k] || [])));
-        btn.textContent = `Atualizando... ${r.processados}/${r.total}`;
-        aposId = r.proximo_apos_id;
-      } while(aposId !== null && aposId !== undefined);
-
-      const partes = [`${junta.atualizados.length} ${junta.atualizados.length === 1 ? 'pessoa atualizada' : 'pessoas atualizadas'}.`];
-      if(junta.sem_ficha.length) partes.push(`Sem ficha no Portal: ${junta.sem_ficha.join(', ')}.`);
-      if(junta.nome_diferente.length) partes.push(`Não atualizadas porque o nome não bateu (sem CPF pra confirmar): ${junta.nome_diferente.join('; ')}.`);
-      fb.className = 'admin-modal-feedback ok';
-      fb.textContent = partes.join(' ');
-      carregarTreinamentos();
-    }catch(e){
-      fb.className = 'admin-modal-feedback erro';
-      fb.textContent = 'Não foi possível atualizar pelo Portal: ' + e.message;
-    }finally{
-      btn.disabled = false;
-      btn.textContent = texto;
-    }
-  }
-
-  // Mostra de onde o cargo deveria vir: os campos que a API de ficha
-  // devolve e as variáveis da sessão do Portal — só os nomes.
-  async function diagnosticarPortal(){
-    const fb = document.getElementById('trnPortalFeedback');
-    fb.hidden = false;
-    fb.className = 'admin-modal-feedback';
-    fb.textContent = 'Consultando o Portal...';
-    try{
-      const d = await apiFetch('api/admin/diagnostico_portal.php');
-      const f = d.ficha_api, s = d.sessao_portal;
-      const linhas = [
-        'API de ficha (buscando você por ' + f.buscou_por + '): '
-          + (f.erro ? 'ERRO — ' + f.erro
-            : !f.encontrou ? 'respondeu, mas não encontrou sua ficha.'
-            : 'campos recebidos: ' + (f.campos_recebidos.join(', ') || '(nenhum)') + '. Cargo ' + (f.cargo_lido ? 'lido com sucesso.' : 'NÃO encontrado nesses campos.')),
-        'Sessão do Portal: ' + (s.variaveis.length ? 'variáveis: ' + s.variaveis.join(', ') + '.' : 'nenhuma (Academy e Portal em domínios diferentes).')
-          + (s.achou_login ? (s.achou_cargo ? ' Cargo encontrado na sessão.' : ' Cargo NÃO encontrado na sessão.') : ''),
-        'Seu cadastro na Academy: ' + (d.seu_cadastro.tem_cargo ? 'tem cargo' : 'sem cargo') + ', ' + (d.seu_cadastro.tem_cpf ? 'tem CPF' : 'sem CPF') + '.',
-      ];
-      fb.className = 'admin-modal-feedback ' + (f.erro || !f.cargo_lido ? 'erro' : 'ok');
-      fb.innerHTML = linhas.map(l => esc(l)).join('<br>');
-    }catch(e){
-      fb.className = 'admin-modal-feedback erro';
-      fb.textContent = 'Não foi possível fazer o diagnóstico: ' + e.message;
-    }
-  }
 
   function closeTreinamentosTela(){
     document.getElementById('treinamentosTela').hidden = true;
@@ -4819,39 +4748,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }
   }
 
-  async function trnExportar(formato){
-    const btn = document.getElementById(formato === 'csv' ? 'trnExportarCsv' : 'trnExportarPdf');
-    const texto = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Gerando...';
-    try{
-      if(trnEstado.visao === 'pessoas'){
-        const d = await apiFetch('api/admin/treinamentos/pessoas.php?' + trnQuery({ com_treinamentos: 1 }));
-        const pessoas = d.pessoas || [];
-        if(formato === 'csv'){
-          trnBaixarCsv(`treinamentos-por-pessoa-${new Date().toISOString().slice(0, 10)}.csv`, trnLinhasCsvPessoas(pessoas));
-        } else {
-          btn.textContent = 'Gerando PDF...';
-          await trnBaixarPdf(trnRelatorioPessoasHtml(pessoas, 'Relatório de treinamentos por pessoa'), trnNomePdf('treinamentos-por-pessoa'));
-        }
-        return;
-      }
-      const d = await apiFetch('api/admin/treinamentos/busca.php?' + trnQuery({ com_participantes: 1 }));
-      const lista = d.treinamentos || [];
-      if(formato === 'csv'){
-        trnBaixarCsv(`treinamentos-${new Date().toISOString().slice(0, 10)}.csv`, trnLinhasCsv(lista));
-      } else {
-        btn.textContent = 'Gerando PDF...';
-        await trnBaixarPdf(trnRelatorioHtml(lista, 'Relatório de treinamentos'), trnNomePdf('treinamentos'));
-      }
-    }catch(e){
-      alert('Não foi possível exportar: ' + e.message);
-    }finally{
-      btn.disabled = false;
-      btn.textContent = texto;
-    }
-  }
-
   function ligarTelaTreinamentos(){
     const tela = document.getElementById('treinamentosTela');
     if(!tela) return;
@@ -4864,13 +4760,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('trnBusca').addEventListener('input', recarregarEmBreve);
     ['trnTipo', 'trnNorma', 'trnDataDe', 'trnDataAte'].forEach(id =>
       document.getElementById(id).addEventListener('change', carregarTreinamentos));
-    document.querySelectorAll('#trnModalidade button').forEach(b => b.addEventListener('click', () => {
-      document.querySelectorAll('#trnModalidade button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-      carregarTreinamentos();
-    }));
     document.getElementById('trnLimpar').addEventListener('click', () => {
       ['trnBusca', 'trnTipo', 'trnNorma', 'trnDataDe', 'trnDataAte'].forEach(id => { document.getElementById(id).value = ''; });
-      document.querySelectorAll('#trnModalidade button').forEach((x, i) => x.setAttribute('aria-pressed', String(i === 0)));
       carregarTreinamentos();
     });
     // Por treinamento / Por pessoa: os mesmos filtros valem pras duas.
@@ -4878,18 +4769,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       trnMudarVisao(b.dataset.visao);
       carregarTreinamentos();
     }));
-    document.getElementById('trnAtualizarPortal').addEventListener('click', atualizarPeloPortal);
-    // Menus do topo (Portal, Exportar): fecham ao escolher uma opção ou ao
-    // clicar fora.
-    tela.querySelectorAll('.trn-menu-lista button').forEach(b => b.addEventListener('click', () => {
-      b.closest('details').open = false;
-    }));
-    document.addEventListener('click', (e) => {
-      tela.querySelectorAll('.trn-menu[open]').forEach(m => { if(!m.contains(e.target)) m.open = false; });
-    });
-    document.getElementById('trnDiagnostico').addEventListener('click', diagnosticarPortal);
-    document.getElementById('trnExportarCsv').addEventListener('click', () => trnExportar('csv'));
-    document.getElementById('trnExportarPdf').addEventListener('click', () => trnExportar('pdf'));
     document.getElementById('trnNovoVideo').addEventListener('click', openVideoModal);
 
     // Esc fecha a janela de ação primeiro; sem nenhuma aberta, fecha a tela.
