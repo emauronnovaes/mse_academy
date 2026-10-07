@@ -1975,3 +1975,30 @@
   /* Caixa de marcar nos formulários de admin (ex.: aviso de presença) */
   .admin-check{ display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; margin:2px 0 4px; cursor:pointer; }
   .admin-modal .admin-check input{ width:16px; height:16px; margin:0; accent-color:var(--red); }
+
+  /* Menus do topo dos relatórios (Portal, Exportar) */
+  .trn-card-tabela{ overflow:visible; }
+  .trn-card-tabela .trn-tabela-wrap{ border-radius:0 0 12px 12px; }
+  .trn-menu{ position:relative; }
+  .trn-menu > summary{ list-style:none; display:inline-flex; align-items:center; }
+  .trn-menu > summary::-webkit-details-marker{ display:none; }
+  .trn-menu-lista{
+    position:absolute; right:0; top:calc(100% + 4px); z-index:5; min-width:220px;
+    background:#fff; border:1px solid var(--line); border-radius:8px; padding:4px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.12);
+  }
+  .trn-menu-lista button{
+    display:block; width:100%; text-align:left; padding:9px 12px; border:none; background:none;
+    border-radius:6px; cursor:pointer; font-family:inherit; font-size:13px; color:var(--ink);
+  }
+  .trn-menu-lista button:hover{ background:#F3F2EF; }
+  .trn-menu-lista button:disabled{ opacity:0.6; cursor:default; }
+  .trn-campo[hidden]{ display:none; }
+
+  /* "Ver ficha" / "Ver lista": o REH-002-F1 na tela */
+  .reh-barra{ display:flex; align-items:center; gap:16px; margin:0 0 12px; }
+  .reh-barra .admin-modal-submit{ width:auto; padding:10px 20px; }
+  .reh-detalhes{ margin:0 0 16px; }
+  .reh-detalhes .trn-btn{ margin-top:10px; }
+  .reh-preview{ background:#E9E8E4; border-radius:10px; padding:24px 16px; overflow:auto; }
+  .reh-folha{ width:700px; margin:0 auto; padding:28px 24px; box-shadow:0 4px 18px rgba(0,0,0,0.12); }

@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261007a">
+<link rel="stylesheet" href="style.css?v=20261007b">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -240,7 +240,7 @@
       <label class="trn-rotulo" for="trnBusca">Buscar por tema, assunto, conteúdo, instrutor, nome ou CPF do participante</label>
       <input type="search" id="trnBusca" class="trn-input" placeholder="Ex.: trabalho em altura, nome do colaborador, CPF" autocomplete="off">
       <div class="trn-filtros">
-        <div class="trn-campo">
+        <div class="trn-campo" id="trnCampoModalidade">
           <span class="trn-rotulo">Modalidade</span>
           <div class="trn-segmento" id="trnModalidade" role="group" aria-label="Modalidade">
             <button type="button" data-modalidade="" aria-pressed="true">Todas</button>
@@ -281,12 +281,20 @@
         </div>
         <div class="trn-resultados-acoes">
           <button type="button" class="trn-btn" id="trnNovoVideo">+ Adicionar vídeo</button>
-          <button type="button" class="trn-btn" id="trnAtualizarPortal" hidden
-                  title="Busca cargo, CPF e departamento de cada colaborador na ficha do Portal">Atualizar cargos pelo Portal</button>
-          <button type="button" class="trn-btn" id="trnDiagnostico" hidden
-                  title="Mostra de onde o cargo deveria vir e por que não chega (só nomes de campos, nunca valores)">Diagnóstico do Portal</button>
-          <button type="button" class="trn-btn" id="trnExportarCsv">Exportar CSV</button>
-          <button type="button" class="trn-btn" id="trnExportarPdf">Exportar relatório (PDF)</button>
+          <details class="trn-menu" id="trnMenuPortal" hidden>
+            <summary class="trn-btn">Portal ▾</summary>
+            <div class="trn-menu-lista">
+              <button type="button" id="trnAtualizarPortal" title="Busca cargo, CPF e departamento de cada colaborador na ficha do Portal">Atualizar cargos pelo Portal</button>
+              <button type="button" id="trnDiagnostico" title="Mostra de onde o cargo deveria vir (só nomes de campos, nunca valores)">Diagnóstico do Portal</button>
+            </div>
+          </details>
+          <details class="trn-menu">
+            <summary class="trn-btn">Exportar ▾</summary>
+            <div class="trn-menu-lista">
+              <button type="button" id="trnExportarCsv">Planilha (CSV)</button>
+              <button type="button" id="trnExportarPdf">Relatório (PDF)</button>
+            </div>
+          </details>
         </div>
       </div>
       <div class="trn-tabela-wrap">
@@ -302,10 +310,10 @@
         <table class="trn-tabela" id="trnTabelaPessoas" hidden>
           <thead>
             <tr>
-              <th>Participante</th><th>CPF</th><th>Cargo</th><th>Departamento</th>
-              <th title="Dias em que entrou na Academy">Acessos</th><th title="Módulos da trilha de integração concluídos">Integração</th>
-              <th title="Treinamentos de que participou, dentro dos filtros">Treinamentos</th><th>Concluídos</th>
-              <th>Último acesso</th><th>Ações</th>
+              <th>Participante</th><th>Cargo</th><th>Departamento</th>
+              <th title="Módulos da trilha de integração concluídos">Integração</th>
+              <th title="Treinamentos de que participou, dentro dos filtros">Treinamentos</th>
+              <th>Último acesso</th><th></th>
             </tr>
           </thead>
           <tbody id="trnCorpoPessoas"></tbody>
@@ -642,7 +650,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261007a"></script>
+<script src="script.js?v=20261007b"></script>
 
 </body>
 </html>
