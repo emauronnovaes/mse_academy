@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../src/Cors.php';
 require_once __DIR__ . '/../../src/Response.php';
 require_once __DIR__ . '/../../src/Auth.php';
 require_once __DIR__ . '/../../src/Progress.php';
+require_once __DIR__ . '/../../src/Departamentos.php';
 
 mse_cors();
 $user = mse_require_auth();
@@ -102,6 +103,33 @@ if ($temCursosPorArea && $courses) {
 }
 $minhaArea = $user['area_id'] !== null ? (int) $user['area_id'] : null;
 
+// Departamentos do Portal marcados em cada curso (migração 025) e o meu:
+// o do Portal (users.setor_portal) e, na falta, o nome da minha área.
+$deptosPorCurso = [];
+$meusDeptos = [];
+if ($courses && mse_tem_tabela($pdo, 'course_departamentos')) {
+    $idsCursos = array_map(static fn($c) => (int) $c['id'], $courses);
+    $marcadoresD = implode(',', array_fill(0, count($idsCursos), '?'));
+    $stmt = $pdo->prepare("SELECT course_id, departamento, departamento_norm FROM course_departamentos WHERE course_id IN ({$marcadoresD})");
+    $stmt->execute($idsCursos);
+    foreach ($stmt->fetchAll() as $linha) {
+        $deptosPorCurso[(int) $linha['course_id']][$linha['departamento_norm']] = $linha['departamento'];
+    }
+    if ($deptosPorCurso) {
+        $cols = ['a.name AS area_nome'];
+        if (mse_tem_coluna($pdo, 'users', 'setor_portal')) {
+            $cols[] = 'u.setor_portal';
+        }
+        $stmt = $pdo->prepare('SELECT ' . implode(', ', $cols) . ' FROM users u LEFT JOIN areas a ON a.id = u.area_id WHERE u.id = ?');
+        $stmt->execute([(int) $user['id']]);
+        foreach (($stmt->fetch() ?: []) as $valor) {
+            if (trim((string) $valor) !== '') {
+                $meusDeptos[mse_departamento_chave((string) $valor)] = true;
+            }
+        }
+    }
+}
+
 foreach ($courses as &$course) {
     $course['id'] = (int) $course['id'];
     $course['area_id'] = $course['area_id'] !== null ? (int) $course['area_id'] : null;
@@ -116,9 +144,15 @@ foreach ($courses as &$course) {
     // quiser assistir, assiste. Isso reaproveita o mesmo "obrigatorio"
     // que a tela já usa pra aula opcional, agora calculado por pessoa.
     $restrito = $areasPorCurso[$course['id']] ?? [];
+    $deptos = $deptosPorCurso[$course['id']] ?? [];
     $course['areas_obrigatorias'] = $restrito;
-    if ($restrito && ($minhaArea === null || !in_array($minhaArea, $restrito, true))) {
-        $course['obrigatorio'] = false;
+    $course['departamentos_obrigatorios'] = array_values($deptos);
+    if ($restrito || $deptos) {
+        $daArea = $minhaArea !== null && in_array($minhaArea, $restrito, true);
+        $doDepto = (bool) array_intersect_key($deptos, $meusDeptos);
+        if (!$daArea && !$doDepto) {
+            $course['obrigatorio'] = false;
+        }
     }
 }
 

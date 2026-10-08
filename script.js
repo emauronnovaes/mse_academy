@@ -3238,11 +3238,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     // pra refletir departamentos criados depois.
     const caixas = document.getElementById('videoModalObrigatorio');
     try{
-      const lista = await apiFetch('api/areas/list.php');
+      // Departamentos do Portal (os mesmos da ficha de funcionário).
+      const lista = await apiFetch('api/departamentos/list.php');
       const marcadas = new Set(Array.from(caixas.querySelectorAll('input:checked')).map(i => i.value));
-      caixas.innerHTML = (lista.areas || []).map(a => `
-        <label class="areas-aula-item"><input type="checkbox" value="${a.id}" ${marcadas.has(String(a.id)) ? 'checked' : ''}> <span>${esc(a.name)}</span></label>
-      `).join('') || '<span class="admin-field-hint">Nenhum departamento cadastrado.</span>';
+      caixas.innerHTML = (lista.departamentos || []).map(nome => `
+        <label class="areas-aula-item"><input type="checkbox" value="${esc(nome)}" ${marcadas.has(nome) ? 'checked' : ''}> <span>${esc(nome)}</span></label>
+      `).join('') || '<span class="admin-field-hint">Nenhum departamento encontrado no Portal.</span>';
+      if(lista.fonte !== 'portal'){
+        caixas.insertAdjacentHTML('beforeend', '<span class="admin-field-hint vm-obrig-aviso">Não consegui ler a lista completa do Portal agora'
+          + (lista.aviso ? ' (' + esc(lista.aviso) + ')' : '') + ': aparecem só os departamentos já conhecidos.</span>');
+      }
     }catch(e){
       caixas.innerHTML = `<span class="admin-field-hint">Não consegui carregar os departamentos: ${esc(e.message)}</span>`;
     }
@@ -3627,16 +3632,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // Grava as perguntas na aula recém-criada (o cadastro só aceita uma; o
   // editor de perguntas aceita todas, com o minuto de cada).
   function vmAreasMarcadas(){
-    return Array.from(document.querySelectorAll('#videoModalObrigatorio input:checked')).map(i => parseInt(i.value, 10));
+    return Array.from(document.querySelectorAll('#videoModalObrigatorio input:checked')).map(i => i.value);
   }
 
   // Departamentos para os quais o vídeo é obrigatório (tela Treinamentos >
   // Áreas, aqui já na criação). Sem nenhum, vale pra todos.
   async function vmSalvarAreas(courseId, areas){
     if(!courseId || !areas || !areas.length) return;
-    await apiFetch('api/admin/courses/areas.php', {
+    await apiFetch('api/admin/courses/departamentos.php', {
       method: 'POST',
-      body: JSON.stringify({ course_id: courseId, areas }),
+      body: JSON.stringify({ course_id: courseId, departamentos: areas }),
     });
   }
 
@@ -5780,21 +5785,21 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     let dados;
     try {
-      dados = await apiFetch('api/admin/courses/areas.php?course_id=' + encodeURIComponent(courseId));
+      dados = await apiFetch('api/admin/courses/departamentos.php?course_id=' + encodeURIComponent(courseId));
     } catch(e){
       body.innerHTML = `<p>Não foi possível carregar: ${esc(e.message)}</p>`;
       return;
     }
 
     body.innerHTML = `
-      <p class="admin-field-hint">Marque as áreas para as quais esta aula é <strong>obrigatória</strong>.
-        Sem nenhuma marcada, vale para todos. Quem não é da área marcada continua vendo a aula —
+      <p class="admin-field-hint">Marque os departamentos (os mesmos do Portal) para os quais esta aula é <strong>obrigatória</strong>.
+        Sem nenhum marcado, vale para todos. Quem é de outro departamento continua vendo a aula —
         ela só não entra nas pendências nem na barra de progresso dessa pessoa.</p>
       <div class="areas-aula-lista">
-        ${dados.areas.map(a => `
+        ${dados.departamentos.map(d => `
           <label class="areas-aula-item">
-            <input type="checkbox" value="${a.id}" ${a.marcada ? 'checked' : ''}>
-            <span>${esc(a.name)}</span>
+            <input type="checkbox" value="${esc(d.nome)}" ${d.marcado ? 'checked' : ''}>
+            <span>${esc(d.nome)}</span>
           </label>
         `).join('')}
       </div>
@@ -5803,13 +5808,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     `;
 
     document.getElementById('areasSalvar').addEventListener('click', async () => {
-      const marcadas = Array.from(body.querySelectorAll('.areas-aula-item input:checked'))
-        .map(i => parseInt(i.value, 10));
+      const marcadas = Array.from(body.querySelectorAll('.areas-aula-item input:checked')).map(i => i.value);
       const fb = document.getElementById('areasFeedback');
       try {
-        const r = await apiFetch('api/admin/courses/areas.php', {
+        const r = await apiFetch('api/admin/courses/departamentos.php', {
           method: 'POST',
-          body: JSON.stringify({ course_id: courseId, areas: marcadas }),
+          body: JSON.stringify({ course_id: courseId, departamentos: marcadas }),
         });
         fb.hidden = false;
         fb.className = 'admin-modal-feedback ok';

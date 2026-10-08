@@ -2084,3 +2084,4 @@
   .rel-pdf .adm-sit{ padding:0; background:none; }
   .adm-secao{ margin:18px 0 8px; font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--steel); }
   .adm-secao:first-child{ margin-top:0; }
+  .vm-obrig-aviso{ grid-column:1 / -1; }

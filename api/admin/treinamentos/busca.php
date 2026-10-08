@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../../src/Response.php';
 require_once __DIR__ . '/../../../src/Auth.php';
 require_once __DIR__ . '/../../../src/Treinamentos.php';
 require_once __DIR__ . '/../../../src/Aprovacao.php';
+require_once __DIR__ . '/../../../src/Departamentos.php';
 
 /**
  * Busca de treinamentos (tela de auditoria, que substituiu "Gerenciar aulas").
@@ -107,6 +108,13 @@ $areasObrigatorias = [];
 if ($pdo->query("SHOW TABLES LIKE 'course_areas'")->fetch() !== false) {
     foreach ($pdo->query('SELECT ca.course_id, a.name FROM course_areas ca JOIN areas a ON a.id = ca.area_id ORDER BY a.name') as $l) {
         $areasObrigatorias[(int) $l['course_id']][] = $l['name'];
+    }
+}
+
+// Departamentos do Portal marcados (migração 025) entram na mesma lista.
+if (mse_tem_tabela($pdo, 'course_departamentos')) {
+    foreach ($pdo->query('SELECT course_id, departamento FROM course_departamentos ORDER BY departamento') as $l) {
+        $areasObrigatorias[(int) $l['course_id']][] = $l['departamento'];
     }
 }
 

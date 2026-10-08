@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../../src/Auth.php';
 require_once __DIR__ . '/../../../src/Aprovacao.php';
 require_once __DIR__ . '/../../../src/AwsS3.php';
 require_once __DIR__ . '/../../../src/Email.php';
+require_once __DIR__ . '/../../../src/Departamentos.php';
 
 /**
  * Tela de aprovação: vídeos esperando aprovação e, com ?id=N, tudo sobre
@@ -109,6 +110,8 @@ if ($pdo->query("SHOW TABLES LIKE 'course_areas'")->fetch() !== false) {
     $stmt->execute([$id]);
     $departamentos = array_column($stmt->fetchAll(), 'name');
 }
+
+$departamentos = array_merge($departamentos, mse_departamentos_do_curso($pdo, $id));
 
 $resposta['video'] = [
     'id' => (int) $c['id'],
