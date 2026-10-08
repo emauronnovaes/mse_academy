@@ -48,7 +48,11 @@ if ($sessao['nome']) {
         // Por nome porque a sessão do Portal só traz nome e e-mail — não
         // há CPF aqui pra usar, que seria mais preciso (ver sso.php).
         // Com homônimos, isso pode trazer a ficha de outra pessoa.
-        $ficha = mse_portal_ficha_buscar($sessao['nome']);
+        $consulta = mse_portal_ficha_buscar_pessoa($sessao['cpf'] ?? null, $sessao['nome']);
+        if ($consulta['erro'] !== null) {
+            error_log('[portal_session.php] Ficha do Portal: ' . $consulta['erro']);
+        }
+        $ficha = $consulta['ficha'];
     } catch (Throwable $e) {
         error_log('[portal_session.php] Enriquecimento via ficha falhou (ignorado): ' . $e->getMessage());
     }

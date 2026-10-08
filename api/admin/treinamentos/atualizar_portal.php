@@ -55,7 +55,7 @@ $ultimoId = $aposId;
 foreach ($lote as $u) {
     $ultimoId = (int) $u['id'];
     $porCpf = !empty($u['cpf']);
-    $consulta = mse_portal_ficha_consultar($porCpf ? (string) $u['cpf'] : (string) $u['name']);
+    $consulta = mse_portal_ficha_buscar_pessoa($u['cpf'] ?? null, (string) $u['name']);
 
     // Erro da API (token, rede, curl): o mesmo vale pra todo mundo, então
     // para tudo e mostra o motivo em vez de marcar 37 pessoas "sem ficha".
@@ -66,10 +66,6 @@ foreach ($lote as $u) {
     $ficha = $consulta['ficha'];
     if ($ficha === null) {
         $resultado['sem_ficha'][] = $u['name'];
-        continue;
-    }
-    if (!$porCpf && mse_normalize_text($ficha['nome']) !== mse_normalize_text((string) $u['name'])) {
-        $resultado['nome_diferente'][] = $u['name'] . ' (Portal achou: ' . $ficha['nome'] . ')';
         continue;
     }
 

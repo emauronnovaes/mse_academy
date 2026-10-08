@@ -60,7 +60,11 @@ try {
     // ficha de outra pessoa quando há homônimos, e aí a Academy gravaria
     // cargo e setor errados — sem ninguém perceber, porque o login
     // funciona normalmente. Só cai pro nome quando não há CPF.
-    $ficha = mse_portal_ficha_buscar($cpf ?: $nome);
+    $consulta = mse_portal_ficha_buscar_pessoa($cpf, $nome);
+    if ($consulta['erro'] !== null) {
+        error_log('[sso.php] Ficha do Portal: ' . $consulta['erro']);
+    }
+    $ficha = $consulta['ficha'];
 } catch (Throwable $e) {
     error_log('[sso.php] Enriquecimento via ficha falhou (ignorado): ' . $e->getMessage());
 }

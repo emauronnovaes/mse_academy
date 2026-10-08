@@ -24,8 +24,10 @@ $stmt = $pdo->prepare('SELECT name, cpf, cargo FROM users WHERE id = ?');
 $stmt->execute([(int) $admin['id']]);
 $eu = $stmt->fetch() ?: ['name' => '', 'cpf' => null, 'cargo' => null];
 
-$busca = !empty($eu['cpf']) ? (string) $eu['cpf'] : (string) $eu['name'];
-$consulta = mse_portal_ficha_consultar($busca);
+$consulta = mse_portal_ficha_buscar_pessoa($eu['cpf'] ?? null, (string) $eu['name']);
+if ($consulta['ficha'] !== null && !isset($consulta['campos'])) {
+    $consulta['campos'] = [];
+}
 
 $sessao = mse_tentar_sessao_portal();
 

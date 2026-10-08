@@ -213,3 +213,68 @@ function mse_portal_ficha_consultar(string $termoBusca): array
         'email' => isset($ficha['email']) && $ficha['email'] !== '' ? strtolower(trim((string) $ficha['email'])) : null,
     ]];
 }
+
+/**
+ * Busca a ficha de UMA pessoa tentando, em ordem: CPF só com números, CPF
+ * formatado (000.000.000-00) e nome completo. A API devolve o CPF
+ * formatado e a busca só por números podia não achar ninguém — aí o
+ * cargo e o departamento ficavam vazios mesmo com a ficha existindo.
+ *
+ * Achada pelo nome, a ficha só vale se o nome bater (e, havendo CPF dos
+ * dois lados, o CPF também): senão um homônimo gravaria o cargo de outra
+ * pessoa.
+ *
+ * @return array{ficha: ?array, erro: ?string}
+ */
+function mse_portal_ficha_buscar_pessoa(?string $cpf, ?string $nome): array
+{
+    $digitos = preg_replace('/\D+/', '', (string) $cpf);
+    $nome = trim((string) $nome);
+
+    $tentativas = [];
+    if (strlen($digitos) === 11) {
+        $tentativas[] = ['busca' => $digitos, 'porNome' => false];
+        $tentativas[] = ['busca' => substr($digitos, 0, 3) . '.' . substr($digitos, 3, 3) . '.'
+            . substr($digitos, 6, 3) . '-' . substr($digitos, 9, 2), 'porNome' => false];
+    }
+    if ($nome !== '' && strpos($nome, '@') === false) {
+        $tentativas[] = ['busca' => $nome, 'porNome' => true];
+    }
+
+    $normalizar = static function (string $t): string {
+        $t = mb_strtolower(trim($t), 'UTF-8');
+        $semAcento = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $t);
+        if ($semAcento !== false) {
+            $t = $semAcento;
+        }
+        return trim((string) preg_replace('/\s+/', ' ', (string) preg_replace('/[^a-z0-9\s]/', '', $t)));
+    };
+
+    $ultimoErro = null;
+    foreach ($tentativas as $t) {
+        $r = mse_portal_ficha_consultar($t['busca']);
+        if ($r['erro'] !== null) {
+            $ultimoErro = $r['erro'];
+            // Token ou extensão faltando valem pra qualquer busca: não insiste.
+            if (strpos($r['erro'], 'PORTAL_FICHA_API_TOKEN') !== false || strpos($r['erro'], 'curl') !== false) {
+                break;
+            }
+            continue;
+        }
+        $ficha = $r['ficha'];
+        if ($ficha === null) {
+            continue;
+        }
+        if ($t['porNome']) {
+            if ($normalizar((string) $ficha['nome']) !== $normalizar($nome)) {
+                continue;
+            }
+            $cpfFicha = preg_replace('/\D+/', '', (string) ($ficha['cpf'] ?? ''));
+            if (strlen($digitos) === 11 && strlen((string) $cpfFicha) === 11 && $cpfFicha !== $digitos) {
+                continue;
+            }
+        }
+        return $r;
+    }
+    return ['ficha' => null, 'erro' => $ultimoErro];
+}
