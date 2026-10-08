@@ -19,6 +19,46 @@ require_once __DIR__ . '/PortalFichaApi.php';
  * departamento da pessoa vem do Portal com o mesmo texto da lista.
  */
 
+/**
+ * O campo obras_departamento da ficha mistura departamentos (Programação,
+ * Administrativo...) com NOMES DE OBRAS e contratos. Estes nomes de obra
+ * não são departamento e ficam fora da lista de "obrigatório para".
+ *
+ * Para tirar mais um, é só acrescentar o nome aqui (maiúscula, acento,
+ * espaço e pontuação não importam). Além desta lista, qualquer nome no
+ * formato "CLIENTE - LOCAL" (com " - " no meio) é tratado como obra.
+ */
+const MSE_DEPARTAMENTOS_IGNORADOS = [
+    'SCALA - CAMPINAS-SP - CP068',
+    'PORTO ITAPOÁ',
+    'MICROSOFT - SUMARÉ',
+    'NESTLE - VARGEÃO',
+    'NN - AP - ELETROMECÂNICA',
+    'NN - REFORÇO EST. METÁLICAS',
+    'NN - UB/SP - ELETROMECÂNICA',
+    'LMS - COCAMAR MARINGÁ - GER.',
+    'LMS - FITESA COSMÓPOLIS - GER.',
+    'LMS - FORTGREEN MARINGÁ - GER.',
+    'LMS - FORTGREEN VARGINHA - GER.',
+    'CNPEM - AUDITÓRIO',
+    'CNPEM-FASEADA',
+    'IPEN - FAB. E MONT. CIRCUITO EXP.',
+    'LOTE - 05 - CONSTRUÇÃO',
+];
+
+/** Esse texto é nome de obra (e não departamento)? */
+function mse_departamento_eh_obra(string $nome): bool
+{
+    static $ignorados = null;
+    if ($ignorados === null) {
+        $ignorados = array_flip(array_map(static fn($n) => str_replace(' ', '', mse_departamento_chave($n)), MSE_DEPARTAMENTOS_IGNORADOS));
+    }
+    if (isset($ignorados[str_replace(' ', '', mse_departamento_chave($nome))])) {
+        return true;
+    }
+    return (bool) preg_match('/\s[-–]\s/u', $nome);
+}
+
 /** "Programação" e "PROGRAMACAO" viram a mesma coisa. */
 function mse_departamento_chave(string $nome): string
 {
@@ -65,7 +105,7 @@ function mse_departamentos_portal(PDO $pdo): array
         foreach ($nomes as $n) {
             $n = trim((string) preg_replace('/\s+/', ' ', (string) $n));
             $chave = $n === '' ? '' : mse_departamento_chave($n);
-            if ($chave !== '' && !isset($unicos[$chave])) {
+            if ($chave !== '' && !isset($unicos[$chave]) && !mse_departamento_eh_obra($n)) {
                 $unicos[$chave] = $n;
             }
         }
