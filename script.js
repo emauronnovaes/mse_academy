@@ -4362,9 +4362,17 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     trnEstado.visao = visao;
     document.querySelectorAll('#trnVisao button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.visao === visao)));
     const porPessoa = visao === 'pessoas';
-    document.getElementById('trnTabelaTreinamentos').hidden = porPessoa;
+    const admitidos = visao === 'admitidos';
+    document.getElementById('trnTabelaTreinamentos').hidden = porPessoa || admitidos;
     document.getElementById('trnTabelaPessoas').hidden = !porPessoa;
-    document.getElementById('trnNovoVideo').hidden = porPessoa || trnEstado.modo === 'relatorios';
+    document.getElementById('trnTabelaAdmitidos').hidden = !admitidos;
+    document.getElementById('trnAdmCsv').hidden = !admitidos;
+    document.getElementById('trnAdmPdf').hidden = !admitidos;
+    document.getElementById('trnNovoVideo').hidden = porPessoa || admitidos || trnEstado.modo === 'relatorios';
+    const dica = document.querySelector('#treinamentosTela .trn-dica');
+    if(dica) dica.textContent = admitidos
+      ? 'Em Admitidos, as datas filtram pela data de admissão (sem datas: últimos 30 dias). A busca filtra por nome, CPF, função ou obra.'
+      : 'As datas filtram pelo período em que as pessoas participaram (check-in, conclusão ou última atividade).';
   }
 
 
@@ -4414,6 +4422,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   async function carregarTreinamentos(){
     if(document.getElementById('treinamentosTela').hidden) return;
+    if(trnEstado.visao === 'admitidos') return carregarAdmitidos();
     // Primeira carga sempre pela lista de treinamentos: é ela que traz as
     // opções de Tipo e Norma pros filtros.
     if(trnEstado.visao === 'pessoas' && trnEstado.tipos.length) return carregarPessoas();
@@ -4438,6 +4447,137 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       if(pedido !== trnEstado.pedido) return;
       contagem.textContent = 'Não foi possível carregar: ' + e.message;
       document.getElementById('trnCorpo').innerHTML = '';
+    }
+  }
+
+  // ---------- Admitidos ----------
+  // Quem a API de integração do RH diz que foi admitido no período, cruzado
+  // pelo CPF com quem usa a Academy, e se fez a integração. A API é
+  // consultada no servidor; a busca filtra aqui mesmo, sem nova consulta.
+  const ADM_SITUACAO = {
+    concluiu: 'Fez a integração',
+    em_andamento: 'Em andamento',
+    nao_iniciou: 'Não iniciou',
+    sem_acesso: 'Nunca entrou na Academy',
+  };
+  let admDados = null;
+  let admChaveCarregada = '';
+
+  async function carregarAdmitidos(){
+    const f = trnFiltros();
+    const chave = f.data_de + '|' + f.data_ate;
+    if(admDados && chave === admChaveCarregada) return renderAdmitidos(); // só mudou a busca
+    const pedido = ++trnEstado.pedido;
+    const contagem = document.getElementById('trnContagem');
+    contagem.textContent = 'Consultando a API de integração do RH...';
+    document.getElementById('trnCorpoAdmitidos').innerHTML = '';
+    try{
+      const q = new URLSearchParams();
+      if(f.data_de) q.set('data_de', f.data_de);
+      if(f.data_ate) q.set('data_ate', f.data_ate);
+      const d = await apiFetch('api/admin/treinamentos/admitidos.php?' + q.toString());
+      if(pedido !== trnEstado.pedido) return;
+      admDados = d;
+      admChaveCarregada = chave;
+      renderAdmitidos();
+    }catch(e){
+      if(pedido !== trnEstado.pedido) return;
+      admDados = null;
+      contagem.textContent = 'Não foi possível consultar os admitidos: ' + e.message;
+    }
+  }
+
+  function admFiltrados(){
+    const termo = mse_normalizar(document.getElementById('trnBusca').value);
+    const lista = (admDados && admDados.pessoas) || [];
+    if(!termo) return lista;
+    const digitos = termo.replace(/\D/g, '');
+    return lista.filter(p => mse_normalizar([p.nome, p.funcao, p.obra, p.empresa].join(' ')).includes(termo)
+      || (digitos.length >= 3 && String(p.cpf || '').includes(digitos)));
+  }
+  function mse_normalizar(s){
+    return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  }
+
+  function admSituacaoHtml(p){
+    const rotulo = ADM_SITUACAO[p.situacao] || p.situacao;
+    let sub = '';
+    if(p.situacao === 'concluiu' && p.concluiu_em) sub = 'em ' + trnFmtData(p.concluiu_em);
+    else if(p.situacao === 'em_andamento' || p.situacao === 'nao_iniciou') sub = `${p.concluidas} de ${p.obrigatorias} aulas`;
+    else if(p.situacao === 'sem_acesso') sub = p.cpf ? 'CPF não encontrado na Academy' : 'sem CPF na API do RH';
+    return `<span class="adm-sit adm-sit-${p.situacao}">${esc(rotulo)}${p.situacao === 'concluiu' ? ' ✓' : ''}</span>`
+      + (sub ? `<span class="trn-sub">${esc(sub)}</span>` : '');
+  }
+
+  function admResumoTexto(lista){
+    const n = s => lista.filter(p => p.situacao === s).length;
+    return `${lista.length} ${lista.length === 1 ? 'admitido' : 'admitidos'} · ${n('concluiu')} fizeram a integração · `
+      + `${n('em_andamento')} em andamento · ${n('nao_iniciou')} não iniciaram · ${n('sem_acesso')} nunca entraram`;
+  }
+
+  function renderAdmitidos(){
+    const lista = admFiltrados();
+    const periodo = admDados ? admDados.periodo : null;
+    document.getElementById('trnContagem').textContent = admResumoTexto(lista)
+      + (periodo ? ` · admissão de ${trnFmtData(periodo.de)} a ${trnFmtData(periodo.ate)}` : '');
+    const corpo = document.getElementById('trnCorpoAdmitidos');
+    corpo.innerHTML = '';
+    if(!lista.length){
+      corpo.innerHTML = '<tr><td colspan="6" class="trn-vazio-lista">Nenhum admitido nesse período.</td></tr>';
+      return;
+    }
+    const vazio = '<span class="trn-vazio">—</span>';
+    lista.forEach(p => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${esc(p.nome)}</strong><span class="trn-sub">${esc([p.cpf ? trnFmtCpf(p.cpf) : '', p.vinculo].filter(Boolean).join(' · '))}</span></td>
+        <td>${p.funcao ? esc(p.funcao) : vazio}</td>
+        <td>${p.obra ? esc(p.obra) : vazio}${p.empresa ? `<span class="trn-sub">${esc(p.empresa)}</span>` : ''}</td>
+        <td class="trn-nowrap">${esc(trnFmtData(p.data_admissao))}<span class="trn-sub">há ${p.dias_desde_admissao} ${p.dias_desde_admissao === 1 ? 'dia' : 'dias'}</span></td>
+        <td>${admSituacaoHtml(p)}</td>
+        <td class="trn-nowrap">${p.ultimo_acesso ? esc(trnFmtData(p.ultimo_acesso)) : vazio}</td>
+      `;
+      corpo.appendChild(tr);
+    });
+  }
+
+  function admBaixarCsv(){
+    const lista = admFiltrados();
+    trnBaixarCsv('admitidos-integracao.csv', [
+      ['Nome', 'CPF', 'Vínculo', 'Função', 'Obra', 'Empresa', 'Data de admissão', 'Dias desde a admissão',
+        'Integração', 'Aulas concluídas', 'Aulas obrigatórias', 'Concluiu em', 'Último acesso à Academy'],
+      ...lista.map(p => [p.nome, trnFmtCpf(p.cpf), p.vinculo, p.funcao, p.obra, p.empresa, trnFmtData(p.data_admissao),
+        p.dias_desde_admissao, ADM_SITUACAO[p.situacao] || p.situacao, p.user_id ? p.concluidas : '', p.user_id ? p.obrigatorias : '',
+        trnFmtData(p.concluiu_em), trnFmtData(p.ultimo_acesso)]),
+    ]);
+  }
+
+  async function admBaixarPdf(){
+    const lista = admFiltrados();
+    const btn = document.getElementById('trnAdmPdf');
+    btn.disabled = true;
+    btn.textContent = 'Gerando...';
+    try{
+      const html = trnCabecalhoRelatorioHtml('Admitidos e integração', admResumoTexto(lista)) + `
+        <table class="trn-tabela">
+          <thead><tr><th>Admitido</th><th>Função</th><th>Obra / empresa</th><th>Admissão</th><th>Integração</th><th>Último acesso</th></tr></thead>
+          <tbody>${lista.map(p => `
+            <tr>
+              <td><strong>${esc(p.nome)}</strong><span class="trn-sub">${esc(p.cpf ? trnFmtCpf(p.cpf) : '')}</span></td>
+              <td>${esc(p.funcao || '—')}</td>
+              <td>${esc(p.obra || '—')}${p.empresa ? `<span class="trn-sub">${esc(p.empresa)}</span>` : ''}</td>
+              <td>${esc(trnFmtData(p.data_admissao))}<span class="trn-sub">há ${p.dias_desde_admissao} dias</span></td>
+              <td>${admSituacaoHtml(p)}</td>
+              <td>${esc(p.ultimo_acesso ? trnFmtData(p.ultimo_acesso) : '—')}</td>
+            </tr>`).join('') || '<tr><td colspan="6" class="trn-vazio-lista">Nenhum admitido nesse período.</td></tr>'}
+          </tbody>
+        </table>`;
+      await trnBaixarPdf(html, 'admitidos-integracao.pdf');
+    }catch(e){
+      alert('Não foi possível gerar o PDF: ' + e.message);
+    }finally{
+      btn.disabled = false;
+      btn.textContent = 'Baixar PDF';
     }
   }
 
@@ -5131,6 +5271,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       carregarTreinamentos();
     }));
     document.getElementById('trnNovoVideo').addEventListener('click', openVideoModal);
+    document.getElementById('trnAdmCsv').addEventListener('click', admBaixarCsv);
+    document.getElementById('trnAdmPdf').addEventListener('click', admBaixarPdf);
 
     // Esc fecha a janela de ação primeiro; sem nenhuma aberta, fecha a tela.
     document.addEventListener('keydown', (e) => {

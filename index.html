@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261008e">
+<link rel="stylesheet" href="style.css?v=20261008f">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -303,11 +303,14 @@
           <div class="trn-segmento" id="trnVisao" role="group" aria-label="Ver relatório">
             <button type="button" data-visao="treinamentos" aria-pressed="true">Por treinamento</button>
             <button type="button" data-visao="pessoas" aria-pressed="false">Por pessoa</button>
+            <button type="button" data-visao="admitidos" aria-pressed="false" title="Quem o RH admitiu no período e se fez a integração">Admitidos</button>
           </div>
           <strong id="trnContagem" aria-live="polite">Carregando...</strong>
         </div>
         <div class="trn-resultados-acoes">
           <button type="button" class="trn-btn" id="trnNovoVideo">+ Adicionar vídeo</button>
+          <button type="button" class="trn-btn" id="trnAdmCsv" hidden>Baixar planilha</button>
+          <button type="button" class="trn-btn" id="trnAdmPdf" hidden>Baixar PDF</button>
 
         </div>
       </div>
@@ -331,6 +334,16 @@
             </tr>
           </thead>
           <tbody id="trnCorpoPessoas"></tbody>
+        </table>
+        <!-- Admitidos: vem da API de integração do RH, cruzado pelo CPF -->
+        <table class="trn-tabela" id="trnTabelaAdmitidos" hidden>
+          <thead>
+            <tr>
+              <th>Admitido</th><th>Função</th><th>Obra / empresa</th><th>Admissão</th>
+              <th title="Aulas obrigatórias da trilha de integração">Integração</th><th>Último acesso</th>
+            </tr>
+          </thead>
+          <tbody id="trnCorpoAdmitidos"></tbody>
         </table>
       </div>
     </section>
@@ -668,7 +681,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261008e"></script>
+<script src="script.js?v=20261008f"></script>
 
 </body>
 </html>
