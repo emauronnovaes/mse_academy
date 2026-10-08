@@ -92,6 +92,8 @@ $stmt = $pdo->prepare(
 );
 $stmt->execute([$nome, $primeiroNome, $email, $cpf, $cargo, $areaId]);
 $userId = (int) $pdo->lastInsertId();
+// Departamento como vem do Portal (ficha do RH ou a própria sessão).
+mse_gravar_setor_portal($pdo, $userId, ($ficha['obras_departamento'] ?? null) ?: ($sessao['setor'] ?? null));
 $isFirstLogin = $stmt->rowCount() === 1;
 
 $access = mse_track_access($userId);

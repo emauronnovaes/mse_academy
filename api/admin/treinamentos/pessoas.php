@@ -34,7 +34,7 @@ $presencial = ($_GET['modalidade'] ?? '') === 'presencial';
 $userId = (int) ($_GET['user_id'] ?? 0);
 if ($userId > 0) {
     $stmt = $pdo->prepare(
-        'SELECT u.id, u.name, u.email, u.cpf, u.cargo, a.name AS area_name, u.last_access_date
+        'SELECT u.id, u.name, u.email, u.cpf, u.cargo, ' . mse_sql_departamento($pdo) . ' AS area_name, u.last_access_date
          FROM users u LEFT JOIN areas a ON a.id = u.area_id WHERE u.id = ?'
     );
     $stmt->execute([$userId]);

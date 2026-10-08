@@ -127,7 +127,7 @@ function mse_lista_presenca(PDO $pdo, int $courseId, array $filtros = []): array
     mse_filtro_pessoa_sql($filtros['q'] ?? '', $where, $params);
     mse_filtro_periodo_sql($pdo, $filtros, $where, $params);
 
-    $sql = "SELECT u.id AS user_id, u.name, u.email, u.cpf, u.cargo, a.name AS area_name,
+    $sql = "SELECT u.id AS user_id, u.name, u.email, u.cpf, u.cargo, " . mse_sql_departamento($pdo) . " AS area_name,
                    p.status, p.watched_pct, p.completed_at, p.updated_at,
                    " . ($temCheckin ? 'p.checkin_em, p.confirmacoes_presenca, p.ultima_confirmacao_em' : 'NULL AS checkin_em, 0 AS confirmacoes_presenca, NULL AS ultima_confirmacao_em') . ",
                    " . ($temDuracao ? 'c.duration_seconds' : 'NULL AS duration_seconds') . ",
@@ -288,7 +288,7 @@ function mse_lista_pessoas(PDO $pdo, array $filtros): array
 
     // O filtro de treinamento fica no JOIN, não no WHERE: assim quem não
     // fez nenhum treinamento continua na lista, com zero.
-    $sql = "SELECT u.id, u.name, u.email, u.cpf, u.cargo, a.name AS area_name, u.last_access_date,
+    $sql = "SELECT u.id, u.name, u.email, u.cpf, u.cargo, " . mse_sql_departamento($pdo) . " AS area_name, u.last_access_date,
                    u.distinct_access_count,
                    (SELECT COUNT(*) FROM user_course_progress pi JOIN courses ci ON ci.id = pi.course_id
                      WHERE pi.user_id = u.id AND ci.type = 'onboarding' AND pi.status = 'concluido') AS integracao_concluidos,
@@ -299,7 +299,7 @@ function mse_lista_pessoas(PDO $pdo, array $filtros): array
             LEFT JOIN user_course_progress p ON p.user_id = u.id
             LEFT JOIN courses c ON c.id = p.course_id AND " . implode(' AND ', $cond) . "
             WHERE " . implode(' AND ', $where) . "
-            GROUP BY u.id, u.name, u.email, u.cpf, u.cargo, a.name, u.last_access_date, u.distinct_access_count
+            GROUP BY u.id, u.name, u.email, u.cpf, u.cargo, area_name, u.last_access_date, u.distinct_access_count
             ORDER BY u.name ASC";
     $stmt = $pdo->prepare($sql);
     foreach ($params as $k => $v) {
@@ -475,4 +475,15 @@ function mse_ler_aviso_presenca(PDO $pdo, array $input): array
         return [];
     }
     return ['aviso_presenca' => $ligado ? 1 : 0];
+}
+
+/**
+ * Departamento mostrado nos relatórios: o que vem do Portal (migração 023)
+ * e, sem ele, o departamento da Academy. Espera users = u e areas = a.
+ */
+function mse_sql_departamento(PDO $pdo): string
+{
+    return mse_tem_coluna($pdo, 'users', 'setor_portal')
+        ? "COALESCE(NULLIF(u.setor_portal, ''), a.name)"
+        : 'a.name';
 }

@@ -1,6 +1,12 @@
 <?php
 declare(strict_types=1);
 
+// mse_area_id_por_cargo() usa mse_normalize_text(), que mora em
+// Progress.php. O login (sso.php, portal_session.php) não carregava esse
+// arquivo: com a API de ficha devolvendo cargo e o departamento sem
+// correspondência na Academy, o login morria com erro fatal.
+require_once __DIR__ . '/Progress.php';
+
 /**
  * Cliente da API "ff_infos" do Hub MSE — busca dados oficiais da ficha
  * funcional (RH) de um colaborador, dado o nome ou CPF dele.
@@ -277,4 +283,25 @@ function mse_portal_ficha_buscar_pessoa(?string $cpf, ?string $nome): array
         return $r;
     }
     return ['ficha' => null, 'erro' => $ultimoErro];
+}
+
+/**
+ * Guarda o departamento como vem do Portal (migração 023). Sem a coluna,
+ * ou sem departamento na ficha, não faz nada.
+ */
+function mse_gravar_setor_portal(PDO $pdo, int $userId, ?string $setor): void
+{
+    $setor = trim((string) $setor);
+    if ($setor === '' || $userId <= 0) {
+        return;
+    }
+    $stmt = $pdo->prepare(
+        'SELECT 1 FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+    );
+    $stmt->execute(['users', 'setor_portal']);
+    if ($stmt->fetchColumn() === false) {
+        return;
+    }
+    $pdo->prepare('UPDATE users SET setor_portal = ? WHERE id = ?')->execute([mb_substr($setor, 0, 150), $userId]);
 }

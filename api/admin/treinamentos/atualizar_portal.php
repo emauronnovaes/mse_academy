@@ -92,6 +92,8 @@ foreach ($lote as $u) {
         }
     }
 
+    mse_gravar_setor_portal($pdo, (int) $u['id'], $ficha['obras_departamento'] ?? null);
+
     if ($campos) {
         $valores[] = $u['id'];
         $pdo->prepare('UPDATE users SET ' . implode(', ', $campos) . ' WHERE id = ?')->execute($valores);
