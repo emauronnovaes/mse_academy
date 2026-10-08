@@ -4362,7 +4362,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     trnEstado.visao = visao;
     document.querySelectorAll('#trnVisao button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.visao === visao)));
     const porPessoa = visao === 'pessoas';
-    const admitidos = visao === 'admitidos';
+    const admitidos = visao === 'admitidos' || visao === 'pendentes';
     document.getElementById('trnTabelaTreinamentos').hidden = porPessoa || admitidos;
     document.getElementById('trnTabelaPessoas').hidden = !porPessoa;
     document.getElementById('trnTabelaAdmitidos').hidden = !admitidos;
@@ -4371,7 +4371,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('trnNovoVideo').hidden = porPessoa || admitidos || trnEstado.modo === 'relatorios';
     const dica = document.querySelector('#treinamentosTela .trn-dica');
     if(dica) dica.textContent = admitidos
-      ? 'Em Admitidos, as datas filtram pela data de admissão (sem datas: últimos 30 dias). A busca filtra por nome, CPF, função ou obra.'
+      ? 'Aqui as datas filtram pela data de admissão (sem datas: últimos 30 dias). A busca filtra por nome, CPF, e-mail, cargo, departamento, obra ou gerente.'
       : 'As datas filtram pelo período em que as pessoas participaram (check-in, conclusão ou última atividade).';
   }
 
@@ -4422,7 +4422,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   async function carregarTreinamentos(){
     if(document.getElementById('treinamentosTela').hidden) return;
-    if(trnEstado.visao === 'admitidos') return carregarAdmitidos();
+    if(admEhVisao()) return carregarAdmitidos();
     // Primeira carga sempre pela lista de treinamentos: é ela que traz as
     // opções de Tipo e Norma pros filtros.
     if(trnEstado.visao === 'pessoas' && trnEstado.tipos.length) return carregarPessoas();
@@ -4450,10 +4450,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }
   }
 
-  // ---------- Admitidos ----------
-  // Quem a API de integração do RH diz que foi admitido no período, cruzado
-  // pelo CPF com quem usa a Academy, e se fez a integração. A API é
-  // consultada no servidor; a busca filtra aqui mesmo, sem nova consulta.
+  // ---------- Admitidos e Pendentes ----------
+  // Quem a API de integração do RH diz que foi admitido no período, com os
+  // dados completados pela ficha de funcionários, cruzado com quem usa a
+  // Academy. "Pendentes" mostra só quem ainda não concluiu a integração:
+  // ao terminar as aulas obrigatórias, a pessoa sai da lista sozinha.
+  // A busca filtra aqui mesmo, sem consultar as APIs de novo.
   const ADM_SITUACAO = {
     concluiu: 'Fez a integração',
     em_andamento: 'Em andamento',
@@ -4463,13 +4465,15 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   let admDados = null;
   let admChaveCarregada = '';
 
+  function admEhVisao(){ return trnEstado.visao === 'admitidos' || trnEstado.visao === 'pendentes'; }
+
   async function carregarAdmitidos(){
     const f = trnFiltros();
     const chave = f.data_de + '|' + f.data_ate;
-    if(admDados && chave === admChaveCarregada) return renderAdmitidos(); // só mudou a busca
+    if(admDados && chave === admChaveCarregada) return renderAdmitidos(); // só mudou a busca ou a aba
     const pedido = ++trnEstado.pedido;
     const contagem = document.getElementById('trnContagem');
-    contagem.textContent = 'Consultando a API de integração do RH...';
+    contagem.textContent = 'Consultando o RH e as fichas dos novos contratados...';
     document.getElementById('trnCorpoAdmitidos').innerHTML = '';
     try{
       const q = new URLSearchParams();
@@ -4489,10 +4493,15 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   function admFiltrados(){
     const termo = mse_normalizar(document.getElementById('trnBusca').value);
-    const lista = (admDados && admDados.pessoas) || [];
+    let lista = (admDados && admDados.pessoas) || [];
+    if(trnEstado.visao === 'pendentes'){
+      // Quem está há mais tempo sem fazer aparece primeiro.
+      lista = lista.filter(p => p.situacao !== 'concluiu')
+        .sort((a, b) => b.dias_desde_admissao - a.dias_desde_admissao || a.nome.localeCompare(b.nome));
+    }
     if(!termo) return lista;
     const digitos = termo.replace(/\D/g, '');
-    return lista.filter(p => mse_normalizar([p.nome, p.funcao, p.obra, p.empresa].join(' ')).includes(termo)
+    return lista.filter(p => mse_normalizar([p.nome, p.funcao, p.departamento, p.obra, p.empresa, p.email, p.gerente_nome].join(' ')).includes(termo)
       || (digitos.length >= 3 && String(p.cpf || '').includes(digitos)));
   }
   function mse_normalizar(s){
@@ -4504,12 +4513,15 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     let sub = '';
     if(p.situacao === 'concluiu' && p.concluiu_em) sub = 'em ' + trnFmtData(p.concluiu_em);
     else if(p.situacao === 'em_andamento' || p.situacao === 'nao_iniciou') sub = `${p.concluidas} de ${p.obrigatorias} aulas`;
-    else if(p.situacao === 'sem_acesso') sub = p.cpf ? 'CPF não encontrado na Academy' : 'sem CPF na API do RH';
+    else if(p.situacao === 'sem_acesso') sub = 'ainda não abriu a Academy';
     return `<span class="adm-sit adm-sit-${p.situacao}">${esc(rotulo)}${p.situacao === 'concluiu' ? ' ✓' : ''}</span>`
       + (sub ? `<span class="trn-sub">${esc(sub)}</span>` : '');
   }
 
   function admResumoTexto(lista){
+    if(trnEstado.visao === 'pendentes'){
+      return `${lista.length} ${lista.length === 1 ? 'novo contratado pendente' : 'novos contratados pendentes'} (sem a integração completa)`;
+    }
     const n = s => lista.filter(p => p.situacao === s).length;
     return `${lista.length} ${lista.length === 1 ? 'admitido' : 'admitidos'} · ${n('concluiu')} fizeram a integração · `
       + `${n('em_andamento')} em andamento · ${n('nao_iniciou')} não iniciaram · ${n('sem_acesso')} nunca entraram`;
@@ -4519,60 +4531,115 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const lista = admFiltrados();
     const periodo = admDados ? admDados.periodo : null;
     document.getElementById('trnContagem').textContent = admResumoTexto(lista)
-      + (periodo ? ` · admissão de ${trnFmtData(periodo.de)} a ${trnFmtData(periodo.ate)}` : '');
+      + (periodo ? ` · admissão de ${trnFmtData(periodo.de)} a ${trnFmtData(periodo.ate)}` : '')
+      + (admDados && admDados.ficha_erro ? ` · sem os dados da ficha (${admDados.ficha_erro})` : '');
     const corpo = document.getElementById('trnCorpoAdmitidos');
     corpo.innerHTML = '';
     if(!lista.length){
-      corpo.innerHTML = '<tr><td colspan="6" class="trn-vazio-lista">Nenhum admitido nesse período.</td></tr>';
+      corpo.innerHTML = `<tr><td colspan="7" class="trn-vazio-lista">${trnEstado.visao === 'pendentes'
+        ? 'Nenhum novo contratado pendente: todos os admitidos no período já fizeram a integração.'
+        : 'Nenhum admitido nesse período.'}</td></tr>`;
       return;
     }
     const vazio = '<span class="trn-vazio">—</span>';
     lista.forEach(p => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><strong>${esc(p.nome)}</strong><span class="trn-sub">${esc([p.cpf ? trnFmtCpf(p.cpf) : '', p.vinculo].filter(Boolean).join(' · '))}</span></td>
-        <td>${p.funcao ? esc(p.funcao) : vazio}</td>
+        <td><strong>${esc(p.nome)}</strong><span class="trn-sub">${esc([p.cpf ? trnFmtCpf(p.cpf) : '', p.vinculo].filter(Boolean).join(' · '))}</span>${p.email ? `<span class="trn-sub">${esc(p.email)}</span>` : ''}</td>
+        <td>${p.funcao ? esc(p.funcao) : vazio}${p.departamento ? `<span class="trn-sub">${esc(p.departamento)}</span>` : ''}</td>
         <td>${p.obra ? esc(p.obra) : vazio}${p.empresa ? `<span class="trn-sub">${esc(p.empresa)}</span>` : ''}</td>
+        <td>${p.gerente_nome ? esc(p.gerente_nome) : vazio}${p.gerente_email ? `<span class="trn-sub">${esc(p.gerente_email)}</span>` : ''}</td>
         <td class="trn-nowrap">${esc(trnFmtData(p.data_admissao))}<span class="trn-sub">há ${p.dias_desde_admissao} ${p.dias_desde_admissao === 1 ? 'dia' : 'dias'}</span></td>
         <td>${admSituacaoHtml(p)}</td>
-        <td class="trn-nowrap">${p.ultimo_acesso ? esc(trnFmtData(p.ultimo_acesso)) : vazio}</td>
+        <td><button type="button" class="aulas-btn">Ver dados</button></td>
       `;
+      tr.querySelector('button').addEventListener('click', () => admVerDados(p));
       corpo.appendChild(tr);
     });
   }
 
+  // Nomes amigáveis dos campos da ficha; campo desconhecido aparece com o
+  // nome dele mesmo, sem "_".
+  const ADM_ROTULOS = {
+    nome: 'Nome', cpf: 'CPF', email: 'E-mail', telefone: 'Telefone',
+    funcao: 'Cargo (função)', obras_departamento: 'Departamento', nome_obra: 'Obra', centro_custo: 'Centro de custo',
+    gerente_nome: 'Gerente', gerente_email: 'E-mail do gerente',
+    empresa_contratante: 'Empresa contratante', tipo_contratacao: 'Tipo de contratação', data_admissao: 'Data de admissão',
+    mse_sede: 'MSE sede', mobilizacao: 'Mobilização', desmobilizacao: 'Desmobilização', local_alojado: 'Local alojado',
+    municipio: 'Município', uf: 'UF', data_nascimento: 'Data de nascimento', sexo: 'Sexo', doc_pj: 'Documento PJ',
+  };
+  function admValorCampo(k, v){
+    if(v == null || v === '') return '—';
+    if(typeof v === 'object') return Object.values(v).filter(x => x != null && typeof x !== 'object').join(' · ') || '—';
+    if(k === 'cpf') return trnFmtCpf(v);
+    if(/^\d{4}-\d{2}-\d{2}/.test(String(v))) return trnFmtData(String(v));
+    return String(v);
+  }
+
+  function admVerDados(p){
+    const corpo = abrirDialogoAula(p.nome, 'Novo contratado · admissão em ' + trnFmtData(p.data_admissao), true);
+    const academy = [
+      ['Integração', ADM_SITUACAO[p.situacao] || p.situacao],
+      ['Aulas obrigatórias', p.user_id ? `${p.concluidas} de ${p.obrigatorias} concluídas` : '—'],
+      ['Concluiu em', p.concluiu_em ? trnFmtDataHora(p.concluiu_em) : '—'],
+      ['Último acesso', p.ultimo_acesso ? trnFmtData(p.ultimo_acesso) : 'Nunca entrou'],
+      ['Identificado na Academy por', { cpf: 'CPF', email: 'E-mail', nome: 'Nome' }[p.cruzou_por] || 'Não identificado'],
+      ['Dias desde a admissão', String(p.dias_desde_admissao)],
+    ];
+    const rh = [
+      ['Data de admissão', trnFmtData(p.data_admissao)], ['Vínculo', p.vinculo || '—'],
+      ['Função (RH)', p.funcao || '—'], ['Obra', p.obra || '—'], ['Empresa', p.empresa || '—'],
+    ];
+    // Campos conhecidos na ordem de ADM_ROTULOS (nome, CPF, e-mail...); os outros, depois.
+    const ordem = Object.keys(ADM_ROTULOS);
+    const posicao = k => (ordem.indexOf(k) + 1) || 999;
+    const ficha = p.ficha ? Object.entries(p.ficha).sort(([a], [b]) => posicao(a) - posicao(b)) : [];
+    const lista = itens => `<dl class="rel-dados trn-ficha-dados">${itens.map(([r, v]) => `<div><dt>${esc(r)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`;
+    corpo.innerHTML = `
+      <h4 class="adm-secao">Integração na Academy</h4>
+      ${lista(academy)}
+      <h4 class="adm-secao">Ficha de funcionário</h4>
+      ${ficha.length
+        ? lista(ficha.map(([k, v]) => [ADM_ROTULOS[k] || k.replace(/_/g, ' '), admValorCampo(k, v)]))
+        : `<p class="trn-vazio-lista">${esc(admDados && admDados.ficha_erro ? 'Não consegui consultar a ficha: ' + admDados.ficha_erro : 'Ficha não encontrada para essa pessoa.')}</p>`}
+      <h4 class="adm-secao">Integração do RH</h4>
+      ${lista(rh)}
+    `;
+  }
+
   function admBaixarCsv(){
     const lista = admFiltrados();
-    trnBaixarCsv('admitidos-integracao.csv', [
-      ['Nome', 'CPF', 'Vínculo', 'Função', 'Obra', 'Empresa', 'Data de admissão', 'Dias desde a admissão',
-        'Integração', 'Aulas concluídas', 'Aulas obrigatórias', 'Concluiu em', 'Último acesso à Academy'],
-      ...lista.map(p => [p.nome, trnFmtCpf(p.cpf), p.vinculo, p.funcao, p.obra, p.empresa, trnFmtData(p.data_admissao),
-        p.dias_desde_admissao, ADM_SITUACAO[p.situacao] || p.situacao, p.user_id ? p.concluidas : '', p.user_id ? p.obrigatorias : '',
-        trnFmtData(p.concluiu_em), trnFmtData(p.ultimo_acesso)]),
+    trnBaixarCsv(trnEstado.visao === 'pendentes' ? 'novos-contratados-pendentes.csv' : 'admitidos-integracao.csv', [
+      ['Nome', 'CPF', 'E-mail', 'Telefone', 'Vínculo', 'Cargo', 'Departamento', 'Obra', 'Empresa', 'Gerente', 'E-mail do gerente',
+        'Data de admissão', 'Dias desde a admissão', 'Integração', 'Aulas concluídas', 'Aulas obrigatórias', 'Concluiu em', 'Último acesso à Academy'],
+      ...lista.map(p => [p.nome, trnFmtCpf(p.cpf), p.email, p.telefone, p.vinculo, p.funcao, p.departamento, p.obra, p.empresa,
+        p.gerente_nome, p.gerente_email, trnFmtData(p.data_admissao), p.dias_desde_admissao, ADM_SITUACAO[p.situacao] || p.situacao,
+        p.user_id ? p.concluidas : '', p.user_id ? p.obrigatorias : '', trnFmtData(p.concluiu_em), trnFmtData(p.ultimo_acesso)]),
     ]);
   }
 
   async function admBaixarPdf(){
     const lista = admFiltrados();
+    const pendentes = trnEstado.visao === 'pendentes';
     const btn = document.getElementById('trnAdmPdf');
     btn.disabled = true;
     btn.textContent = 'Gerando...';
     try{
-      const html = trnCabecalhoRelatorioHtml('Admitidos e integração', admResumoTexto(lista)) + `
+      const html = trnCabecalhoRelatorioHtml(pendentes ? 'Novos contratados pendentes de integração' : 'Admitidos e integração', admResumoTexto(lista)) + `
         <table class="trn-tabela">
-          <thead><tr><th>Admitido</th><th>Função</th><th>Obra / empresa</th><th>Admissão</th><th>Integração</th><th>Último acesso</th></tr></thead>
+          <thead><tr><th>Novo contratado</th><th>Cargo / departamento</th><th>Obra / empresa</th><th>Gerente</th><th>Admissão</th><th>Integração</th></tr></thead>
           <tbody>${lista.map(p => `
             <tr>
-              <td><strong>${esc(p.nome)}</strong><span class="trn-sub">${esc(p.cpf ? trnFmtCpf(p.cpf) : '')}</span></td>
-              <td>${esc(p.funcao || '—')}</td>
-              <td>${esc(p.obra || '—')}${p.empresa ? `<span class="trn-sub">${esc(p.empresa)}</span>` : ''}</td>
+              <td><strong>${esc(p.nome)}</strong><span class="trn-sub">${esc(p.cpf ? trnFmtCpf(p.cpf) : '')}</span><span class="trn-sub">${esc(p.email || '')}</span></td>
+              <td>${esc(p.funcao || '—')}<span class="trn-sub">${esc(p.departamento || '')}</span></td>
+              <td>${esc(p.obra || '—')}<span class="trn-sub">${esc(p.empresa || '')}</span></td>
+              <td>${esc(p.gerente_nome || '—')}<span class="trn-sub">${esc(p.gerente_email || '')}</span></td>
               <td>${esc(trnFmtData(p.data_admissao))}<span class="trn-sub">há ${p.dias_desde_admissao} dias</span></td>
               <td>${admSituacaoHtml(p)}</td>
-              <td>${esc(p.ultimo_acesso ? trnFmtData(p.ultimo_acesso) : '—')}</td>
-            </tr>`).join('') || '<tr><td colspan="6" class="trn-vazio-lista">Nenhum admitido nesse período.</td></tr>'}
+            </tr>`).join('') || `<tr><td colspan="6" class="trn-vazio-lista">${pendentes ? 'Nenhum novo contratado pendente.' : 'Nenhum admitido nesse período.'}</td></tr>`}
           </tbody>
         </table>`;
-      await trnBaixarPdf(html, 'admitidos-integracao.pdf');
+      await trnBaixarPdf(html, pendentes ? 'novos-contratados-pendentes.pdf' : 'admitidos-integracao.pdf');
     }catch(e){
       alert('Não foi possível gerar o PDF: ' + e.message);
     }finally{

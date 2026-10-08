@@ -2089,3 +2089,5 @@
   .adm-sit-em_andamento{ background:rgba(240,185,11,0.18); color:#6b4e00; }
   .adm-sit-nao_iniciou, .adm-sit-sem_acesso{ background:rgba(196,33,44,0.1); color:var(--red-dark); }
   .rel-pdf .adm-sit{ padding:0; background:none; }
+  .adm-secao{ margin:18px 0 8px; font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--steel); }
+  .adm-secao:first-child{ margin-top:0; }

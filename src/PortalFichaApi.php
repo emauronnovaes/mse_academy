@@ -180,6 +180,18 @@ function mse_portal_ficha_consultar(string $termoBusca): array
     $curlError = curl_error($ch);
     curl_close($ch);
 
+    return mse_portal_ficha_interpretar($response, (int) $httpCode, $curlError);
+}
+
+/**
+ * Lê a resposta da API de ficha (uma consulta). Além dos campos usados no
+ * login, devolve em "bruta" a ficha inteira, como veio — é o que a tela de
+ * novos contratados mostra em "Ver dados".
+ *
+ * @param string|false $response
+ */
+function mse_portal_ficha_interpretar($response, int $httpCode, string $curlError): array
+{
     if ($response === false || $curlError !== '') {
         return ['ficha' => null, 'erro' => 'Falha de rede ao consultar a API do Portal: ' . $curlError];
     }
@@ -207,7 +219,7 @@ function mse_portal_ficha_consultar(string $termoBusca): array
         }
     }
 
-    return ['erro' => null, 'campos' => array_keys($ficha), 'ficha' => [
+    return ['erro' => null, 'campos' => array_keys($ficha), 'bruta' => $ficha, 'ficha' => [
         'nome' => (string) ($ficha['nome'] ?? ''),
         'cpf' => isset($ficha['cpf']) ? preg_replace('/\D/', '', (string) $ficha['cpf']) : null,
         // "funcao" na ficha é o cargo oficial do RH — mais confiável que
@@ -234,9 +246,29 @@ function mse_portal_ficha_consultar(string $termoBusca): array
  */
 function mse_portal_ficha_buscar_pessoa(?string $cpf, ?string $nome): array
 {
+    $ultimoErro = null;
+    foreach (mse_portal_ficha_tentativas($cpf, $nome) as $t) {
+        $r = mse_portal_ficha_consultar($t['busca']);
+        if ($r['erro'] !== null) {
+            $ultimoErro = $r['erro'];
+            // Token ou extensão faltando valem pra qualquer busca: não insiste.
+            if (mse_portal_ficha_erro_geral($r['erro'])) {
+                break;
+            }
+            continue;
+        }
+        if ($r['ficha'] !== null && mse_portal_ficha_confere($t, $r['ficha'], $cpf, $nome)) {
+            return $r;
+        }
+    }
+    return ['ficha' => null, 'erro' => $ultimoErro];
+}
+
+/** As buscas a tentar, em ordem: CPF só com números, CPF formatado, nome. */
+function mse_portal_ficha_tentativas(?string $cpf, ?string $nome): array
+{
     $digitos = preg_replace('/\D+/', '', (string) $cpf);
     $nome = trim((string) $nome);
-
     $tentativas = [];
     if (strlen($digitos) === 11) {
         $tentativas[] = ['busca' => $digitos, 'porNome' => false];
@@ -246,43 +278,150 @@ function mse_portal_ficha_buscar_pessoa(?string $cpf, ?string $nome): array
     if ($nome !== '' && strpos($nome, '@') === false) {
         $tentativas[] = ['busca' => $nome, 'porNome' => true];
     }
+    return $tentativas;
+}
 
-    $normalizar = static function (string $t): string {
-        $t = mb_strtolower(trim($t), 'UTF-8');
-        $semAcento = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $t);
-        if ($semAcento !== false) {
-            $t = $semAcento;
-        }
-        return trim((string) preg_replace('/\s+/', ' ', (string) preg_replace('/[^a-z0-9\s]/', '', $t)));
-    };
+/** Erro que vale pra qualquer busca (sem token, sem curl): não adianta insistir. */
+function mse_portal_ficha_erro_geral(string $erro): bool
+{
+    return strpos($erro, 'PORTAL_FICHA_API_TOKEN') !== false || strpos($erro, 'curl') !== false;
+}
 
-    $ultimoErro = null;
-    foreach ($tentativas as $t) {
-        $r = mse_portal_ficha_consultar($t['busca']);
-        if ($r['erro'] !== null) {
-            $ultimoErro = $r['erro'];
-            // Token ou extensão faltando valem pra qualquer busca: não insiste.
-            if (strpos($r['erro'], 'PORTAL_FICHA_API_TOKEN') !== false || strpos($r['erro'], 'curl') !== false) {
-                break;
+function mse_portal_ficha_normalizar_nome(string $t): string
+{
+    $t = mb_strtolower(trim($t), 'UTF-8');
+    $semAcento = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $t);
+    if ($semAcento !== false) {
+        $t = $semAcento;
+    }
+    return trim((string) preg_replace('/\s+/', ' ', (string) preg_replace('/[^a-z0-9\s]/', '', $t)));
+}
+
+/**
+ * Achada pelo nome, a ficha só vale se o nome bater (e, havendo CPF dos
+ * dois lados, o CPF também): senão um homônimo traria os dados de outro.
+ */
+function mse_portal_ficha_confere(array $tentativa, array $ficha, ?string $cpf, ?string $nome): bool
+{
+    if (!$tentativa['porNome']) {
+        return true;
+    }
+    if (mse_portal_ficha_normalizar_nome((string) $ficha['nome']) !== mse_portal_ficha_normalizar_nome((string) $nome)) {
+        return false;
+    }
+    $digitos = preg_replace('/\D+/', '', (string) $cpf);
+    $cpfFicha = preg_replace('/\D+/', '', (string) ($ficha['cpf'] ?? ''));
+    return !(strlen($digitos) === 11 && strlen((string) $cpfFicha) === 11 && $cpfFicha !== $digitos);
+}
+
+/**
+ * A mesma busca de mse_portal_ficha_buscar_pessoa para muitas pessoas de
+ * uma vez — usada no relatório de novos contratados. As consultas vão em
+ * paralelo (até 8 ao mesmo tempo), em rodadas: quem não foi achado pelo
+ * CPF só com números tenta o formatado, depois o nome.
+ *
+ * @param array<string, array{cpf: ?string, nome: ?string}> $pessoas  chave => quem buscar
+ * @return array<string, array{ficha: ?array, bruta: ?array, erro: ?string}>  mesma chave
+ */
+function mse_portal_ficha_buscar_varias(array $pessoas): array
+{
+    $resultado = [];
+    $filas = [];
+    foreach ($pessoas as $chave => $p) {
+        $resultado[$chave] = ['ficha' => null, 'bruta' => null, 'erro' => null];
+        $filas[$chave] = mse_portal_ficha_tentativas($p['cpf'] ?? null, $p['nome'] ?? null);
+    }
+
+    while (true) {
+        $rodada = [];
+        foreach ($filas as $chave => $fila) {
+            if ($fila) {
+                $rodada[$chave] = array_shift($filas[$chave]);
+            } else {
+                unset($filas[$chave]);
             }
-            continue;
         }
-        $ficha = $r['ficha'];
-        if ($ficha === null) {
-            continue;
+        if (!$rodada) {
+            break;
         }
-        if ($t['porNome']) {
-            if ($normalizar((string) $ficha['nome']) !== $normalizar($nome)) {
+        $respostas = mse_portal_ficha_consultar_varios(array_map(static fn($t) => $t['busca'], $rodada));
+        foreach ($rodada as $chave => $t) {
+            $r = $respostas[$chave];
+            if ($r['erro'] !== null) {
+                $resultado[$chave]['erro'] = $r['erro'];
+                if (mse_portal_ficha_erro_geral($r['erro'])) {
+                    foreach ($resultado as &$x) {
+                        $x['erro'] = $x['ficha'] === null ? $r['erro'] : $x['erro'];
+                    }
+                    unset($x);
+                    return $resultado;
+                }
                 continue;
             }
-            $cpfFicha = preg_replace('/\D+/', '', (string) ($ficha['cpf'] ?? ''));
-            if (strlen($digitos) === 11 && strlen((string) $cpfFicha) === 11 && $cpfFicha !== $digitos) {
-                continue;
+            if ($r['ficha'] !== null && mse_portal_ficha_confere($t, $r['ficha'], $pessoas[$chave]['cpf'] ?? null, $pessoas[$chave]['nome'] ?? null)) {
+                $resultado[$chave] = ['ficha' => $r['ficha'], 'bruta' => $r['bruta'] ?? null, 'erro' => null];
+                unset($filas[$chave]);
             }
+        }
+    }
+    return $resultado;
+}
+
+/**
+ * Várias consultas à API de ficha ao mesmo tempo (curl_multi), no máximo 8
+ * abertas por vez pra não sobrecarregar a API.
+ *
+ * @param array<string, string> $termos  chave => termo de busca
+ * @return array<string, array>  chave => mesmo formato de mse_portal_ficha_consultar
+ */
+function mse_portal_ficha_consultar_varios(array $termos): array
+{
+    if (!function_exists('curl_multi_init')) {
+        $r = [];
+        foreach ($termos as $chave => $termo) {
+            $r[$chave] = mse_portal_ficha_consultar($termo);
         }
         return $r;
     }
-    return ['ficha' => null, 'erro' => $ultimoErro];
+    $baseUrl = rtrim(mse_env('PORTAL_FICHA_API_BASE', 'https://portalmse.com.br/microservices/hub_mse/api_ficha'), '/');
+    $token = mse_env('PORTAL_FICHA_API_TOKEN', '');
+    if ($token === '') {
+        return array_map(static fn() => ['ficha' => null, 'erro' => 'PORTAL_FICHA_API_TOKEN não está configurado no .env do servidor.'], $termos);
+    }
+
+    $resultado = [];
+    foreach (array_chunk($termos, 8, true) as $lote) {
+        $multi = curl_multi_init();
+        $handles = [];
+        foreach ($lote as $chave => $termo) {
+            $ch = curl_init($baseUrl . '/v1/ff_infos?' . http_build_query(['busca' => $termo]));
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 10,
+                CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $token, 'Accept: application/json'],
+            ]);
+            curl_multi_add_handle($multi, $ch);
+            $handles[$chave] = $ch;
+        }
+        do {
+            $status = curl_multi_exec($multi, $ativos);
+            if ($ativos) {
+                curl_multi_select($multi, 1.0);
+            }
+        } while ($ativos && $status === CURLM_OK);
+
+        foreach ($handles as $chave => $ch) {
+            $resultado[$chave] = mse_portal_ficha_interpretar(
+                curl_multi_getcontent($ch) ?? false,
+                (int) curl_getinfo($ch, CURLINFO_HTTP_CODE),
+                curl_error($ch)
+            );
+            curl_multi_remove_handle($multi, $ch);
+            curl_close($ch);
+        }
+        curl_multi_close($multi);
+    }
+    return $resultado;
 }
 
 /**

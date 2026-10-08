@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261008f">
+<link rel="stylesheet" href="style.css?v=20261008g">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -304,6 +304,7 @@
             <button type="button" data-visao="treinamentos" aria-pressed="true">Por treinamento</button>
             <button type="button" data-visao="pessoas" aria-pressed="false">Por pessoa</button>
             <button type="button" data-visao="admitidos" aria-pressed="false" title="Quem o RH admitiu no período e se fez a integração">Admitidos</button>
+            <button type="button" data-visao="pendentes" aria-pressed="false" title="Novos contratados que ainda não fizeram a integração">Pendentes</button>
           </div>
           <strong id="trnContagem" aria-live="polite">Carregando...</strong>
         </div>
@@ -339,8 +340,8 @@
         <table class="trn-tabela" id="trnTabelaAdmitidos" hidden>
           <thead>
             <tr>
-              <th>Admitido</th><th>Função</th><th>Obra / empresa</th><th>Admissão</th>
-              <th title="Aulas obrigatórias da trilha de integração">Integração</th><th>Último acesso</th>
+              <th>Novo contratado</th><th>Cargo / departamento</th><th>Obra / empresa</th><th>Gerente</th><th>Admissão</th>
+              <th title="Aulas obrigatórias da trilha de integração">Integração</th><th></th>
             </tr>
           </thead>
           <tbody id="trnCorpoAdmitidos"></tbody>
@@ -681,7 +682,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261008f"></script>
+<script src="script.js?v=20261008g"></script>
 
 </body>
 </html>
