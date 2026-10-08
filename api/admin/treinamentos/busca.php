@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../../src/Cors.php';
 require_once __DIR__ . '/../../../src/Response.php';
 require_once __DIR__ . '/../../../src/Auth.php';
 require_once __DIR__ . '/../../../src/Treinamentos.php';
+require_once __DIR__ . '/../../../src/Aprovacao.php';
 
 /**
  * Busca de treinamentos (tela de auditoria, que substituiu "Gerenciar aulas").
@@ -72,6 +73,11 @@ if ($norma !== '') {
     }
     $where[] = 'FIND_IN_SET(:norma, c.normas) > 0';
     $params[':norma'] = $norma;
+}
+
+$soAprovados = mse_sql_so_aprovados($pdo);
+if ($soAprovados !== '') {
+    $where[] = $soAprovados;
 }
 
 $temAviso = mse_tem_coluna($pdo, 'courses', 'aviso_presenca');

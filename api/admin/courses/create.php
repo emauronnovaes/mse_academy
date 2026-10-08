@@ -5,9 +5,13 @@ require_once __DIR__ . '/../../../src/Cors.php';
 require_once __DIR__ . '/../../../src/Response.php';
 require_once __DIR__ . '/../../../src/Auth.php';
 require_once __DIR__ . '/../../../src/Treinamentos.php';
+require_once __DIR__ . '/../../../src/Aprovacao.php';
 
 mse_cors();
-mse_require_admin(); // só quem tem role='admin' passa daqui
+// Qualquer pessoa logada pode cadastrar. Admin publica na hora; os demais
+// mandam para aprovação (o vídeo fica escondido até um admin aprovar).
+$usuario = mse_require_auth();
+$paraAprovacao = $usuario['role'] !== 'admin';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     mse_error('Método não permitido.', 405);
@@ -71,12 +75,20 @@ if ($videoSource === 'youtube') {
         mse_error('Informe video_key (o caminho devolvido pelo upload em /api/admin/media/upload.php).', 422);
     }
     $youtubeId = null; // coluna é NULLABLE desde a migração 008
+    if ($paraAprovacao && !mse_str_starts_with(ltrim($videoKey, '/'), MSE_PASTA_SUGESTOES)) {
+        mse_error('Arquivo de vídeo inválido para envio.', 422);
+    }
 }
 if ($durationMinutes < 0 || $durationMinutes > 600) {
     mse_error('duration_minutes fora do intervalo esperado (0 a 600).', 422);
 }
 
 $pdo = mse_db();
+
+// Antes da transação: criar coluna (ALTER) encerraria a transação aberta.
+if ($paraAprovacao && !mse_garantir_colunas_aprovacao($pdo)) {
+    mse_error('Este servidor ainda não aceita envio para aprovação. Falta rodar a migração 024 no banco (migrations/024_aprovacao_de_videos.sql).', 409);
+}
 
 $areaId = null;
 if ($areaSlug !== '') {
@@ -160,17 +172,23 @@ try {
     if ($temNovas) {
         $stmt = $pdo->prepare(
             'INSERT INTO courses (area_id, type, grupo_sorteio, obrigatorio, title, description, video_source, youtube_id, video_key, duration_minutes, order_index, is_published)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
-        $stmt->execute([$areaId, $type, $grupoSorteio ?: null, $obrigatorio, $title, $description, $videoSource, $youtubeId, $videoKey ?: null, $durationMinutes, $orderIndex]);
+        $stmt->execute([$areaId, $type, $grupoSorteio ?: null, $obrigatorio, $title, $description, $videoSource, $youtubeId, $videoKey ?: null, $durationMinutes, $orderIndex, $paraAprovacao ? 0 : 1]);
     } else {
         $stmt = $pdo->prepare(
             'INSERT INTO courses (area_id, type, title, description, video_source, youtube_id, video_key, duration_minutes, order_index, is_published)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
-        $stmt->execute([$areaId, $type, $title, $description, $videoSource, $youtubeId, $videoKey ?: null, $durationMinutes, $orderIndex]);
+        $stmt->execute([$areaId, $type, $title, $description, $videoSource, $youtubeId, $videoKey ?: null, $durationMinutes, $orderIndex, $paraAprovacao ? 0 : 1]);
     }
     $courseId = (int) $pdo->lastInsertId();
+
+    if ($paraAprovacao) {
+        $pdo->prepare(
+            "UPDATE courses SET aprovacao_status = 'pendente', enviado_por = ?, enviado_em = NOW() WHERE id = ?"
+        )->execute([(int) $usuario['id'], $courseId]);
+    }
 
     if ($camposAuditoria) {
         $stmt = $pdo->prepare(
@@ -209,4 +227,6 @@ mse_json([
         'order_index' => $orderIndex,
     ],
     'quiz_question_id' => $questionId,
+    // true = ficou esperando aprovação; falta chamar api/aprovacao/notificar.php
+    'pendente_aprovacao' => $paraAprovacao,
 ], 201);

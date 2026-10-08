@@ -5,9 +5,12 @@ require_once __DIR__ . '/../../../src/Cors.php';
 require_once __DIR__ . '/../../../src/Response.php';
 require_once __DIR__ . '/../../../src/Auth.php';
 require_once __DIR__ . '/../../../src/Progress.php';
+require_once __DIR__ . '/../../../src/Aprovacao.php';
 
 mse_cors();
-mse_require_admin();
+// Admin, ou quem enviou o vídeo enquanto ele espera aprovação (conferido
+// logo abaixo, quando o course_id é conhecido).
+$usuario = mse_require_auth();
 
 /**
  * As perguntas de uma aula, depois que ela já existe.
@@ -65,6 +68,7 @@ $courseId = $metodo === 'GET'
 if ($courseId <= 0) {
     mse_error('Informe course_id.', 422);
 }
+mse_exigir_admin_ou_autor($pdo, $usuario, $courseId);
 
 $temMomento = mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg');
 $temDuracao = mse_tem_coluna($pdo, 'courses', 'duration_seconds');

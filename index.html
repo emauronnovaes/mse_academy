@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261008c">
+<link rel="stylesheet" href="style.css?v=20261008d">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -60,6 +60,11 @@
     </button>
     <button type="button" id="btnDepartamentos" class="btn-add-people btn-departamentos" hidden>
       <i class="fa-solid fa-folder-open" aria-hidden="true"></i> Departamentos
+    </button>
+    <!-- Vídeos enviados por colaboradores esperando aprovação -->
+    <button type="button" id="btnAprovacoes" class="btn-add-people btn-aprovacoes" hidden>
+      <i class="fa-solid fa-check" aria-hidden="true"></i> Aprovações
+      <span class="aprov-badge" id="aprovBadge" hidden>0</span>
     </button>
     <button type="button" id="btnMinimizarAdmin" class="btn-minimizar-admin" title="Minimizar" aria-label="Minimizar barra de admin">
       <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
@@ -226,6 +231,32 @@
     </button>
   </div>
   <div class="uploads-painel-lista" id="uploadsPainelLista"></div>
+</div>
+
+<!-- Aprovações — vídeos enviados por quem não é admin. Abre pelo botão
+     da barra de admin ou pelo link do e-mail (?aprovar=ID). -->
+<div class="trn-tela" id="aprovacaoTela" hidden role="dialog" aria-modal="true" aria-labelledby="aprovTitulo">
+  <div class="trn-topo">
+    <span class="trn-marca"><span class="trn-logo" aria-hidden="true">mse</span> MSE Academy</span>
+    <span class="trn-topo-sub">Vídeos enviados pelos colaboradores</span>
+    <button type="button" class="trn-fechar" id="aprovFechar" aria-label="Fechar aprovações">
+      <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
+    </button>
+  </div>
+  <div class="trn-conteudo">
+    <div class="trn-cabecalho">
+      <div>
+        <h2 id="aprovTitulo">Aprovações</h2>
+        <p>Assista, confira as perguntas e aprove ou recuse. O vídeo só aparece para os colaboradores depois de aprovado.</p>
+      </div>
+      <button type="button" class="trn-btn" id="aprovTestarEmail">Testar e-mail</button>
+    </div>
+    <p class="aprov-aviso" id="aprovAvisoEmail" hidden></p>
+    <div class="aprov-grade">
+      <aside class="trn-card aprov-lista" id="aprovLista" aria-label="Esperando aprovação"></aside>
+      <section class="trn-card aprov-detalhe" id="aprovDetalhe"></section>
+    </div>
+  </div>
 </div>
 
 <!-- Busca de treinamentos — substituiu a lista de "Gerenciar aulas".
@@ -401,6 +432,10 @@
     <div class="welcome-eyebrow" id="greetingTime">Bom dia</div>
     <h1 id="greetingName">Bem-vindo, <span>Colaborador</span>.</h1>
     <p id="welcomeSub">Vamos começar pela sua integração ao Portal MSE.</p>
+    <!-- Para quem não é admin: o vídeo vai para aprovação antes de aparecer -->
+    <button type="button" id="btnEnviarVideo" class="btn-enviar-video" hidden>
+      <i class="fa-solid fa-circle-play" aria-hidden="true"></i> Adicionar vídeo
+    </button>
   </div>
 </section>
 
@@ -633,7 +668,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261008c"></script>
+<script src="script.js?v=20261008d"></script>
 
 </body>
 </html>

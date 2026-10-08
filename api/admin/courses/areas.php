@@ -4,9 +4,16 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../../src/Cors.php';
 require_once __DIR__ . '/../../../src/Response.php';
 require_once __DIR__ . '/../../../src/Auth.php';
+require_once __DIR__ . '/../../../src/Aprovacao.php';
 
 mse_cors();
-mse_require_admin();
+// Admin, ou quem enviou o vídeo enquanto ele espera aprovação.
+$usuario = mse_require_auth();
+mse_exigir_admin_ou_autor(
+    mse_db(),
+    $usuario,
+    (int) ($_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['course_id'] ?? 0) : (mse_input()['course_id'] ?? 0))
+);
 
 /**
  * Define para quais áreas um curso é obrigatório.

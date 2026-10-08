@@ -3289,6 +3289,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       areaWrap.style.display = '';
       hint.textContent = 'O curso já fica disponível pra quem tiver acesso àquela área assim que salvar.';
     }
+    if(vmParaAprovacao){
+      hint.textContent = 'Seu vídeo vai para aprovação: um administrador assiste e libera. '
+        + (type === 'onboarding' ? 'Depois disso aparece na integração de todo mundo.' : 'Depois disso aparece pra quem tiver acesso àquela área.');
+    }
   }
 
   function atualizarVisibilidadeOrigemVideo(){
@@ -3644,7 +3648,36 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     });
   }
 
+  // Quem não é admin usa o mesmo formulário, mas o vídeo vai para
+  // aprovação: fica escondido até um admin aprovar (tela Aprovações).
+  let vmParaAprovacao = false;
+  function vmTextoBotao(){
+    return vmParaAprovacao ? 'Enviar para aprovação' : 'Adicionar vídeo';
+  }
+
+  // E-mail para os admins, depois de tudo salvo (vídeo, perguntas e
+  // departamentos). Se falhar, o vídeo continua na fila da tela Aprovações.
+  async function vmAvisarAdmins(courseId){
+    try{
+      const r = await apiFetch('api/aprovacao/notificar.php', {
+        method: 'POST', body: JSON.stringify({ course_id: courseId }),
+      });
+      return !!r.email_enviado;
+    }catch(e){
+      console.warn('[aprovacao] aviso por e-mail falhou:', e.message);
+      return false;
+    }
+  }
+  function vmTextoEnviado(titulo, avisou){
+    return `"${titulo}" foi enviado para aprovação. `
+      + (avisou ? 'Os administradores foram avisados por e-mail' : 'Os administradores vão vê-lo na lista de aprovações')
+      + ' — ele aparece na Academy assim que for aprovado.';
+  }
+
   function openVideoModal(){
+    vmParaAprovacao = !window.mseEhAdmin;
+    document.getElementById('adminVideoModalTitle').textContent = vmParaAprovacao ? 'Enviar vídeo para aprovação' : 'Adicionar vídeo';
+    document.getElementById('videoModalSubmit').textContent = vmTextoBotao();
     fillAreaSelect();
     vmLimparPerguntas();
     document.getElementById('videoModalOverlay').hidden = false;
@@ -3769,7 +3802,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         enfileirarUpload(arquivo, body, titulo, perguntas, vmAreasMarcadas());
         feedback.hidden = false;
         feedback.className = 'admin-modal-feedback ok';
-        feedback.textContent = `"${titulo}" entrou na fila de envio${perguntas.length ? ` com ${perguntas.length} ${perguntas.length === 1 ? 'pergunta' : 'perguntas'}` : ''}. Pode fechar esta janela e adicionar outro — o envio continua no painel do canto.`;
+        feedback.textContent = `"${titulo}" entrou na fila de envio${perguntas.length ? ` com ${perguntas.length} ${perguntas.length === 1 ? 'pergunta' : 'perguntas'}` : ''}. Pode fechar esta janela e adicionar outro — o envio continua no painel do canto.`
+          + (vmParaAprovacao ? ' Quando terminar, vai para aprovação dos administradores. Não feche a aba até lá.' : '');
         document.getElementById('videoModalTitulo').value = '';
         document.getElementById('videoModalDescricao').value = '';
         document.getElementById('videoModalArquivo').value = '';
@@ -3792,9 +3826,13 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         }catch(e){
           throw new Error(`O vídeo foi adicionado, mas os departamentos obrigatórios não foram salvos (${e.message}). Marque-os em Treinamentos > Áreas.`);
         }
+        const pendente = !!(criado && criado.pendente_aprovacao);
+        const avisou = pendente ? await vmAvisarAdmins(criado.course.id) : false;
         feedback.hidden = false;
         feedback.className = 'admin-modal-feedback ok';
-        feedback.textContent = `Vídeo "${titulo}" adicionado${perguntas.length ? ` com ${perguntas.length} ${perguntas.length === 1 ? 'pergunta' : 'perguntas'}` : ''}!`;
+        feedback.textContent = pendente
+          ? vmTextoEnviado(titulo, avisou)
+          : `Vídeo "${titulo}" adicionado${perguntas.length ? ` com ${perguntas.length} ${perguntas.length === 1 ? 'pergunta' : 'perguntas'}` : ''}!`;
         document.getElementById('videoModalTitulo').value = '';
         document.getElementById('videoModalDescricao').value = '';
         document.getElementById('videoModalYoutubeUrl').value = '';
@@ -3803,8 +3841,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         vmLimparPrevia();
         limparCamposAuditoriaDoModal();
         document.querySelectorAll('#videoModalObrigatorio input').forEach(i => { i.checked = false; });
-        recarregarTelaConteudo();
-        carregarTreinamentos();
+        if(!pendente){
+          recarregarTelaConteudo();
+          carregarTreinamentos();
+        }
       }
     }catch(e){
       feedback.hidden = false;
@@ -3812,7 +3852,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       feedback.textContent = e.message || 'Não foi possível adicionar o vídeo.';
     }finally{
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Adicionar vídeo';
+      submitBtn.textContent = vmTextoBotao();
     }
   }
 
@@ -3882,7 +3922,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       let detalhe = '';
       if(job.status === 'aguardando') detalhe = 'na fila';
       else if(job.status === 'enviando') detalhe = `${job.pct}% · ${formatarMB(job.enviado)} de ${formatarMB(job.total)} · ${formatarTempo(job.restante)}`;
-      else if(job.status === 'concluido') detalhe = 'concluído';
+      else if(job.status === 'concluido') detalhe = job.pendente ? (job.avisou ? 'enviado para aprovação · admins avisados' : 'enviado para aprovação') : 'concluído';
       else if(job.status === 'cancelado') detalhe = 'cancelado';
       else if(job.status === 'erro') detalhe = job.erro || 'falhou';
 
@@ -3999,9 +4039,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       }catch(e){
         throw new Error('vídeo enviado, mas os departamentos obrigatórios não foram salvos — marque em Treinamentos > Áreas (' + e.message + ')');
       }
+      job.pendente = !!(criado && criado.pendente_aprovacao);
+      if(job.pendente) job.avisou = await vmAvisarAdmins(criado.course.id);
       job.status = 'concluido';
       job.pct = 100;
-      recarregarTelaConteudo(); // a aula nova já aparece sem recarregar a página
+      if(!job.pendente) recarregarTelaConteudo(); // a aula nova já aparece sem recarregar a página
     }catch(e){
       job.status = e.message === 'cancelado' ? 'cancelado' : 'erro';
       job.erro = e.message;
@@ -4014,7 +4056,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   function enfileirarUpload(arquivo, dados, titulo, perguntas, areas){
     const nomeLimpo = arquivo.name.replace(/[^a-zA-Z0-9.-]/g, '-');
-    const pasta = dados.type === 'onboarding' ? 'onboarding' : 'cursos';
+    // Envio para aprovação vai pra pasta própria: o servidor só deixa quem
+    // não é admin gravar lá.
+    const pasta = vmParaAprovacao ? 'sugestoes' : (dados.type === 'onboarding' ? 'onboarding' : 'cursos');
     filaUploads.push({
       arquivo, dados, titulo, perguntas: perguntas || [], areas: areas || [],
       key: `${pasta}/${Date.now()}-${nomeLimpo}`,
@@ -5097,6 +5141,209 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     });
   }
 
+  // ---------- Aprovações ----------
+  // Vídeos enviados por quem não é admin. A lista fica à esquerda; à
+  // direita, o vídeo pra assistir, tudo o que foi preenchido e as
+  // perguntas com a resposta certa marcada.
+  const aprovEstado = { id: null, video: null };
+
+  function aprovData(iso){
+    if(!iso) return '';
+    const d = new Date(String(iso).replace(' ', 'T'));
+    return isNaN(d) ? iso : d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+  function aprovAtualizarBadge(qtd){
+    const badge = document.getElementById('aprovBadge');
+    if(!badge) return;
+    badge.textContent = qtd;
+    badge.hidden = !qtd;
+  }
+  async function aprovContarPendentes(){
+    try{
+      const d = await apiFetch('api/admin/aprovacao/lista.php');
+      aprovAtualizarBadge((d.pendentes || []).length);
+    }catch(e){ /* sem a contagem o botão continua funcionando */ }
+  }
+
+  function openAprovacaoTela(id){
+    document.getElementById('aprovacaoTela').hidden = false;
+    document.documentElement.classList.add('trn-aberta');
+    document.getElementById('aprovAvisoEmail').hidden = true;
+    carregarAprovacoes(id || null);
+  }
+  function closeAprovacaoTela(){
+    document.getElementById('aprovacaoTela').hidden = true;
+    document.getElementById('aprovDetalhe').innerHTML = ''; // para o vídeo
+    if(document.getElementById('treinamentosTela').hidden) document.documentElement.classList.remove('trn-aberta');
+  }
+
+  async function carregarAprovacoes(id){
+    const lista = document.getElementById('aprovLista');
+    const detalhe = document.getElementById('aprovDetalhe');
+    detalhe.innerHTML = '<div class="aprov-vazio">Carregando...</div>';
+    let d;
+    try{
+      d = await apiFetch('api/admin/aprovacao/lista.php' + (id ? '?id=' + encodeURIComponent(id) : ''));
+    }catch(e){
+      detalhe.innerHTML = `<div class="aprov-vazio">Não foi possível carregar: ${esc(e.message)}</div>`;
+      return;
+    }
+    const pendentes = d.pendentes || [];
+    if(!id && pendentes.length) return carregarAprovacoes(pendentes[0].id);
+
+    aprovEstado.id = id;
+    aprovEstado.video = d.video;
+    aprovAtualizarBadge(pendentes.length);
+
+    const aviso = document.getElementById('aprovAvisoEmail');
+    if(!d.email_configurado && aviso.hidden){
+      aviso.className = 'aprov-aviso';
+      aviso.textContent = 'O envio de e-mail ainda não está configurado no servidor: os vídeos enviados chegam só nesta tela. Para os avisos por e-mail, configure o SMTP no .env do servidor.';
+      aviso.hidden = false;
+    }
+
+    lista.innerHTML = '<div class="aprov-lista-titulo">Esperando aprovação (' + pendentes.length + ')</div>'
+      + (pendentes.length ? pendentes.map(p => `
+        <button type="button" class="aprov-item" data-id="${p.id}" aria-current="${p.id === id}">
+          <strong>${esc(p.titulo)}</strong>
+          <span>${esc(p.enviado_por || 'Sem nome')} · ${esc(aprovData(p.enviado_em))}</span>
+        </button>`).join('') : '<div class="aprov-vazio">Nenhum vídeo esperando aprovação.</div>');
+    lista.querySelectorAll('.aprov-item').forEach(b => b.addEventListener('click', () => carregarAprovacoes(parseInt(b.dataset.id, 10))));
+
+    detalhe.innerHTML = d.video ? aprovDetalheHtml(d.video)
+      : '<div class="aprov-vazio">Tudo em dia: nenhum vídeo esperando aprovação.</div>';
+    const btnAprovar = detalhe.querySelector('.aprov-aprovar');
+    if(btnAprovar) btnAprovar.addEventListener('click', () => aprovDecidir('aprovar'));
+    const btnRecusar = detalhe.querySelector('.aprov-recusar');
+    if(btnRecusar) btnRecusar.addEventListener('click', () => aprovDecidir('recusar'));
+  }
+
+  function aprovDetalheHtml(v){
+    let player;
+    if(v.origem === 's3'){
+      player = v.video_url ? `<video controls preload="metadata" src="${esc(v.video_url)}"></video>`
+        : '<div class="aprov-player-vazio">Não consegui gerar o link do vídeo (confira a configuração da AWS).</div>';
+    } else if(v.origem === 'playlist'){
+      player = `<iframe src="https://www.youtube-nocookie.com/embed/videoseries?list=${encodeURIComponent(v.youtube_id || '')}" allow="encrypted-media; fullscreen" allowfullscreen title="Playlist enviada"></iframe>`;
+    } else {
+      player = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(v.youtube_id || '')}" allow="encrypted-media; fullscreen" allowfullscreen title="Vídeo enviado"></iframe>`;
+    }
+
+    const status = v.status === 'pendente'
+      ? '<span class="aprov-status aprov-status-pendente">Esperando aprovação</span>'
+      : v.status === 'aprovado'
+        ? `<span class="aprov-status aprov-status-aprovado">Aprovado${v.decidido_por ? ' por ' + esc(v.decidido_por) : ''} em ${esc(aprovData(v.decidido_em))}</span>`
+        : `<span class="aprov-status aprov-status-recusado">Recusado${v.decidido_por ? ' por ' + esc(v.decidido_por) : ''} em ${esc(aprovData(v.decidido_em))}</span>`;
+
+    const autor = v.enviado_por || {};
+    const info = [
+      ['Enviado por', [autor.nome, autor.cargo].filter(Boolean).join(' · ') + (autor.email ? '\n' + autor.email : '')],
+      ['Enviado em', aprovData(v.enviado_em)],
+      ['Onde aparece', v.tipo === 'onboarding' ? 'Integração (trilha obrigatória)' : 'Curso · ' + (v.area || 'sem área')],
+      ['Obrigatório para', v.departamentos.length ? v.departamentos.join(', ') : 'Todos os departamentos'],
+      ['Origem', { youtube: 'YouTube', s3: 'Arquivo enviado', playlist: 'Playlist do YouTube' }[v.origem] || v.origem],
+      ['Duração informada', v.duracao_min ? v.duracao_min + ' min' : ''],
+      ['"Você ainda está aí?"', v.aviso_presenca ? 'Sim' : 'Não'],
+      ['Aula opcional', v.obrigatorio ? '' : 'Sim'],
+      ['Grupo de sorteio', v.grupo_sorteio],
+      ['Tipo de treinamento', v.tipo_treinamento],
+      ['Instrutor', v.instrutor],
+      ['Motivo da recusa', v.status === 'recusado' ? (v.motivo_recusa || 'Não informado') : ''],
+    ].filter(([, valor]) => valor);
+    const largos = [['Descrição', v.descricao], ['Conteúdo programático', v.conteudo_programatico], ['Assuntos', v.assuntos]]
+      .filter(([, valor]) => valor);
+
+    const perguntas = v.perguntas.length ? `
+      <p class="aprov-secao">Perguntas (${v.perguntas.length})</p>
+      <ol class="aprov-perguntas">${v.perguntas.map(p => `
+        <li>
+          <div class="aprov-quando">${p.momento_seg !== null ? 'Durante o vídeo, aos ' + vmFmt(p.momento_seg) : 'No fim do vídeo'}</div>
+          ${esc(p.texto)}
+          <ul>${p.opcoes.map(o => `<li class="${o.certa ? 'is-certa' : ''}">${esc(o.texto)}${o.certa ? ' ✓ certa' : ''}</li>`).join('')}</ul>
+        </li>`).join('')}
+      </ol>` : '<p class="aprov-secao">Sem perguntas</p>';
+
+    const acoes = v.status === 'pendente' ? `
+      <div class="aprov-acoes">
+        <label class="trn-rotulo" for="aprovMotivo">Motivo, se for recusar (opcional)</label>
+        <textarea id="aprovMotivo" maxlength="500" placeholder="Ex.: o vídeo está sem áudio a partir dos 3 minutos"></textarea>
+        <div class="aprov-botoes">
+          <button type="button" class="trn-btn aprov-aprovar">Aprovar e publicar</button>
+          <button type="button" class="trn-btn aprov-recusar">Recusar</button>
+        </div>
+        <div class="admin-modal-feedback" id="aprovFeedback" hidden></div>
+      </div>` : '';
+
+    return `
+      <h3>${esc(v.titulo)}</h3>
+      ${status}
+      <div class="aprov-player">${player}</div>
+      <dl class="aprov-info">
+        ${info.map(([r, valor]) => `<div><dt>${esc(r)}</dt><dd>${esc(valor)}</dd></div>`).join('')}
+        ${largos.map(([r, valor]) => `<div class="aprov-largo"><dt>${esc(r)}</dt><dd>${esc(valor)}</dd></div>`).join('')}
+      </dl>
+      ${perguntas}
+      ${acoes}`;
+  }
+
+  async function aprovDecidir(acao){
+    const v = aprovEstado.video;
+    if(!v) return;
+    const motivo = (document.getElementById('aprovMotivo') || {}).value || '';
+    if(acao === 'recusar' && !confirm(`Recusar "${v.titulo}"? Ele continua escondido dos colaboradores.`)) return;
+    const botoes = document.querySelectorAll('#aprovDetalhe .aprov-botoes button');
+    botoes.forEach(b => { b.disabled = true; });
+    const feedback = document.getElementById('aprovFeedback');
+    try{
+      await apiFetch('api/admin/aprovacao/decidir.php', {
+        method: 'POST', body: JSON.stringify({ course_id: v.id, acao, motivo: motivo.trim() }),
+      });
+      if(acao === 'aprovar') recarregarTelaConteudo(); // já aparece na trilha/catálogo
+      const aviso = document.getElementById('aprovAvisoEmail');
+      aviso.className = 'aprov-aviso is-ok';
+      aviso.textContent = acao === 'aprovar' ? `"${v.titulo}" foi aprovado e já está publicado.` : `"${v.titulo}" foi recusado.`;
+      aviso.hidden = false;
+      carregarAprovacoes(null); // abre o próximo da fila
+    }catch(e){
+      feedback.hidden = false;
+      feedback.className = 'admin-modal-feedback erro';
+      feedback.textContent = e.message;
+      if(e.status === 409) setTimeout(() => carregarAprovacoes(v.id), 1500); // outro admin decidiu antes
+      else botoes.forEach(b => { b.disabled = false; });
+    }
+  }
+
+  async function aprovTestarEmail(){
+    const btn = document.getElementById('aprovTestarEmail');
+    const aviso = document.getElementById('aprovAvisoEmail');
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+    try{
+      const r = await apiFetch('api/admin/aprovacao/testar_email.php', { method: 'POST' });
+      aviso.className = 'aprov-aviso ' + (r.ok ? 'is-ok' : 'is-erro');
+      aviso.textContent = r.ok
+        ? `E-mail de teste enviado para ${r.para}. Confira a caixa de entrada (e o spam).`
+        : `O e-mail não saiu: ${r.erro}`;
+    }catch(e){
+      aviso.className = 'aprov-aviso is-erro';
+      aviso.textContent = 'O e-mail não saiu: ' + e.message;
+    }finally{
+      aviso.hidden = false;
+      btn.disabled = false;
+      btn.textContent = 'Testar e-mail';
+    }
+  }
+
+  function ligarTelaAprovacao(){
+    const tela = document.getElementById('aprovacaoTela');
+    if(!tela) return;
+    document.getElementById('aprovFechar').addEventListener('click', closeAprovacaoTela);
+    document.getElementById('aprovTestarEmail').addEventListener('click', aprovTestarEmail);
+    document.addEventListener('keydown', (e) => {
+      if(e.key === 'Escape' && !tela.hidden) closeAprovacaoTela();
+    });
+  }
+
   // ---------- Pergunta de uma aula já cadastrada ----------
   // Antes a pergunta só podia ser escrita ao cadastrar o vídeo. Quem
   // subisse a aula sem pergunta não tinha caminho nenhum: teria que apagar
@@ -5930,7 +6177,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(isAdmin){
       const toolbar = document.getElementById('adminToolbar');
       if(toolbar) toolbar.hidden = false;
-      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnGerenciarAulas', 'btnRelatorios', 'btnDepartamentos'].forEach(id => {
+      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnGerenciarAulas', 'btnRelatorios', 'btnDepartamentos', 'btnAprovacoes'].forEach(id => {
         const btn = document.getElementById(id);
         if(btn) btn.hidden = false;
       });
@@ -6014,6 +6261,31 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const btnRelatorios = document.getElementById('btnRelatorios');
     if(btnRelatorios) btnRelatorios.addEventListener('click', () => openTreinamentosTela('relatorios'));
     ligarTelaTreinamentos();
+
+    // Aprovações: botão da barra de admin, ou o link do e-mail (?aprovar=ID).
+    ligarTelaAprovacao();
+    const btnAprovacoes = document.getElementById('btnAprovacoes');
+    if(btnAprovacoes) btnAprovacoes.addEventListener('click', () => openAprovacaoTela(null));
+    const paramsAprovar = new URLSearchParams(window.location.search);
+    const idAprovar = parseInt(paramsAprovar.get('aprovar') || '', 10);
+    if(paramsAprovar.has('aprovar')){
+      paramsAprovar.delete('aprovar');
+      window.history.replaceState({}, '', window.location.pathname + (paramsAprovar.toString() ? '?' + paramsAprovar.toString() : ''));
+    }
+    if(isAdmin){
+      if(idAprovar > 0) openAprovacaoTela(idAprovar);
+      else aprovContarPendentes();
+    } else if(idAprovar > 0){
+      alert('Esse link é da tela de aprovação de vídeos, que é só para administradores. Entre na MSE Academy pelo Portal com a sua conta de administrador.');
+    }
+
+    // Todo mundo logado pode adicionar vídeo; quem não é admin manda para
+    // aprovação (os admins usam o botão da barra deles).
+    const btnEnviarVideo = document.getElementById('btnEnviarVideo');
+    if(btnEnviarVideo && !isAdmin && getRealSessionToken()){
+      btnEnviarVideo.hidden = false;
+      btnEnviarVideo.addEventListener('click', openVideoModal);
+    }
     const btnAulasClose = document.getElementById('aulasModalClose');
     if(btnAulasClose) btnAulasClose.addEventListener('click', closeAulasModal);
 

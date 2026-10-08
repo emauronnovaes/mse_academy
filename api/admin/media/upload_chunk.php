@@ -5,9 +5,13 @@ require_once __DIR__ . '/../../../src/Cors.php';
 require_once __DIR__ . '/../../../src/Response.php';
 require_once __DIR__ . '/../../../src/Auth.php';
 require_once __DIR__ . '/../../../src/AwsS3.php';
+require_once __DIR__ . '/../../../src/Aprovacao.php';
 
 mse_cors();
-mse_require_admin();
+// Quem não é admin também envia (vídeo para aprovação), mas só na pasta
+// de sugestões e sem sobrescrever arquivo existente — conferido abaixo.
+$usuario = mse_require_auth();
+$soSugestoes = $usuario['role'] !== 'admin';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     mse_error('Método não permitido.', 405);
@@ -41,6 +45,9 @@ $validarChave = static function (string $key): string {
     if (!in_array($ext, ['mp4', 'webm', 'mov'], true)) {
         mse_error('Extensão não permitida. Use .mp4, .webm ou .mov.', 422);
     }
+    if ($soSugestoes && !mse_str_starts_with($key, MSE_PASTA_SUGESTOES)) {
+        mse_error('destination_key inválido.', 422);
+    }
     return $key;
 };
 
@@ -59,6 +66,9 @@ try {
     if ($acao === 'iniciar') {
         $input = mse_input();
         $key = $validarChave((string) ($input['destination_key'] ?? ''));
+        if ($soSugestoes && $s3->doesObjectExist($bucket, $key)) {
+            mse_error('Já existe um arquivo com esse nome. Tente de novo.', 409);
+        }
 
         $r = $s3->createMultipartUpload(['Bucket' => $bucket, 'Key' => $key]);
 
