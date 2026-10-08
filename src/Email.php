@@ -2,9 +2,17 @@
 declare(strict_types=1);
 
 /**
- * Envio de e-mail pela Academy, sem biblioteca externa.
+ * Envio de avisos pela Academy, sem biblioteca externa.
  *
- * Usa o SMTP configurado no .env do servidor:
+ * 1º) Central de disparos do Portal, se configurada no .env:
+ *   DISPAROS_API_BASE      endereço da Central (sem barra no final)
+ *   DISPAROS_API_TOKEN     token Bearer da Central
+ *   DISPAROS_ID_APROVACAO  identificador do envio cadastrado na Central
+ *   DISPAROS_FORMATO       html (padrão) | texto — formato do "corpo"
+ * Quem recebe é definido no cadastro do envio, lá na Central — a lista de
+ * destinatários passada aqui é ignorada nesse caso.
+ *
+ * 2º) Sem a Central, usa o SMTP configurado no .env do servidor:
  *   SMTP_HOST       ex.: smtp.office365.com
  *   SMTP_PORT       587 (STARTTLS, padrão) ou 465 (SSL)
  *   SMTP_USER       conta que envia
@@ -20,7 +28,61 @@ declare(strict_types=1);
 
 function mse_email_configurado(): bool
 {
-    return trim(mse_env('SMTP_HOST')) !== '' || trim(mse_env('MAIL_FROM')) !== '';
+    return mse_disparo_configurado() || trim(mse_env('SMTP_HOST')) !== '' || trim(mse_env('MAIL_FROM')) !== '';
+}
+
+/** A Central de disparos do Portal está configurada? */
+function mse_disparo_configurado(): bool
+{
+    return trim(mse_env('DISPAROS_API_BASE')) !== ''
+        && trim(mse_env('DISPAROS_API_TOKEN')) !== ''
+        && trim(mse_env('DISPAROS_ID_APROVACAO')) !== '';
+}
+
+/**
+ * POST {base}/v1/envios/{identificador}/disparar — a Central manda nos
+ * canais e para os destinatários cadastrados no envio.
+ */
+function mse_disparo_enviar(string $assunto, string $html, string $texto): void
+{
+    if (!function_exists('curl_init')) {
+        throw new RuntimeException('A extensão curl do PHP não está instalada no servidor.');
+    }
+    $base = rtrim(trim(mse_env('DISPAROS_API_BASE')), '/');
+    $id = trim(mse_env('DISPAROS_ID_APROVACAO'));
+    $formato = strtolower(trim(mse_env('DISPAROS_FORMATO'))) === 'texto' ? 'texto' : 'html';
+
+    $ch = curl_init($base . '/v1/envios/' . rawurlencode($id) . '/disparar');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . trim(mse_env('DISPAROS_API_TOKEN')),
+            'Content-Type: application/json',
+            'Accept: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode([
+            'origem_chamada' => 'MSE Academy',
+            'assunto' => $assunto,
+            'corpo' => $formato === 'texto' ? $texto : $html,
+        ], JSON_UNESCAPED_UNICODE),
+    ]);
+    $resposta = curl_exec($ch);
+    $codigo = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $erroRede = curl_error($ch);
+    curl_close($ch);
+
+    if ($resposta === false || $erroRede !== '') {
+        throw new RuntimeException('Não consegui falar com a Central de disparos: ' . $erroRede);
+    }
+    if ($codigo < 200 || $codigo >= 300) {
+        $dados = json_decode((string) $resposta, true);
+        $motivo = is_array($dados) ? (string) ($dados['error'] ?? $dados['message'] ?? $dados['mensagem'] ?? '') : '';
+        $dica = in_array($codigo, [401, 403], true) ? ' (token recusado — confira DISPAROS_API_TOKEN)'
+            : ($codigo === 404 ? ' (confira DISPAROS_API_BASE e DISPAROS_ID_APROVACAO)' : '');
+        throw new RuntimeException("A Central de disparos respondeu HTTP {$codigo}{$dica}" . ($motivo !== '' ? ": {$motivo}" : '.'));
+    }
 }
 
 /**
@@ -29,6 +91,16 @@ function mse_email_configurado(): bool
  */
 function mse_enviar_email(array $para, string $assunto, string $html, string $texto): array
 {
+    if (mse_disparo_configurado()) {
+        try {
+            mse_disparo_enviar($assunto, $html, $texto);
+            return ['ok' => true, 'erro' => null];
+        } catch (Throwable $e) {
+            error_log('[disparo] ' . $e->getMessage());
+            return ['ok' => false, 'erro' => $e->getMessage()];
+        }
+    }
+
     $para = array_values(array_unique(array_filter(array_map('trim', $para), static function ($e) {
         return filter_var($e, FILTER_VALIDATE_EMAIL) !== false;
     })));

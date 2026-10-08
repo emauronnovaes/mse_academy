@@ -26,4 +26,9 @@ $r = mse_enviar_email(
     '<p style="font-family:Arial,sans-serif;font-size:14px">Se você recebeu esta mensagem, os avisos de vídeo para aprovação estão funcionando.</p>',
     'Se você recebeu esta mensagem, os avisos de vídeo para aprovação estão funcionando.'
 );
-mse_json(['ok' => $r['ok'], 'para' => $admin['email'], 'erro' => $r['erro']]);
+mse_json([
+    'ok' => $r['ok'],
+    // Pela Central, quem recebe é quem está no cadastro do envio, não o admin.
+    'para' => mse_disparo_configurado() ? 'os destinatários cadastrados na Central de disparos' : $admin['email'],
+    'erro' => $r['erro'],
+]);
