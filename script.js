@@ -3233,7 +3233,20 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // área cadastrada aparece sozinha, sem precisar mexer no JavaScript.
   async function fillAreaSelect(){
     const select = document.getElementById('adminVideoModalArea');
-    if(!select || select.options.length) return; // já preenchido
+    if(!select) return;
+    // Departamentos em que o vídeo pode ser obrigatório: sempre recarrega,
+    // pra refletir departamentos criados depois.
+    const caixas = document.getElementById('videoModalObrigatorio');
+    try{
+      const lista = await apiFetch('api/areas/list.php');
+      const marcadas = new Set(Array.from(caixas.querySelectorAll('input:checked')).map(i => i.value));
+      caixas.innerHTML = (lista.areas || []).map(a => `
+        <label class="areas-aula-item"><input type="checkbox" value="${a.id}" ${marcadas.has(String(a.id)) ? 'checked' : ''}> <span>${esc(a.name)}</span></label>
+      `).join('') || '<span class="admin-field-hint">Nenhum departamento cadastrado.</span>';
+    }catch(e){
+      caixas.innerHTML = `<span class="admin-field-hint">Não consegui carregar os departamentos: ${esc(e.message)}</span>`;
+    }
+    if(select.options.length) return; // já preenchido
     try{
       const data = await apiFetch('api/areas/list.php');
       data.areas.forEach(a => {
@@ -3609,6 +3622,20 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   // Grava as perguntas na aula recém-criada (o cadastro só aceita uma; o
   // editor de perguntas aceita todas, com o minuto de cada).
+  function vmAreasMarcadas(){
+    return Array.from(document.querySelectorAll('#videoModalObrigatorio input:checked')).map(i => parseInt(i.value, 10));
+  }
+
+  // Departamentos para os quais o vídeo é obrigatório (tela Treinamentos >
+  // Áreas, aqui já na criação). Sem nenhum, vale pra todos.
+  async function vmSalvarAreas(courseId, areas){
+    if(!courseId || !areas || !areas.length) return;
+    await apiFetch('api/admin/courses/areas.php', {
+      method: 'POST',
+      body: JSON.stringify({ course_id: courseId, areas }),
+    });
+  }
+
   async function vmSalvarPerguntas(courseId, perguntas){
     if(!courseId || !perguntas.length) return;
     await apiFetch('api/admin/courses/quiz.php', {
@@ -3739,7 +3766,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       if(origem === 's3'){
         // Vai pra fila em vez de travar o modal: o envio continua no
         // painel e o formulário já fica livre pro próximo vídeo.
-        enfileirarUpload(arquivo, body, titulo, perguntas);
+        enfileirarUpload(arquivo, body, titulo, perguntas, vmAreasMarcadas());
         feedback.hidden = false;
         feedback.className = 'admin-modal-feedback ok';
         feedback.textContent = `"${titulo}" entrou na fila de envio${perguntas.length ? ` com ${perguntas.length} ${perguntas.length === 1 ? 'pergunta' : 'perguntas'}` : ''}. Pode fechar esta janela e adicionar outro — o envio continua no painel do canto.`;
@@ -3749,6 +3776,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         vmLimparPerguntas();
         vmLimparPrevia();
         limparCamposAuditoriaDoModal();
+        document.querySelectorAll('#videoModalObrigatorio input').forEach(i => { i.checked = false; });
       } else {
         const criado = await apiFetch('api/admin/courses/create.php', {
           method: 'POST',
@@ -3758,6 +3786,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           await vmSalvarPerguntas(criado && criado.course && criado.course.id, perguntas);
         }catch(e){
           throw new Error(`O vídeo foi adicionado, mas as perguntas não foram salvas (${e.message}). Coloque-as em Treinamentos > Atividades.`);
+        }
+        try{
+          await vmSalvarAreas(criado && criado.course && criado.course.id, vmAreasMarcadas());
+        }catch(e){
+          throw new Error(`O vídeo foi adicionado, mas os departamentos obrigatórios não foram salvos (${e.message}). Marque-os em Treinamentos > Áreas.`);
         }
         feedback.hidden = false;
         feedback.className = 'admin-modal-feedback ok';
@@ -3769,6 +3802,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         vmLimparPerguntas();
         vmLimparPrevia();
         limparCamposAuditoriaDoModal();
+        document.querySelectorAll('#videoModalObrigatorio input').forEach(i => { i.checked = false; });
         recarregarTelaConteudo();
         carregarTreinamentos();
       }
@@ -3960,6 +3994,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       }catch(e){
         throw new Error('vídeo enviado, mas as perguntas não foram salvas — coloque em Treinamentos > Atividades (' + e.message + ')');
       }
+      try{
+        await vmSalvarAreas(criado && criado.course && criado.course.id, job.areas);
+      }catch(e){
+        throw new Error('vídeo enviado, mas os departamentos obrigatórios não foram salvos — marque em Treinamentos > Áreas (' + e.message + ')');
+      }
       job.status = 'concluido';
       job.pct = 100;
       recarregarTelaConteudo(); // a aula nova já aparece sem recarregar a página
@@ -3973,11 +4012,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }
   }
 
-  function enfileirarUpload(arquivo, dados, titulo, perguntas){
+  function enfileirarUpload(arquivo, dados, titulo, perguntas, areas){
     const nomeLimpo = arquivo.name.replace(/[^a-zA-Z0-9.-]/g, '-');
     const pasta = dados.type === 'onboarding' ? 'onboarding' : 'cursos';
     filaUploads.push({
-      arquivo, dados, titulo, perguntas: perguntas || [],
+      arquivo, dados, titulo, perguntas: perguntas || [], areas: areas || [],
       key: `${pasta}/${Date.now()}-${nomeLimpo}`,
       status: 'aguardando', pct: 0, enviado: 0, total: arquivo.size, restante: Infinity,
       cancelar: false,

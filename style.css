@@ -2012,3 +2012,5 @@
   .vm-usar-tempo{ margin-left:6px; font-size:12.5px; }
   .vm-usar-tempo:disabled{ opacity:0.45; cursor:default; text-decoration:none; }
   #videoModalPerguntas .pq-bloco{ background:#fff; }
+
+  .vm-obrigatorio{ display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:4px 12px; max-height:170px; overflow-y:auto; margin:4px 0 6px; padding:8px 10px; border:1.5px solid var(--line); border-radius:8px; background:#fff; }

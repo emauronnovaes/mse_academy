@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261008b">
+<link rel="stylesheet" href="style.css?v=20261008c">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -175,6 +175,10 @@
       <label class="admin-field-label" for="videoModalAssuntos">Assuntos</label>
       <input type="text" id="videoModalAssuntos" maxlength="500" placeholder="Ex.: NR-35, ancoragem, resgate">
     </details>
+
+    <label class="admin-field-label">Obrigatório para quais departamentos?</label>
+    <div class="vm-obrigatorio" id="videoModalObrigatorio"><span class="admin-field-hint">Carregando departamentos...</span></div>
+    <p class="admin-field-hint">Marque os departamentos (os mesmos do Portal, como Programação) para os quais o vídeo é <strong>obrigatório</strong>. Nenhum marcado = obrigatório para todos. Quem é de fora continua podendo assistir.</p>
 
     <label class="admin-check">
       <input type="checkbox" id="videoModalAviso" checked>
@@ -629,7 +633,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261008b"></script>
+<script src="script.js?v=20261008c"></script>
 
 </body>
 </html>
