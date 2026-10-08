@@ -77,7 +77,7 @@ foreach ($linhas as $rotulo => $valor) {
         . $e($rotulo) . '</td><td style="padding:6px 0;font-size:14px;color:#1C1B1A">' . nl2br($e($valor)) . '</td></tr>';
     $texto .= "{$rotulo}: {$valor}\n";
 }
-$texto .= "\nPara assistir e aprovar ou recusar: {$link}\n\nEle só aparece para os colaboradores depois de aprovado.";
+$texto .= "\nAbrir tela de aprovação: {$link}\n\nEle só aparece para os colaboradores depois de aprovado.";
 
 $html = '<!doctype html><html><body style="margin:0;background:#F3F2EF;font-family:Arial,Helvetica,sans-serif">'
     . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F2EF;padding:24px 12px"><tr><td align="center">'
@@ -86,8 +86,8 @@ $html = '<!doctype html><html><body style="margin:0;background:#F3F2EF;font-fami
     . '<tr><td style="padding:22px 24px">'
     . '<p style="margin:0 0 14px;font-size:14px;color:#1C1B1A">Um vídeo foi enviado e está esperando aprovação. Ele só aparece para os colaboradores depois que um administrador aprovar.</p>'
     . '<table role="presentation" cellpadding="0" cellspacing="0">' . $tabela . '</table>'
-    . '<p style="margin:22px 0 6px"><a href="' . $e($link) . '" style="display:inline-block;background:#C4212C;color:#fff;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px;font-size:14px">Assistir e aprovar</a></p>'
-    . '<p style="margin:10px 0 0;font-size:12px;color:#5C6470">Se o botão não abrir, entre na MSE Academy pelo Portal e use o botão <b>Aprovações</b> na barra de admin.</p>'
+    . '<p style="margin:22px 0 6px"><a href="' . $e($link) . '" style="display:inline-block;background:#C4212C;color:#fff;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px;font-size:15px">Abrir tela de aprovação</a></p>'
+    . '<p style="margin:10px 0 0;font-size:12px;color:#5C6470">Se pedir login, entre na MSE Academy pelo Portal: a tela de aprovação abre sozinha logo depois. Também dá para usar o botão <b>Aprovações</b> na barra de admin.</p>'
     . '</td></tr></table></td></tr></table></body></html>';
 
 $resultado = mse_enviar_email($emails, '[MSE Academy] Vídeo para aprovação: ' . $curso['title'], $html, $texto);

@@ -6266,17 +6266,32 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     ligarTelaAprovacao();
     const btnAprovacoes = document.getElementById('btnAprovacoes');
     if(btnAprovacoes) btnAprovacoes.addEventListener('click', () => openAprovacaoTela(null));
+    // Quem clica no e-mail sem estar logado (ou logado sem ser admin) não
+    // perde o link: ele fica guardado por 1 dia e a tela abre sozinha na
+    // próxima vez que a pessoa entrar como admin (pelo Portal, por exemplo).
+    const CHAVE_APROVAR = 'mse_academy_aprovar_pendente';
     const paramsAprovar = new URLSearchParams(window.location.search);
-    const idAprovar = parseInt(paramsAprovar.get('aprovar') || '', 10);
+    let idAprovar = parseInt(paramsAprovar.get('aprovar') || '', 10);
     if(paramsAprovar.has('aprovar')){
       paramsAprovar.delete('aprovar');
       window.history.replaceState({}, '', window.location.pathname + (paramsAprovar.toString() ? '?' + paramsAprovar.toString() : ''));
     }
+    let veioGuardado = false;
+    if(!(idAprovar > 0)){
+      try{
+        const guardado = JSON.parse(localStorage.getItem(CHAVE_APROVAR) || 'null');
+        if(guardado && Date.now() - guardado.em < 24 * 3600 * 1000){ idAprovar = guardado.id; veioGuardado = true; }
+      }catch(e){ /* sem localStorage: segue sem */ }
+    }
     if(isAdmin){
+      try{ localStorage.removeItem(CHAVE_APROVAR); }catch(e){}
       if(idAprovar > 0) openAprovacaoTela(idAprovar);
       else aprovContarPendentes();
-    } else if(idAprovar > 0){
-      alert('Esse link é da tela de aprovação de vídeos, que é só para administradores. Entre na MSE Academy pelo Portal com a sua conta de administrador.');
+    } else if(idAprovar > 0 && !veioGuardado){
+      try{ localStorage.setItem(CHAVE_APROVAR, JSON.stringify({ id: idAprovar, em: Date.now() })); }catch(e){}
+      alert(getRealSessionToken()
+        ? 'A tela de aprovação de vídeos é só para administradores. Se você é admin, entre na MSE Academy pelo Portal com a sua conta: a tela abre sozinha.'
+        : 'Para aprovar o vídeo, entre na MSE Academy pelo Portal. A tela de aprovação abre sozinha assim que você entrar.');
     }
 
     // Todo mundo logado pode adicionar vídeo; quem não é admin manda para
