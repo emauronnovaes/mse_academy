@@ -4959,22 +4959,29 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     // Largura fixa, um pouco menor que a área útil da folha: sem isso a
     // borda direita das tabelas saía cortada.
     const largura = retrato ? 700 : 1040;
-    const montar = (conteudo) => {
-      const el = document.createElement('div');
-      el.className = 'rel-pdf' + (opcoes && opcoes.classe ? ' ' + opcoes.classe : '');
-      el.style.width = largura + 'px';
-      el.innerHTML = conteudo;
-      return el;
-    };
-    const folhas = Array.isArray(html) ? html : [html];
+    // O estilo vai DENTRO de cada folha, junto do conteúdo: o gerador
+    // fotografa uma cópia da página, e quando essa cópia era tirada antes
+    // de o style.css ser aplicado, a folha saía sem formatação ou vazia.
     const cssRelatorio = [];
     Array.from(document.styleSheets).forEach(folha => {
       let regras;
       try{ regras = folha.cssRules; }catch(e){ return; } // folha de outro domínio
       Array.from(regras || []).forEach(r => {
-        if(r.selectorText && /rel-pdf|rel-formulario/.test(r.selectorText)) cssRelatorio.push(r.cssText);
+        if(r.selectorText && /rel-pdf|rel-formulario|lp-|trn-tabela|trn-sub|trn-vazio|watchers-status|aulas-badge/.test(r.selectorText)) cssRelatorio.push(r.cssText);
       });
     });
+    const estiloFolha = cssRelatorio.join(' ');
+    const montar = (conteudo) => {
+      const el = document.createElement('div');
+      el.className = 'rel-pdf' + (opcoes && opcoes.classe ? ' ' + opcoes.classe : '');
+      el.style.width = largura + 'px';
+      el.innerHTML = `<style>${estiloFolha}</style>` + conteudo;
+      return el;
+    };
+    const folhas = Array.isArray(html) ? html : [html];
+    // Gera com a página no topo e devolve a posição depois.
+    const rolagem = { x: window.scrollX, y: window.scrollY };
+    window.scrollTo(0, 0);
     let trabalho = html2pdf().set({
       margin: retrato ? 10 : 8,
       filename: nomeArquivo,
@@ -4982,6 +4989,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       // O gerador copia a página e recarrega o style.css; se essa recarga
       // falha, a folha sai sem formatação. As regras do relatório vão
       // direto na cópia, sem depender dela.
+      // (A página é rolada pro topo antes, em trnBaixarPdf: com ela rolada, a
+      // "foto" da folha saía deslocada e o PDF vinha em branco.)
       html2canvas: { scale: 2, backgroundColor: '#ffffff', onclone: (doc) => {
         const tag = doc.createElement('style');
         tag.textContent = cssRelatorio.join(' ');
@@ -4995,7 +5004,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       trabalho = trabalho.get('pdf').then(pdf => { pdf.addPage(); })
         .from(montar(conteudo)).toContainer().toCanvas().toPdf();
     });
-    await trabalho.save();
+    try{
+      await trabalho.save();
+    }finally{
+      window.scrollTo(rolagem.x, rolagem.y);
+    }
   }
 
   // Botão fica "Gerando PDF..." enquanto o arquivo é montado.
