@@ -292,16 +292,37 @@ function mse_portal_ficha_buscar_pessoa(?string $cpf, ?string $nome): array
 function mse_gravar_setor_portal(PDO $pdo, int $userId, ?string $setor): void
 {
     $setor = trim((string) $setor);
-    if ($setor === '' || $userId <= 0) {
+    if ($setor === '' || $userId <= 0 || !mse_garantir_coluna_setor_portal($pdo)) {
         return;
+    }
+    $pdo->prepare('UPDATE users SET setor_portal = ? WHERE id = ?')->execute([mb_substr($setor, 0, 150), $userId]);
+}
+
+/**
+ * Garante a coluna users.setor_portal (a mesma da migração 023). Se a
+ * migração não rodou, cria aqui: é uma coluna vazia que não mexe em dado
+ * nenhum, e sem ela o departamento do Portal não tinha onde ficar.
+ * Devolve false se não existir e não der pra criar (sem permissão).
+ */
+function mse_garantir_coluna_setor_portal(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok !== null) {
+        return $ok;
     }
     $stmt = $pdo->prepare(
         'SELECT 1 FROM information_schema.COLUMNS
          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
     );
     $stmt->execute(['users', 'setor_portal']);
-    if ($stmt->fetchColumn() === false) {
-        return;
+    if ($stmt->fetchColumn() !== false) {
+        return $ok = true;
     }
-    $pdo->prepare('UPDATE users SET setor_portal = ? WHERE id = ?')->execute([mb_substr($setor, 0, 150), $userId]);
+    try {
+        $pdo->exec('ALTER TABLE users ADD COLUMN setor_portal VARCHAR(150) NULL');
+        return $ok = true;
+    } catch (Throwable $e) {
+        error_log('[setor_portal] Não consegui criar a coluna (rode a migração 023): ' . $e->getMessage());
+        return $ok = false;
+    }
 }

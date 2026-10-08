@@ -4373,10 +4373,46 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       trnEstado.pessoas = d.pessoas || [];
       trnEstado.totalIntegracao = d.total_integracao || 0;
       renderPessoas();
+      completarDadosDoPortal();
     }catch(e){
       if(pedido !== trnEstado.pedido) return;
       contagem.textContent = 'Não foi possível carregar: ' + e.message;
       document.getElementById('trnCorpoPessoas').innerHTML = '';
+    }
+  }
+
+  // Cargo e departamento vêm da ficha do Portal, mas só eram gravados no
+  // login. Ao abrir o relatório por pessoa, quem ainda está sem eles é
+  // completado em segundo plano (uma vez por visita à página) e a lista se
+  // atualiza sozinha. Se a API falhar, a lista fica como está.
+  let portalCompletando = false, portalCompletado = false;
+  async function completarDadosDoPortal(){
+    if(portalCompletando || portalCompletado) return;
+    if(!trnEstado.pessoas.some(p => !p.cargo || !p.departamento)) return;
+    portalCompletando = true;
+    const contagem = document.getElementById('trnContagem');
+    const textoOriginal = contagem.textContent;
+    contagem.textContent = textoOriginal + ' · buscando cargo e departamento no Portal...';
+    let mudou = false;
+    let aposId = 0;
+    try{
+      do{
+        const r = await apiFetch('api/admin/treinamentos/atualizar_portal.php', {
+          method: 'POST', body: JSON.stringify({ apos_id: aposId, so_faltando: true }),
+        });
+        if((r.atualizados || []).length) mudou = true;
+        aposId = r.proximo_apos_id;
+      } while(aposId !== null && aposId !== undefined);
+    }catch(e){
+      console.warn('[portal] não consegui completar cargo/departamento:', e.message);
+    }finally{
+      portalCompletando = false;
+      portalCompletado = true;
+      if(mudou && trnEstado.visao === 'pessoas' && !document.getElementById('treinamentosTela').hidden){
+        carregarPessoas();
+      } else if(contagem.textContent.endsWith('no Portal...')){
+        contagem.textContent = textoOriginal;
+      }
     }
   }
 

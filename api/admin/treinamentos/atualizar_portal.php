@@ -39,6 +39,14 @@ $aposId = max(0, (int) ($input['apos_id'] ?? 0));
 $pdo = mse_db();
 
 $filtroOculto = mse_tem_coluna($pdo, 'users', 'oculto_em_relatorios') ? ' AND oculto_em_relatorios = 0' : '';
+// so_faltando: a tela de relatórios chama sozinha, só pra quem ainda está
+// sem cargo ou sem o departamento do Portal — não precisa esperar a
+// pessoa entrar de novo.
+if (!empty($input['so_faltando'])) {
+    $filtroOculto .= mse_garantir_coluna_setor_portal($pdo)
+        ? " AND (cargo IS NULL OR cargo = '' OR setor_portal IS NULL OR setor_portal = '')"
+        : " AND (cargo IS NULL OR cargo = '')";
+}
 $total = (int) $pdo->query('SELECT COUNT(*) FROM users WHERE active = 1' . $filtroOculto)->fetchColumn();
 $feitos = (int) $pdo->query('SELECT COUNT(*) FROM users WHERE active = 1' . $filtroOculto . ' AND id <= ' . $aposId)->fetchColumn();
 
