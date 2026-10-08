@@ -9,7 +9,7 @@ require_once __DIR__ . '/PortalFichaApi.php';
  * departamentos?" ao adicionar um vídeo.
  *
  * A fonte é a API de ficha de funcionários (campo obras_departamento de
- * cada ficha ativa): todos os departamentos que existem de fato no Portal,
+ * cada ficha ATIVA — só colaboradores ativos entram na lista): todos os departamentos que existem de fato no Portal,
  * não só os que têm cartão na Academy. A lista é guardada por 6 horas em
  * arquivo temporário do servidor, porque buscar todas as fichas leva alguns
  * segundos. Se a API falhar, usa os departamentos já gravados nas pessoas
@@ -153,6 +153,12 @@ function mse_departamentos_da_api_ficha(): array
 
     $nomes = [];
     foreach ($fichas as $f) {
+        // /v1/ff_infos já devolve só fichas ativas; se algum registro trouxer
+        // status de desligado, desistente ou aguardando, fica de fora mesmo assim.
+        $situacao = is_array($f) ? mse_departamento_chave((string) ($f['status'] ?? $f['situacao'] ?? '')) : '';
+        if ($situacao !== '' && !in_array($situacao, ['ativo', 'ativa', '1', 'sim', 'active'], true)) {
+            continue;
+        }
         if (is_array($f) && isset($f['obras_departamento']) && is_scalar($f['obras_departamento'])) {
             $nomes[] = trim((string) $f['obras_departamento']);
         }
