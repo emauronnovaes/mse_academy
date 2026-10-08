@@ -6494,6 +6494,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     // aprovação (os admins usam o botão da barra deles).
     const btnEnviarVideo = document.getElementById('btnEnviarVideo');
     if(btnEnviarVideo && !isAdmin && getRealSessionToken()){
+      // Mesma barra do admin, só com este botão (vermelho).
+      document.getElementById('adminToolbar').hidden = false;
       btnEnviarVideo.hidden = false;
       btnEnviarVideo.addEventListener('click', openVideoModal);
     }

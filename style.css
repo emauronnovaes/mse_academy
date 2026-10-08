@@ -2018,13 +2018,6 @@
   /* ================================================================
      Envio de vídeo por quem não é admin + tela de Aprovações
      ================================================================ */
-  .btn-enviar-video{
-    margin-top:24px; display:inline-flex; align-items:center; gap:8px;
-    background:var(--yellow); color:var(--ink); border:none; border-radius:8px;
-    padding:11px 18px; font-family:'Space Grotesk',sans-serif; font-size:14.5px; font-weight:700; cursor:pointer;
-    animation:rise .7s ease .34s both;
-  }
-  .btn-enviar-video:hover{ background:#d9a600; }
   .btn-aprovacoes{ background:#2E7D4F; }
   .btn-aprovacoes:hover{ background:#1F5C39; }
   .aprov-badge{

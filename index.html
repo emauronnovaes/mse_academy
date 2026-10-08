@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261008h">
+<link rel="stylesheet" href="style.css?v=20261008i">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -45,6 +45,10 @@
     </nav>
   </div>
   <div class="admin-toolbar" id="adminToolbar" hidden>
+    <!-- Para quem não é admin: o vídeo vai para aprovação antes de aparecer -->
+    <button type="button" id="btnEnviarVideo" class="btn-add-people" hidden>
+      <i class="fa-solid fa-circle-play" aria-hidden="true"></i> Adicionar vídeo
+    </button>
     <button type="button" id="btnAdicionarPessoas" class="btn-add-people" hidden>
       <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Adicionar pessoas
     </button>
@@ -412,10 +416,6 @@
     <div class="welcome-eyebrow" id="greetingTime">Bom dia</div>
     <h1 id="greetingName">Bem-vindo, <span>Colaborador</span>.</h1>
     <p id="welcomeSub">Vamos começar pela sua integração ao Portal MSE.</p>
-    <!-- Para quem não é admin: o vídeo vai para aprovação antes de aparecer -->
-    <button type="button" id="btnEnviarVideo" class="btn-enviar-video" hidden>
-      <i class="fa-solid fa-circle-play" aria-hidden="true"></i> Adicionar vídeo
-    </button>
   </div>
 </section>
 
@@ -648,7 +648,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261008h"></script>
+<script src="script.js?v=20261008i"></script>
 
 </body>
 </html>
