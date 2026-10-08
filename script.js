@@ -3302,7 +3302,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('videoModalPlaylistWrap').hidden = origem !== 'playlist';
     // Sortear entre playlists não faz sentido: elas são conteúdo extra,
     // não alternativas de uma mesma aula obrigatória.
-    document.getElementById('videoModalSorteioWrap').hidden = origem === 'playlist';
+    document.getElementById('videoModalSorteioWrap').hidden = true; // grupo de sorteio saiu do formulário
   }
 
   // O id da playlist é o trecho depois de "list=". É mais longo e
@@ -3859,27 +3859,14 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // Só manda o que foi preenchido: campo em branco nem vai, e assim o
   // cadastro continua funcionando antes da migração 020 rodar no banco.
   function lerCamposAuditoriaDoModal(){
+    // Tipo, instrutor, conteúdo e assuntos não são mais digitados no
+    // formulário: o servidor preenche. Só o aviso "Você ainda está aí?" vai daqui.
     const campos = {};
-    const tipo = document.getElementById('videoModalTipoTreinamento');
-    if(!tipo) return campos;
-    const normas = Array.from(document.querySelectorAll('#videoModalNormas input:checked')).map(i => i.value);
-    const texto = {
-      tipo_treinamento: tipo.value,
-      instrutor: document.getElementById('videoModalInstrutor').value.trim(),
-      conteudo_programatico: document.getElementById('videoModalConteudo').value.trim(),
-      assuntos: document.getElementById('videoModalAssuntos').value.trim(),
-    };
-    Object.entries(texto).forEach(([k, v]) => { if(v) campos[k] = v; });
-    if(normas.length) campos.normas = normas;
     const aviso = document.getElementById('videoModalAviso');
     if(aviso && !aviso.checked) campos.aviso_presenca = false;
     return campos;
   }
   function limparCamposAuditoriaDoModal(){
-    if(!document.getElementById('videoModalTipoTreinamento')) return;
-    ['videoModalTipoTreinamento', 'videoModalInstrutor', 'videoModalConteudo', 'videoModalAssuntos']
-      .forEach(id => { document.getElementById(id).value = ''; });
-    document.querySelectorAll('#videoModalNormas input').forEach(i => { i.checked = false; });
     const aviso = document.getElementById('videoModalAviso');
     if(aviso) aviso.checked = true;
   }

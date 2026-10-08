@@ -165,6 +165,24 @@ if ($grupoSorteio !== '' && !$temNovas) {
 // pra um tipo ou norma inválida não deixar meio cadastro pra trás.
 $camposAuditoria = mse_ler_campos_auditoria($pdo, $input) + mse_ler_aviso_presenca($pdo, $input);
 
+// Dados de auditoria automáticos: o que não veio do formulário é preenchido
+// com quem enviou (instrutor), a descrição (conteúdo programático) e o
+// título (assuntos). O tipo fica em branco = automático (Integração na
+// trilha, Treinamento interno no catálogo). Normas não dá pra deduzir:
+// ficam em branco até alguém marcar em Treinamentos > Editar.
+if (mse_tem_campos_auditoria($pdo)) {
+    $automatico = [
+        'instrutor' => mb_substr((string) $usuario['name'], 0, 150),
+        'conteudo_programatico' => mb_substr($description, 0, 5000),
+        'assuntos' => mb_substr($title, 0, 500),
+    ];
+    foreach ($automatico as $campo => $valor) {
+        if (!isset($camposAuditoria[$campo]) && trim($valor) !== '') {
+            $camposAuditoria[$campo] = $valor;
+        }
+    }
+}
+
 // Curso + pergunta + opções tudo junto numa transação — se qualquer
 // parte falhar, desfaz tudo.
 $pdo->beginTransaction();
