@@ -225,13 +225,44 @@ function mse_portal_ficha_interpretar($response, int $httpCode, string $curlErro
         // "funcao" na ficha é o cargo oficial do RH — mais confiável que
         // o que o token do Portal manda (se mandar).
         'funcao' => $cargo,
-        'obras_departamento' => isset($ficha['obras_departamento']) ? trim((string) $ficha['obras_departamento']) : null,
+        // O campo obras_departamento mistura departamento com NOME DE OBRA
+        // (quem é alocado na sede mas trabalha numa obra vem com o nome da
+        // obra). Aqui devolve o departamento de verdade, procurando em outros
+        // campos da ficha quando o principal só traz uma obra. Todo o resto
+        // da Academy já lê este campo, então passa a usar o certo sozinho.
+        'obras_departamento' => mse_ficha_departamento($ficha),
         // Documentação não lista "email" entre os campos, mas alguns
         // registros trazem — pegamos se vier, sem depender disso.
         'email' => isset($ficha['email']) && $ficha['email'] !== '' ? strtolower(trim((string) $ficha['email'])) : null,
         // Foto do cadastro no Portal (a API usa foto_google e, se vazia, foto).
         'foto' => mse_portal_ficha_url_foto($ficha['foto'] ?? ($ficha['foto_google'] ?? null)),
     ]];
+}
+
+/**
+ * Departamento de verdade de uma ficha. Usa obras_departamento; se ele for
+ * nome de obra (ex.: "CNPEM-FASEADA"), procura nos outros campos de
+ * departamento/setor que a ficha possa trazer. Sem alternativa, devolve o
+ * que veio (a Academy não inventa departamento).
+ */
+function mse_ficha_departamento(array $ficha): ?string
+{
+    if (!function_exists('mse_departamento_eh_obra')) {
+        require_once __DIR__ . '/Departamentos.php';
+    }
+    $principal = isset($ficha['obras_departamento']) && is_scalar($ficha['obras_departamento'])
+        ? trim((string) $ficha['obras_departamento']) : '';
+    if ($principal !== '' && !mse_departamento_eh_obra($principal)) {
+        return $principal;
+    }
+    foreach (['departamento', 'nome_departamento', 'departamento_nome', 'desc_departamento', 'setor', 'nome_setor',
+              'setor_nome', 'area', 'nome_area', 'depto', 'lotacao'] as $campo) {
+        $v = isset($ficha[$campo]) && is_scalar($ficha[$campo]) ? trim((string) $ficha[$campo]) : '';
+        if ($v !== '' && !mse_departamento_eh_obra($v)) {
+            return $v;
+        }
+    }
+    return $principal !== '' ? $principal : null;
 }
 
 /**

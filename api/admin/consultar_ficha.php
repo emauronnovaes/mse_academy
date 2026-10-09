@@ -36,6 +36,9 @@ if ($token === '') {
 $base = rtrim(mse_env('PORTAL_FICHA_API_BASE', 'https://portalmse.com.br/microservices/hub_mse/api_ficha'), '/');
 
 // Campos de lotação que interessam aqui (os demais só aparecem pelo nome).
+// Campos que NÃO são mostrados (dados pessoais): aparecem só como "(oculto)".
+const MSE_PADRAO_SENSIVEL = '/cpf|rg$|^rg|tel|fone|celular|e_?mail|nasc|sexo|doc|endere|cep|banco|agencia|conta|pix|senha|foto|salario|pis|ctps|cnh|filiacao|mae|pai/i';
+
 const MSE_CAMPOS_LOTACAO = [
     'nome', 'status', 'situacao', 'mse_sede', 'nome_obra', 'obras_departamento', 'obra', 'departamento',
     'local_alojado', 'mobilizacao', 'desmobilizacao', 'funcao', 'tipo_contratacao', 'empresa_contratante',
@@ -66,7 +69,18 @@ $consultar = static function (string $caminho) use ($base, $token, $busca): arra
 
     $campos = [];
     $pessoas = [];
-    foreach (array_slice($lista, 0, 15) as $f) {
+    $completo = null; // todos os campos da primeira pessoa (dados pessoais ocultos)
+    foreach (array_slice($lista, 0, 15) as $i => $f) {
+        if ($i === 0) {
+            $completo = [];
+            foreach ($f as $k => $v) {
+                if (preg_match(MSE_PADRAO_SENSIVEL, (string) $k)) {
+                    $completo[$k] = '(oculto)';
+                } else {
+                    $completo[$k] = is_scalar($v) || $v === null ? $v : '(lista/objeto)';
+                }
+            }
+        }
         $campos = array_values(array_unique(array_merge($campos, array_keys($f))));
         $linha = [];
         foreach (MSE_CAMPOS_LOTACAO as $c) {
@@ -76,7 +90,7 @@ $consultar = static function (string $caminho) use ($base, $token, $busca): arra
         }
         $pessoas[] = $linha;
     }
-    return ['erro' => null, 'total' => count($lista), 'pessoas' => $pessoas, 'campos' => $campos];
+    return ['erro' => null, 'total' => count($lista), 'pessoas' => $pessoas, 'campos' => $campos, 'completo' => $completo];
 };
 
 mse_json([

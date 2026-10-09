@@ -293,8 +293,11 @@ function mse_departamentos_da_api_ficha(): array
         if ($situacao !== '' && !in_array($situacao, ['ativo', 'ativa', '1', 'sim', 'active'], true)) {
             continue;
         }
-        if (is_array($f) && isset($f['obras_departamento']) && is_scalar($f['obras_departamento'])) {
-            $nomes[] = trim((string) $f['obras_departamento']);
+        if (is_array($f)) {
+            $d = mse_ficha_departamento($f); // já troca nome de obra pelo departamento, se a ficha trouxer
+            if ($d !== null && $d !== '') {
+                $nomes[] = $d;
+            }
         }
     }
     return array_values(array_filter(array_unique($nomes), 'strlen'));

@@ -42,16 +42,33 @@ $filtroOculto = mse_tem_coluna($pdo, 'users', 'oculto_em_relatorios') ? ' AND oc
 // so_faltando: a tela de relatórios chama sozinha, só pra quem ainda está
 // sem cargo ou sem o departamento do Portal — não precisa esperar a
 // pessoa entrar de novo.
+$temSetor = mse_garantir_coluna_setor_portal($pdo);
 if (!empty($input['so_faltando'])) {
-    $filtroOculto .= mse_garantir_coluna_setor_portal($pdo)
-        ? " AND (cargo IS NULL OR cargo = '' OR setor_portal IS NULL OR setor_portal = '')"
-        : " AND (cargo IS NULL OR cargo = '')";
+    if ($temSetor) {
+        // Também reprocessa quem ficou gravado com NOME DE OBRA no lugar do
+        // departamento (ex.: CNPEM-FASEADA): a ficha agora procura o
+        // departamento de verdade em outros campos, e essas pessoas se
+        // corrigem aqui, sem esperar o próximo login.
+        if (!function_exists('mse_departamento_eh_obra')) {
+            require_once __DIR__ . '/../../../src/Departamentos.php';
+        }
+        $comObra = [];
+        foreach ($pdo->query("SELECT DISTINCT setor_portal FROM users WHERE setor_portal IS NOT NULL AND setor_portal <> ''")->fetchAll(PDO::FETCH_COLUMN) as $setor) {
+            if (mse_departamento_eh_obra((string) $setor)) {
+                $comObra[] = $pdo->quote((string) $setor);
+            }
+        }
+        $filtroOculto .= " AND (cargo IS NULL OR cargo = '' OR setor_portal IS NULL OR setor_portal = ''"
+            . ($comObra ? ' OR setor_portal IN (' . implode(',', $comObra) . ')' : '') . ')';
+    } else {
+        $filtroOculto .= " AND (cargo IS NULL OR cargo = '')";
+    }
 }
 $total = (int) $pdo->query('SELECT COUNT(*) FROM users WHERE active = 1' . $filtroOculto)->fetchColumn();
 $feitos = (int) $pdo->query('SELECT COUNT(*) FROM users WHERE active = 1' . $filtroOculto . ' AND id <= ' . $aposId)->fetchColumn();
 
 $stmt = $pdo->prepare(
-    'SELECT id, name, cpf, cargo, area_id FROM users
+    'SELECT id, name, cpf, cargo, area_id, ' . ($temSetor ? 'setor_portal' : 'NULL AS setor_portal') . ' FROM users
      WHERE active = 1' . $filtroOculto . ' AND id > ? ORDER BY id ASC LIMIT ' . ATUALIZAR_LOTE
 );
 $stmt->execute([$aposId]);
@@ -101,7 +118,12 @@ foreach ($lote as $u) {
     }
 
     mse_gravar_setor_portal($pdo, (int) $u['id'], $ficha['obras_departamento'] ?? null);
+    $novoSetor = trim((string) ($ficha['obras_departamento'] ?? ''));
+    $mudouSetor = $novoSetor !== '' && $novoSetor !== trim((string) $u['setor_portal']);
 
+    if (!$campos && $mudouSetor) {
+        $resultado['atualizados'][] = $u['name']; // só o departamento mudou: a tela precisa recarregar
+    }
     if ($campos) {
         $valores[] = $u['id'];
         $pdo->prepare('UPDATE users SET ' . implode(', ', $campos) . ' WHERE id = ?')->execute($valores);

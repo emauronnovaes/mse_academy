@@ -4726,7 +4726,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <thead><tr>${colunas.map(c => `<th>${esc(FICHA_ROTULOS[c])}</th>`).join('')}</tr></thead>
         <tbody>${r.pessoas.map(p => `<tr>${colunas.map(c => `<td>${esc(valor(p[c]))}</td>`).join('')}</tr>`).join('')}</tbody>
       </table></div>
-      <details class="cf-campos"><summary>Todos os campos que a API devolve (${r.campos.length})</summary><p>${esc(r.campos.join(', '))}</p></details>`;
+      <details class="cf-campos"><summary>Todos os campos que a API devolve (${r.campos.length})</summary><p>${esc(r.campos.join(', '))}</p></details>
+      ${r.completo ? `<details class="cf-campos" open><summary>Todos os dados da primeira pessoa (dados pessoais ocultos)</summary>
+        <div class="trn-tabela-wrap"><table class="trn-tabela"><tbody>${Object.entries(r.completo).map(([k, v]) => `<tr><td class="trn-nowrap"><strong>${esc(k)}</strong></td><td>${esc(v === null || v === '' ? '—' : String(v))}</td></tr>`).join('')}</tbody></table></div></details>` : ''}`;
   }
   async function consultarFicha(nome){
     const alvo = document.getElementById('cfResultado');
@@ -4915,7 +4917,10 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
   let portalCompletando = false, portalCompletado = false;
   async function completarDadosDoPortal(){
     if(portalCompletando || portalCompletado) return;
-    if(!trnEstado.pessoas.some(p => !p.cargo || !p.departamento)) return;
+    // Sempre confere uma vez por visita: além de quem está sem cargo ou
+    // departamento, o servidor também corrige quem ficou gravado com nome de
+    // obra no lugar do departamento (o front não sabe quem é). Sem ninguém
+    // pra corrigir, a chamada volta na hora.
     portalCompletando = true;
     const contagem = document.getElementById('trnContagem');
     const textoOriginal = contagem.textContent;
