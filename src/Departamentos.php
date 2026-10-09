@@ -44,12 +44,25 @@ const MSE_DEPARTAMENTOS_IGNORADOS = [
     'CNPEM-FASEADA',
     'IPEN - FAB. E MONT. CIRCUITO EXP.',
     'LOTE - 05 - CONSTRUÇÃO',
+    'AMG - CP497',
+    'ARENA MRV - CP343',
+    'AWS',
+    'EUROFARMA',
 ];
 
-/** Esse texto é nome de obra (e não departamento)? */
-function mse_departamento_eh_obra(string $nome): bool
+/** Esse texto é nome de obra (e não departamento)? A escolha do admin (tabela departamentos_config) vale mais que os padrões. */
+function mse_departamento_eh_obra(string $nome, ?array $config = null): bool
 {
     static $ignorados = null;
+    if ($config !== null) {
+        $tipo = $config[mse_departamento_chave($nome)]['tipo'] ?? null;
+        if ($tipo === 'mostrar') {
+            return false;
+        }
+        if ($tipo === 'ocultar') {
+            return true;
+        }
+    }
     if ($ignorados === null) {
         $ignorados = array_flip(array_map(static fn($n) => str_replace(' ', '', mse_departamento_chave($n)), MSE_DEPARTAMENTOS_IGNORADOS));
     }
@@ -57,6 +70,47 @@ function mse_departamento_eh_obra(string $nome): bool
         return true;
     }
     return (bool) preg_match('/\s[-–]\s/u', $nome);
+}
+
+/**
+ * Ajustes do admin na lista de departamentos (tela "Gerenciar lista"):
+ *   ocultar  tira da lista um nome que o Portal manda
+ *   mostrar  traz de volta um nome que estava oculto (padrão ou por regra)
+ *   extra    departamento adicionado à mão, que não vem do Portal
+ */
+function mse_garantir_tabela_departamentos_config(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok !== null) {
+        return $ok;
+    }
+    try {
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS departamentos_config (
+               chave VARCHAR(150) NOT NULL, nome VARCHAR(150) NOT NULL, tipo VARCHAR(10) NOT NULL,
+               criado_por VARCHAR(200) NULL, criado_em DATETIME NOT NULL, PRIMARY KEY (chave)
+             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+        return $ok = true;
+    } catch (Throwable $e) {
+        error_log('[departamentos_config] Não consegui criar a tabela (rode a migração 029): ' . $e->getMessage());
+        return $ok = false;
+    }
+}
+
+/** Ajustes gravados, por chave. Sem a tabela, nenhum. */
+function mse_departamentos_config(PDO $pdo): array
+{
+    $st = $pdo->prepare('SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?');
+    $st->execute(['departamentos_config']);
+    if ($st->fetchColumn() === false) {
+        return [];
+    }
+    $mapa = [];
+    foreach ($pdo->query('SELECT chave, nome, tipo FROM departamentos_config') as $l) {
+        $mapa[$l['chave']] = $l;
+    }
+    return $mapa;
 }
 
 /** "Programação" e "PROGRAMACAO" viram a mesma coisa. */
@@ -100,37 +154,77 @@ function mse_garantir_tabela_departamentos(PDO $pdo): bool
  */
 function mse_departamentos_portal(PDO $pdo): array
 {
+    $b = mse_departamentos_base($pdo);
+    $config = mse_departamentos_config($pdo);
+    $lista = [];
+    foreach ($b['nomes'] as $n) {
+        if (!mse_departamento_eh_obra($n, $config)) {
+            $lista[mse_departamento_chave($n)] = $n;
+        }
+    }
+    foreach ($config as $chave => $c) { // departamentos adicionados à mão
+        if ($c['tipo'] === 'extra' && !isset($lista[$chave])) {
+            $lista[$chave] = $c['nome'];
+        }
+    }
+    $nomes = array_values($lista);
+    usort($nomes, static fn($a, $c) => strcmp(mse_departamento_chave($a), mse_departamento_chave($c)));
+    return ['departamentos' => $nomes, 'fonte' => $b['fonte'], 'aviso' => $b['aviso']];
+}
+
+/**
+ * Tudo para a tela "Gerenciar lista": cada nome que o Portal manda, se está
+ * oculto, mais os departamentos adicionados à mão.
+ *
+ * @return array{itens: array<int, array{nome: string, oculto: bool, manual: bool}>, fonte: string, aviso: ?string}
+ */
+function mse_departamentos_gerenciar(PDO $pdo): array
+{
+    $b = mse_departamentos_base($pdo);
+    $config = mse_departamentos_config($pdo);
+    $itens = [];
+    foreach ($b['nomes'] as $n) {
+        $itens[mse_departamento_chave($n)] = ['nome' => $n, 'oculto' => mse_departamento_eh_obra($n, $config), 'manual' => false];
+    }
+    foreach ($config as $chave => $c) {
+        if ($c['tipo'] === 'extra') {
+            $itens[$chave] = ['nome' => $c['nome'], 'oculto' => false, 'manual' => true];
+        }
+    }
+    $lista = array_values($itens);
+    usort($lista, static fn($a, $c) => strcmp(mse_departamento_chave($a['nome']), mse_departamento_chave($c['nome'])));
+    return ['itens' => $lista, 'fonte' => $b['fonte'], 'aviso' => $b['aviso']];
+}
+
+/** Nomes distintos que o Portal (ou, na falta, as pessoas / a Academy) informa, sem nenhum filtro. */
+function mse_departamentos_base(PDO $pdo): array
+{
     $unicos = [];
     $juntar = static function (array $nomes) use (&$unicos): void {
         foreach ($nomes as $n) {
             $n = trim((string) preg_replace('/\s+/', ' ', (string) $n));
             $chave = $n === '' ? '' : mse_departamento_chave($n);
-            if ($chave !== '' && !isset($unicos[$chave]) && !mse_departamento_eh_obra($n)) {
+            if ($chave !== '' && !isset($unicos[$chave])) {
                 $unicos[$chave] = $n;
             }
         }
-    };
-    $ordenar = static function () use (&$unicos): array {
-        $lista = array_values($unicos);
-        usort($lista, static fn($a, $b) => strcmp(mse_departamento_chave($a), mse_departamento_chave($b)));
-        return $lista;
     };
 
     $aviso = null;
     $doPortal = mse_departamentos_do_portal_cache($aviso);
     if ($doPortal) {
         $juntar($doPortal);
-        return ['departamentos' => $ordenar(), 'fonte' => 'portal', 'aviso' => null];
+        return ['nomes' => array_values($unicos), 'fonte' => 'portal', 'aviso' => null];
     }
 
     if (mse_tem_coluna($pdo, 'users', 'setor_portal')) {
         $juntar($pdo->query("SELECT DISTINCT setor_portal FROM users WHERE setor_portal IS NOT NULL AND setor_portal <> ''")->fetchAll(PDO::FETCH_COLUMN));
     }
     if ($unicos) {
-        return ['departamentos' => $ordenar(), 'fonte' => 'pessoas', 'aviso' => $aviso];
+        return ['nomes' => array_values($unicos), 'fonte' => 'pessoas', 'aviso' => $aviso];
     }
     $juntar($pdo->query('SELECT name FROM areas ORDER BY name')->fetchAll(PDO::FETCH_COLUMN));
-    return ['departamentos' => $ordenar(), 'fonte' => 'academy', 'aviso' => $aviso];
+    return ['nomes' => array_values($unicos), 'fonte' => 'academy', 'aviso' => $aviso];
 }
 
 /** Departamentos vindos da API de ficha, com cache de 6h. [] se falhar (e $aviso diz por quê). */

@@ -3730,6 +3730,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   function openVideoModal(){
     vmParaAprovacao = !window.mseEhAdmin;
+    const bGer = document.getElementById('videoModalGerenciarDeptos');
+    if(bGer){
+      bGer.hidden = vmParaAprovacao; // só admin mexe na lista
+      bGer.onclick = () => abrirGerenciarDeptos(() => fillAreaSelect());
+    }
     document.getElementById('adminVideoModalTitle').textContent = vmParaAprovacao ? 'Enviar vídeo para aprovação' : 'Adicionar vídeo';
     document.getElementById('videoModalSubmit').textContent = vmTextoBotao();
     fillAreaSelect();
@@ -4371,6 +4376,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // A janela das ações de uma aula. Antes ela era a própria tela de
   // "Gerenciar aulas"; agora serve a todas as ações da Busca.
   function abrirDialogoAula(titulo, subtitulo, largo){
+    dgAoFechar = null; // qualquer outro diálogo cancela o retorno pendente do "Gerenciar lista"
     document.getElementById('aulasModalTitle').textContent = titulo;
     const sub = document.getElementById('aulasModalSubtitle');
     sub.textContent = subtitulo || '';
@@ -4382,6 +4388,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   function closeAulasModal(){
     document.getElementById('aulasModalOverlay').hidden = true;
     document.getElementById('aulasModalBody').innerHTML = '';
+    const voltar = dgAoFechar;
+    dgAoFechar = null;
+    if(voltar) voltar();
   }
 
   function openTreinamentosTela(modo){
@@ -5807,6 +5816,65 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
     });
   }
 
+  // ---------- Gerenciar a lista de departamentos ----------
+  // O campo de departamento da ficha do Portal mistura departamentos com
+  // nomes de obra e de cliente. Aqui o admin esconde (ou volta a mostrar)
+  // qualquer nome, e adiciona ou exclui departamentos à mão. Esconder não
+  // apaga nada: Mostrar desfaz.
+  let dgAoFechar = null;
+  async function abrirGerenciarDeptos(aoFechar){
+    const corpo = abrirDialogoAula('Gerenciar lista de departamentos', 'Esconda o que não é departamento ou adicione os que faltam', true);
+    corpo.innerHTML = '<p>Carregando...</p>';
+    const recarregar = async (acao, nome) => {
+      try{
+        const d = acao
+          ? await apiFetch('api/admin/departamentos_config.php', { method: 'POST', body: JSON.stringify({ acao, nome }) })
+          : await apiFetch('api/admin/departamentos_config.php');
+        desenhar(d);
+      }catch(e){
+        corpo.innerHTML = '<p class="trn-vazio-lista">Não foi possível: ' + esc(e.message) + '</p>';
+      }
+    };
+    const desenhar = (d) => {
+      const itens = d.itens || [];
+      const visiveis = itens.filter(i => !i.oculto).length;
+      corpo.innerHTML = `
+        <p class="admin-field-hint">${visiveis} departamento${visiveis === 1 ? '' : 's'} na lista · ${itens.length - visiveis} oculto${itens.length - visiveis === 1 ? '' : 's'}.
+          ${d.fonte !== 'portal' ? '<br><strong>Atenção:</strong> não consegui ler a lista completa do Portal agora, estes são só os nomes já conhecidos.' : ''}</p>
+        <div class="dg-adicionar">
+          <input type="text" class="trn-input" id="dgNovo" maxlength="150" placeholder="Adicionar um departamento que não está na lista">
+          <button type="button" class="trn-btn" id="dgAdicionar">Adicionar</button>
+        </div>
+        <input type="search" class="trn-input dg-filtro" id="dgFiltro" placeholder="Filtrar a lista..." autocomplete="off">
+        <div class="dg-lista" id="dgLista">${itens.map(i => `
+          <div class="dg-item${i.oculto ? ' is-oculto' : ''}" data-nome="${esc(mse_normalizar(i.nome))}">
+            <span class="dg-nome">${esc(i.nome)}${i.manual ? ' <em>adicionado à mão</em>' : ''}${i.oculto ? ' <em>oculto</em>' : ''}</span>
+            ${i.manual
+              ? `<button type="button" class="adm-remover" data-acao="excluir" data-nome="${esc(i.nome)}">Excluir</button>`
+              : (i.oculto
+                ? `<button type="button" class="aulas-btn" data-acao="mostrar" data-nome="${esc(i.nome)}">Mostrar</button>`
+                : `<button type="button" class="adm-remover" data-acao="ocultar" data-nome="${esc(i.nome)}">Ocultar</button>`)}
+          </div>`).join('') || '<p class="trn-vazio-lista">Nenhum departamento.</p>'}
+        </div>`;
+      document.getElementById('dgAdicionar').addEventListener('click', () => {
+        const nome = document.getElementById('dgNovo').value.trim();
+        if(nome) recarregar('adicionar', nome);
+      });
+      document.getElementById('dgNovo').addEventListener('keydown', e => { if(e.key === 'Enter') document.getElementById('dgAdicionar').click(); });
+      document.getElementById('dgFiltro').addEventListener('input', e => {
+        const t = mse_normalizar(e.target.value);
+        document.querySelectorAll('#dgLista .dg-item').forEach(el => { el.hidden = !!t && !el.dataset.nome.includes(t); });
+      });
+      document.querySelectorAll('#dgLista [data-acao]').forEach(b => b.addEventListener('click', () => {
+        if(b.dataset.acao === 'excluir' && !confirm('Excluir o departamento ' + b.dataset.nome + '? Ele sai da lista (vídeos que já o marcaram continuam com ele).')) return;
+        recarregar(b.dataset.acao, b.dataset.nome);
+      }));
+    };
+    // Ao fechar o diálogo (por qualquer caminho), quem abriu atualiza a própria lista.
+    dgAoFechar = aoFechar || null;
+    recarregar();
+  }
+
   // ---------- Aviso de vídeo recusado ----------
   // Para quem enviou um vídeo que o admin recusou: um pop-up com o motivo
   // escrito por ele. Aparece uma vez por vídeo (ao fechar, o servidor
@@ -6095,6 +6163,7 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
       <p class="admin-field-hint">Marque os departamentos (os mesmos do Portal) para os quais esta aula é <strong>obrigatória</strong>.
         Sem nenhum marcado, vale para todos. Quem é de outro departamento continua vendo a aula —
         ela só não entra nas pendências nem na barra de progresso dessa pessoa.</p>
+      <p class="admin-field-hint"><button type="button" class="dg-link" id="areasGerenciarDeptos">Gerenciar lista de departamentos</button></p>
       <div class="areas-aula-lista">
         ${dados.departamentos.map(d => `
           <label class="areas-aula-item">
@@ -6107,6 +6176,7 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
       <div class="admin-modal-feedback" id="areasFeedback" hidden></div>
     `;
 
+    document.getElementById('areasGerenciarDeptos').addEventListener('click', () => abrirGerenciarDeptos(() => abrirAreasDaAula(courseId, titulo)));
     document.getElementById('areasSalvar').addEventListener('click', async () => {
       const marcadas = Array.from(body.querySelectorAll('.areas-aula-item input:checked')).map(i => i.value);
       const fb = document.getElementById('areasFeedback');

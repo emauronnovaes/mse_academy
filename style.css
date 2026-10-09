@@ -2163,3 +2163,15 @@
   .cf-campos{ margin:8px 0 4px; font-size:12px; color:var(--steel); }
   .cf-campos summary{ cursor:pointer; }
   .cf-campos p{ margin:6px 0 0; overflow-wrap:anywhere; }
+
+  /* Gerenciar lista de departamentos */
+  .dg-link{ background:none; border:none; padding:0 0 0 8px; cursor:pointer; font:inherit; font-size:12px; font-weight:700; color:var(--red); text-decoration:underline; text-transform:none; letter-spacing:0; }
+  .dg-adicionar{ display:flex; gap:8px; margin-bottom:10px; }
+  .dg-adicionar .trn-input{ flex:1; }
+  .dg-filtro{ margin-bottom:8px; }
+  .dg-lista{ border:1px solid var(--line); border-radius:8px; max-height:340px; overflow-y:auto; }
+  .dg-item{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 12px; }
+  .dg-item + .dg-item{ border-top:1px solid var(--line); }
+  .dg-item.is-oculto .dg-nome{ color:var(--steel); text-decoration:line-through; }
+  .dg-nome{ font-size:13.5px; overflow-wrap:anywhere; }
+  .dg-nome em{ font-style:normal; font-size:11px; font-weight:700; color:var(--steel); background:#EFEEEA; padding:1px 7px; border-radius:20px; margin-left:4px; text-decoration:none; display:inline-block; }
