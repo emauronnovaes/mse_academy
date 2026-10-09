@@ -5594,6 +5594,44 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     });
   }
 
+  // ---------- Aviso de vídeo recusado ----------
+  // Para quem enviou um vídeo que o admin recusou: um pop-up com o motivo
+  // escrito por ele. Aparece uma vez por vídeo (ao fechar, o servidor
+  // marca como visto); com mais de um, mostra um de cada vez.
+  async function mostrarAvisosDeRecusa(){
+    let lista = [];
+    try{
+      lista = (await apiFetch('api/aprovacao/recusados.php')).recusados || [];
+    }catch(e){ return; } // sem o aviso a Academy segue normal
+    if(!lista.length) return;
+
+    const overlay = document.getElementById('recusaOverlay');
+    const btn = document.getElementById('recusaFechar');
+    let i = 0;
+    const mostrar = () => {
+      const v = lista[i];
+      document.getElementById('recusaContador').textContent = lista.length > 1
+        ? `Aviso da administração · ${i + 1} de ${lista.length}` : 'Aviso da administração';
+      document.getElementById('recusaVideo').textContent = v.titulo;
+      const motivo = document.getElementById('recusaMotivo');
+      motivo.textContent = v.motivo || 'O administrador não escreveu um motivo. Se tiver dúvida, fale com ele.';
+      motivo.classList.toggle('is-vazio', !v.motivo);
+      btn.textContent = i < lista.length - 1 ? 'Próximo' : 'Entendi';
+      overlay.hidden = false;
+      btn.focus();
+    };
+    btn.onclick = async () => {
+      // Marca como visto antes de seguir: se a pessoa fechar a aba agora, não reaparece.
+      apiFetch('api/aprovacao/recusados.php', {
+        method: 'POST', body: JSON.stringify({ course_id: lista[i].id }),
+      }).catch(() => {});
+      i++;
+      if(i < lista.length) mostrar();
+      else overlay.hidden = true;
+    };
+    mostrar();
+  }
+
   // ---------- Pergunta de uma aula já cadastrada ----------
   // Antes a pergunta só podia ser escrita ao cadastrar o vídeo. Quem
   // subisse a aula sem pergunta não tinha caminho nenhum: teria que apagar
@@ -6546,6 +6584,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     // Todo mundo logado pode adicionar vídeo; quem não é admin manda para
     // aprovação (os admins usam o botão da barra deles).
     const btnEnviarVideo = document.getElementById('btnEnviarVideo');
+    if(!isAdmin && getRealSessionToken()) mostrarAvisosDeRecusa();
     if(btnEnviarVideo && !isAdmin && getRealSessionToken()){
       // Mesma barra do admin, só com este botão (vermelho).
       document.getElementById('adminToolbar').hidden = false;

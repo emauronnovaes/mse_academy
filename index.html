@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261009a">
+<link rel="stylesheet" href="style.css?v=20261009b">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -190,6 +190,30 @@
     <h3 id="watchersModalTitle">Quem assistiu</h3>
     <p id="watchersModalSubtitle">Clique num vídeo pra ver os nomes de quem já assistiu.</p>
     <div id="watchersModalBody"></div>
+  </div>
+</div>
+
+<!-- Pop-up de vídeo recusado: aparece para quem enviou o vídeo, com o motivo
+     que o admin escreveu. Uma vez só por vídeo. -->
+<div class="recusa-overlay" id="recusaOverlay" hidden>
+  <div class="recusa-card" role="alertdialog" aria-modal="true" aria-labelledby="recusaTitulo" aria-describedby="recusaMotivo">
+    <div class="recusa-topo">
+      <span class="recusa-icone" aria-hidden="true"><i class="fa-solid fa-circle-exclamation"></i></span>
+      <div>
+        <p class="recusa-eyebrow" id="recusaContador">Aviso da administração</p>
+        <h3 id="recusaTitulo">Seu vídeo não foi aprovado</h3>
+      </div>
+    </div>
+    <div class="recusa-corpo">
+      <p class="recusa-rotulo">Vídeo enviado</p>
+      <p class="recusa-video" id="recusaVideo"></p>
+      <p class="recusa-rotulo">Motivo informado pelo administrador</p>
+      <blockquote class="recusa-motivo" id="recusaMotivo"></blockquote>
+      <p class="recusa-dica">Você pode corrigir o que foi apontado e enviar o vídeo novamente pelo botão <strong>Adicionar vídeo</strong>.</p>
+    </div>
+    <div class="recusa-rodape">
+      <button type="button" class="recusa-btn" id="recusaFechar">Entendi</button>
+    </div>
   </div>
 </div>
 
@@ -651,7 +675,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261009a"></script>
+<script src="script.js?v=20261009b"></script>
 
 </body>
 </html>

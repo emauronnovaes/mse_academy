@@ -24,6 +24,8 @@ const MSE_COLUNAS_APROVACAO = [
     'decidido_por' => 'INT UNSIGNED NULL',
     'decidido_em' => 'DATETIME NULL',
     'motivo_recusa' => 'VARCHAR(500) NULL',
+    // Quando quem enviou viu o aviso de recusa (o pop-up aparece uma vez só).
+    'recusa_vista_em' => 'DATETIME NULL',
 ];
 
 /** As colunas existem (ou acabaram de ser criadas)? */
