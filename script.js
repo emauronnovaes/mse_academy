@@ -4408,6 +4408,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('trnTabelaPessoas').hidden = !porPessoa;
     document.getElementById('trnTabelaAdmitidos').hidden = !admitidos;
     document.getElementById('trnAdmCsv').hidden = !admitidos;
+    document.getElementById('trnAdmSync').hidden = visao !== 'pendentes';
     document.getElementById('trnAdmPdf').hidden = !admitidos;
     document.getElementById('trnNovoVideo').hidden = porPessoa || admitidos || trnEstado.modo === 'relatorios';
     const dica = document.querySelector('#treinamentosTela .trn-dica');
@@ -4704,6 +4705,32 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       <h4 class="adm-secao">Integração do RH</h4>
       ${lista(rh)}
     `;
+  }
+
+  // Grava no banco (tabela integracao_admitidos / view v_integracao_pendentes)
+  // quem não fez a integração, com a prova, para o outro sistema consultar.
+  async function admAtualizarBanco(){
+    const btn = document.getElementById('trnAdmSync');
+    const f = trnFiltros();
+    btn.disabled = true;
+    btn.textContent = 'Atualizando...';
+    try{
+      const r = await apiComLimite('api/integracao/sincronizar.php', {
+        method: 'POST', body: JSON.stringify({ data_de: f.data_de || undefined, data_ate: f.data_ate || undefined }),
+      }, 280000);
+      alert(`Banco atualizado.
+
+${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'} e ${r.concluiram} que já concluíram`
+        + ` (${r.novos} nova${r.novos === 1 ? '' : 's'} no banco).`
+        + (r.aviso ? '
+
+Atenção: ' + r.aviso : ''));
+    }catch(e){
+      alert('Não foi possível atualizar o banco: ' + e.message);
+    }finally{
+      btn.disabled = false;
+      btn.textContent = 'Atualizar banco';
+    }
   }
 
   function admBaixarCsv(){
@@ -5438,6 +5465,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }));
     document.getElementById('trnNovoVideo').addEventListener('click', openVideoModal);
     document.getElementById('trnAdmCsv').addEventListener('click', admBaixarCsv);
+    document.getElementById('trnAdmSync').addEventListener('click', admAtualizarBanco);
     document.getElementById('trnAdmPdf').addEventListener('click', admBaixarPdf);
 
     // Esc fecha a janela de ação primeiro; sem nenhuma aberta, fecha a tela.

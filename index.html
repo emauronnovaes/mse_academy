@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261009d">
+<link rel="stylesheet" href="style.css?v=20261009e">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -307,6 +307,7 @@
         </div>
         <div class="trn-resultados-acoes">
           <button type="button" class="trn-btn" id="trnNovoVideo">+ Adicionar vídeo</button>
+          <button type="button" class="trn-btn" id="trnAdmSync" hidden title="Grava no banco a lista de quem não fez a integração, para o outro sistema consultar">Atualizar banco</button>
           <button type="button" class="trn-btn" id="trnAdmCsv" hidden>Baixar planilha</button>
           <button type="button" class="trn-btn" id="trnAdmPdf" hidden>Baixar PDF</button>
 
@@ -675,7 +676,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261009d"></script>
+<script src="script.js?v=20261009e"></script>
 
 </body>
 </html>
