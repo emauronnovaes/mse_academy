@@ -128,13 +128,8 @@ function mse_email_aprovacao_html(array $d): string
         . "</td></tr></table>"
         . "</td></tr>"
 
-        // Ajuda
-        . "<tr><td style=\"background:#ffffff;padding:8px 28px 26px\">"
-        . "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#F3F5F9;border-radius:10px\"><tr>"
-        . "<td style=\"{$fonte}padding:14px 16px;font-size:12px;line-height:19px;color:{$cinza}\">"
-        . "<b style=\"color:{$tinta}\">Pediu login?</b> Entre na MSE Academy pelo Portal: a tela de aprovação abre sozinha logo depois. "
-        . "Também dá para usar o botão <b style=\"color:{$tinta}\">Aprovações</b> na barra de admin."
-        . "</td></tr></table></td></tr>"
+        // Respiro antes do rodapé
+        . "<tr><td style=\"background:#ffffff;height:18px;line-height:18px;font-size:18px\">&nbsp;</td></tr>"
 
         // Rodapé
         . "<tr><td style=\"background:#ffffff;border-top:1px solid {$linha};border-radius:0 0 14px 14px;padding:16px 28px;{$fonte}font-size:11px;line-height:17px;color:#9AA0AA;text-align:center\">"
@@ -167,6 +162,5 @@ function mse_email_aprovacao_texto(array $d): string
     $t .= "\nEnviado por: " . implode(' · ', array_filter([$autor['nome'], $autor['cargo'], $autor['email']])) . "\n";
     $t .= "\nAbrir tela de aprovação: {$d['link']}\n";
     $t .= "\nO vídeo só aparece para os colaboradores depois que um administrador aprovar.\n";
-    $t .= "Pediu login? Entre na MSE Academy pelo Portal: a tela de aprovação abre sozinha logo depois.\n";
     return $t;
 }
