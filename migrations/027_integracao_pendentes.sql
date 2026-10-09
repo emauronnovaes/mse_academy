@@ -10,7 +10,8 @@
   v_integracao_pendentes só quem ainda NÃO concluiu a integração (use esta)
 
   Situações: sem_acesso (nunca entrou na Academy), nao_iniciou, em_andamento,
-  concluiu. A "prova" é o texto pronto + detalhe_aulas (JSON, aula por aula,
+  concluiu e dispensado (admin marcou que não precisa fazer a integração;
+  também fica fora da view). A "prova" é o texto pronto + detalhe_aulas (JSON, aula por aula,
   com o status e a data), tirados da própria Academy na data de verificado_em.
 
   Nada existente é alterado ou apagado: são só objetos novos.
@@ -62,5 +63,5 @@ SELECT
   situacao, aulas_obrigatorias, aulas_concluidas, ultimo_acesso,
   prova, detalhe_aulas, verificado_em
 FROM integracao_admitidos
-WHERE situacao <> 'concluiu'
+WHERE situacao NOT IN ('concluiu', 'dispensado')
 ORDER BY data_admissao ASC, nome ASC;

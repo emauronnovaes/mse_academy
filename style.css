@@ -2154,3 +2154,4 @@
   .aprov-hist-titulo{ margin-top:10px; border-top:1px solid var(--line); padding-top:14px; }
   .aprov-item-recusado strong{ color:var(--steel); }
   .aprov-hist-aviso{ margin:0 0 4px; font-size:13.5px; line-height:1.5; color:var(--steel); }
+  .adm-sit-dispensado{ background:rgba(92,100,112,0.14); color:var(--steel); }

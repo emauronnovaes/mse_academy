@@ -4403,7 +4403,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     trnEstado.visao = visao;
     document.querySelectorAll('#trnVisao button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.visao === visao)));
     const porPessoa = visao === 'pessoas';
-    const admitidos = visao === 'admitidos' || visao === 'pendentes';
+    const admitidos = visao === 'admitidos' || visao === 'pendentes' || visao === 'dispensados';
     document.getElementById('trnTabelaTreinamentos').hidden = porPessoa || admitidos;
     document.getElementById('trnTabelaPessoas').hidden = !porPessoa;
     document.getElementById('trnTabelaAdmitidos').hidden = !admitidos;
@@ -4500,6 +4500,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // A busca filtra aqui mesmo, sem consultar as APIs de novo.
   const ADM_SITUACAO = {
     concluiu: 'Fez a integração',
+    dispensado: 'Dispensado',
     em_andamento: 'Em andamento',
     nao_iniciou: 'Não iniciou',
     sem_acesso: 'Nunca entrou na Academy',
@@ -4507,7 +4508,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   let admDados = null;
   let admChaveCarregada = '';
 
-  function admEhVisao(){ return trnEstado.visao === 'admitidos' || trnEstado.visao === 'pendentes'; }
+  function admEhVisao(){ return ['admitidos', 'pendentes', 'dispensados'].includes(trnEstado.visao); }
 
   async function carregarAdmitidos(){
     const f = trnFiltros();
@@ -4594,9 +4595,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const termo = mse_normalizar(document.getElementById('trnBusca').value);
     let lista = (admDados && admDados.pessoas) || [];
     if(trnEstado.visao === 'pendentes'){
-      // Quem está há mais tempo sem fazer aparece primeiro.
-      lista = lista.filter(p => p.situacao !== 'concluiu')
+      // Quem está há mais tempo sem fazer aparece primeiro. Dispensado não é pendente.
+      lista = lista.filter(p => p.situacao !== 'concluiu' && !p.dispensado)
         .sort((a, b) => b.dias_desde_admissao - a.dias_desde_admissao || a.nome.localeCompare(b.nome));
+    } else if(trnEstado.visao === 'dispensados'){
+      lista = lista.filter(p => p.dispensado)
+        .sort((a, b) => String((b.dispensa || {}).em || '').localeCompare(String((a.dispensa || {}).em || '')));
     }
     if(!termo) return lista;
     const digitos = termo.replace(/\D/g, '');
@@ -4608,6 +4612,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   }
 
   function admSituacaoHtml(p){
+    if(p.dispensado){
+      const d = p.dispensa || {};
+      const sub = ['por ' + (d.por || 'um admin'), d.em ? trnFmtData(d.em) : '', d.motivo ? 'motivo: ' + d.motivo : ''].filter(Boolean).join(' · ');
+      return `<span class="adm-sit adm-sit-dispensado">Dispensado</span><span class="trn-sub">${esc(sub)}</span>`;
+    }
     const rotulo = ADM_SITUACAO[p.situacao] || p.situacao;
     let sub = '';
     if(p.situacao === 'concluiu' && p.concluiu_em) sub = 'em ' + trnFmtData(p.concluiu_em);
@@ -4620,6 +4629,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   function admResumoTexto(lista){
     if(trnEstado.visao === 'pendentes'){
       return `${lista.length} ${lista.length === 1 ? 'novo contratado pendente' : 'novos contratados pendentes'} (sem a integração completa)`;
+    }
+    if(trnEstado.visao === 'dispensados'){
+      return `${lista.length} ${lista.length === 1 ? 'pessoa dispensada' : 'pessoas dispensadas'} da integração`;
     }
     const n = s => lista.filter(p => p.situacao === s).length;
     return `${lista.length} ${lista.length === 1 ? 'admitido' : 'admitidos'} · ${n('concluiu')} fizeram a integração · `
@@ -4637,7 +4649,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     corpo.innerHTML = '';
     if(!lista.length){
       corpo.innerHTML = `<tr><td colspan="7" class="trn-vazio-lista">${trnEstado.visao === 'pendentes'
-        ? 'Nenhum novo contratado pendente: todos os admitidos no período já fizeram a integração.'
+        ? 'Nenhum novo contratado pendente: todos os admitidos no período já fizeram a integração (ou foram dispensados).'
+        : trnEstado.visao === 'dispensados' ? 'Ninguém foi dispensado da integração nesse período.'
         : 'Nenhum admitido nesse período.'}</td></tr>`;
       return;
     }
@@ -4651,11 +4664,43 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <td>${p.gerente_nome ? esc(p.gerente_nome) : vazio}${p.gerente_email ? `<span class="trn-sub">${esc(p.gerente_email)}</span>` : ''}</td>
         <td class="trn-nowrap">${esc(trnFmtData(p.data_admissao))}<span class="trn-sub">há ${p.dias_desde_admissao} ${p.dias_desde_admissao === 1 ? 'dia' : 'dias'}</span></td>
         <td>${admSituacaoHtml(p)}</td>
-        <td><button type="button" class="aulas-btn">${p.ficha_pendente ? 'Ver dados...' : 'Ver dados'}</button></td>
+        <td class="trn-acoes"><div class="trn-acoes-grade">
+          <button type="button" class="aulas-btn" data-adm="dados">${p.ficha_pendente ? 'Ver dados...' : 'Ver dados'}</button>
+          ${p.dispensado
+            ? '<button type="button" class="aulas-btn" data-adm="reativar" title="Volta a cobrar a integração dessa pessoa">Reativar</button>'
+            : (p.situacao === 'concluiu' ? '' : '<button type="button" class="aulas-btn" data-adm="dispensar" title="Tira da lista: essa pessoa não precisa fazer a integração">Dispensar</button>')}
+        </div></td>
       `;
-      tr.querySelector('button').addEventListener('click', () => admVerDados(p));
+      tr.querySelector('[data-adm="dados"]').addEventListener('click', () => admVerDados(p));
+      const bDisp = tr.querySelector('[data-adm="dispensar"]');
+      if(bDisp) bDisp.addEventListener('click', () => admDispensar(p, true));
+      const bReat = tr.querySelector('[data-adm="reativar"]');
+      if(bReat) bReat.addEventListener('click', () => admDispensar(p, false));
       corpo.appendChild(tr);
     });
+  }
+
+  // Dispensar: a pessoa não precisa fazer a integração e sai de Pendentes.
+  // Nada é apagado; Reativar (aba Dispensados) desfaz.
+  async function admDispensar(p, dispensar){
+    let motivo = '';
+    if(dispensar){
+      motivo = prompt(`Dispensar ${p.nome} da integração?\n\nEla sai da lista de pendentes (dá para reativar depois).\nMotivo (opcional):`);
+      if(motivo === null) return;
+    } else if(!confirm(`Reativar ${p.nome}? Ela volta para a lista de pendentes, se ainda não fez a integração.`)){
+      return;
+    }
+    try{
+      const r = await apiFetch('api/admin/treinamentos/dispensar.php', {
+        method: 'POST',
+        body: JSON.stringify({ acao: dispensar ? 'dispensar' : 'reativar', nome: p.nome, cpf: p.cpf, data_admissao: p.data_admissao, motivo: motivo.trim() }),
+      });
+      p.dispensado = dispensar;
+      p.dispensa = dispensar ? r.dispensa : null;
+      renderAdmitidos();
+    }catch(e){
+      alert('Não foi possível ' + (dispensar ? 'dispensar' : 'reativar') + ': ' + e.message);
+    }
   }
 
   // Nomes amigáveis dos campos da ficha; campo desconhecido aparece com o
@@ -4720,8 +4765,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       }, 280000);
       alert(`Banco atualizado.
 
-${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'} e ${r.concluiram} que já concluíram`
-        + ` (${r.novos} nova${r.novos === 1 ? '' : 's'} no banco).`
+${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, ${r.concluiram} que já concluíram`
+        + ` e ${r.dispensados || 0} dispensada${(r.dispensados || 0) === 1 ? '' : 's'} (${r.novos} nova${r.novos === 1 ? '' : 's'} no banco).`
         + (r.aviso ? ' — Atenção: ' + r.aviso : ''));
     }catch(e){
       alert('Não foi possível atualizar o banco: ' + e.message);

@@ -3,6 +3,58 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/Progress.php';
 
+function mse_integracao_chave(?string $cpf, string $nome, string $dataAdmissao): string
+{
+    $cpf = preg_replace('/\D/', '', (string) $cpf);
+    return strlen($cpf) === 11 ? 'cpf:' . $cpf : 'nome:' . sha1(mse_normalize_text($nome) . '|' . $dataAdmissao);
+}
+
+/** As duas chaves possíveis de uma pessoa: pelo CPF (se houver) e pelo nome+data. */
+function mse_integracao_chaves(?string $cpf, string $nome, string $dataAdmissao): array
+{
+    return [
+        mse_integracao_chave($cpf, $nome, $dataAdmissao),
+        mse_integracao_chave(null, $nome, $dataAdmissao),
+    ];
+}
+
+/** Garante a tabela integracao_dispensados (migração 028). */
+function mse_garantir_tabela_dispensados(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok !== null) {
+        return $ok;
+    }
+    try {
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS integracao_dispensados (
+               chave VARCHAR(64) NOT NULL, nome VARCHAR(200) NOT NULL, cpf VARCHAR(11) NULL,
+               data_admissao DATE NOT NULL, motivo VARCHAR(300) NULL, dispensado_por VARCHAR(200) NULL,
+               dispensado_em DATETIME NOT NULL, PRIMARY KEY (chave)
+             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+        return $ok = true;
+    } catch (Throwable $e) {
+        error_log('[dispensados] Não consegui criar a tabela (rode a migração 028): ' . $e->getMessage());
+        return $ok = false;
+    }
+}
+
+/** Dispensados já gravados, por chave. Sem a tabela, nenhum. */
+function mse_dispensados_mapa(PDO $pdo): array
+{
+    $st = $pdo->prepare('SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?');
+    $st->execute(['integracao_dispensados']);
+    if ($st->fetchColumn() === false) {
+        return [];
+    }
+    $mapa = [];
+    foreach ($pdo->query('SELECT chave, motivo, dispensado_por, dispensado_em FROM integracao_dispensados') as $l) {
+        $mapa[$l['chave']] = $l;
+    }
+    return $mapa;
+}
+
 /**
  * Monta as linhas do relatório de admitidos: cada admitido (vindo da API de
  * integração), completado com a ficha de funcionário (se já foi buscada),
@@ -36,6 +88,7 @@ $progresso = $pdo->prepare(
      WHERE p.user_id = ? AND c.type = 'onboarding'"
 );
 
+$dispensas = mse_dispensados_mapa($pdo);
 $resumo = ['concluiu' => 0, 'em_andamento' => 0, 'nao_iniciou' => 0, 'sem_acesso' => 0];
 $pessoas = [];
 foreach ($admitidos as $i => $a) {
@@ -107,6 +160,21 @@ foreach ($admitidos as $i => $a) {
             $linha['concluiu_em'] = max($concluidas);
         } else {
             $linha['situacao'] = $mexeu ? 'em_andamento' : 'nao_iniciou';
+        }
+    }
+
+    // Dispensado da integração por um admin: continua na lista, marcado.
+    $linha['dispensado'] = false;
+    $linha['dispensa'] = null;
+    foreach (mse_integracao_chaves($linha['cpf'], $linha['nome'], $linha['data_admissao']) as $c) {
+        if (isset($dispensas[$c])) {
+            $linha['dispensado'] = true;
+            $linha['dispensa'] = [
+                'motivo' => $dispensas[$c]['motivo'],
+                'por' => $dispensas[$c]['dispensado_por'],
+                'em' => $dispensas[$c]['dispensado_em'],
+            ];
+            break;
         }
     }
 

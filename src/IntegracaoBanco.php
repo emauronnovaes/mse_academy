@@ -36,21 +36,6 @@ function mse_garantir_tabela_integracao(PDO $pdo): bool
     }
 }
 
-function mse_integracao_chave(?string $cpf, string $nome, string $dataAdmissao): string
-{
-    $cpf = preg_replace('/\D/', '', (string) $cpf);
-    return strlen($cpf) === 11 ? 'cpf:' . $cpf : 'nome:' . sha1(mse_normalize_text($nome) . '|' . $dataAdmissao);
-}
-
-/** As duas chaves possíveis de uma pessoa: pelo CPF (se houver) e pelo nome+data. */
-function mse_integracao_chaves(?string $cpf, string $nome, string $dataAdmissao): array
-{
-    return [
-        mse_integracao_chave($cpf, $nome, $dataAdmissao),
-        mse_integracao_chave(null, $nome, $dataAdmissao),
-    ];
-}
-
 function mse_data_br(?string $v, bool $comHora = false): string
 {
     $t = $v ? strtotime($v) : false;
@@ -63,7 +48,7 @@ function mse_data_br(?string $v, bool $comHora = false): string
  * conferidos mesmo que tenham saído do período), completa com a ficha e
  * regrava a situação de cada um.
  *
- * @return array{total: int, pendentes: int, concluiram: int, novos: int, aviso: ?string}
+ * @return array{total: int, pendentes: int, concluiram: int, dispensados: int, novos: int, aviso: ?string}
  */
 function mse_sincronizar_integracao(PDO $pdo, string $de, string $ate): array
 {
@@ -128,7 +113,7 @@ function mse_sincronizar_integracao(PDO $pdo, string $de, string $ate): array
            detalhe_aulas = VALUES(detalhe_aulas), verificado_em = VALUES(verificado_em)'
     );
 
-    $contagem = ['total' => 0, 'pendentes' => 0, 'concluiram' => 0, 'novos' => 0, 'aviso' => $aviso];
+    $contagem = ['total' => 0, 'pendentes' => 0, 'concluiram' => 0, 'dispensados' => 0, 'novos' => 0, 'aviso' => $aviso];
     $processadas = [];
     foreach ($montado['pessoas'] as $p) {
         // Usa a chave que já existe no banco (por CPF ou por nome); sem nenhuma, a do CPF.
@@ -159,7 +144,12 @@ function mse_sincronizar_integracao(PDO $pdo, string $de, string $ate): array
 
         $quando = mse_data_br($verificadoEm, true);
         $acesso = $p['ultimo_acesso'] ? 'último acesso à Academy em ' . mse_data_br($p['ultimo_acesso']) : 'nunca acessou a Academy';
-        if ($p['situacao'] === 'sem_acesso') {
+        $situacaoGravada = !empty($p['dispensado']) ? 'dispensado' : $p['situacao'];
+        if (!empty($p['dispensado'])) {
+            $prova = 'Dispensado da integração' . (!empty($p['dispensa']['por']) ? ' por ' . $p['dispensa']['por'] : '')
+                . (!empty($p['dispensa']['em']) ? ' em ' . mse_data_br($p['dispensa']['em']) : '') . '.'
+                . (!empty($p['dispensa']['motivo']) ? ' Motivo: ' . $p['dispensa']['motivo'] . '.' : '');
+        } elseif ($p['situacao'] === 'sem_acesso') {
             $prova = "Admitido em " . mse_data_br($p['data_admissao']) . ". Em {$quando}, a MSE Academy não tem registro de acesso dessa pessoa: a integração não foi iniciada.";
         } elseif ($p['situacao'] === 'concluiu') {
             $prova = "Concluiu a integração" . ($p['concluiu_em'] ? ' em ' . mse_data_br($p['concluiu_em']) : '') . ".";
@@ -170,13 +160,15 @@ function mse_sincronizar_integracao(PDO $pdo, string $de, string $ate): array
         $upsert->execute([
             $chave, $p['nome'], $p['cpf'] ?: null, $p['email'] ?: null, $p['telefone'] ?? null, $p['funcao'] ?: null,
             $p['departamento'] ?? null, $p['obra'] ?: null, $p['empresa'] ?: null, $p['vinculo'] ?: null,
-            $p['gerente_nome'] ?? null, $p['gerente_email'] ?? null, $p['data_admissao'], $p['user_id'], $p['situacao'],
+            $p['gerente_nome'] ?? null, $p['gerente_email'] ?? null, $p['data_admissao'], $p['user_id'], $situacaoGravada,
             (int) $p['obrigatorias'], (int) $p['concluidas'], $p['ultimo_acesso'] ?: null, $p['concluiu_em'] ?: null,
             $prova, $aulas ? json_encode($aulas, JSON_UNESCAPED_UNICODE) : null, $verificadoEm, $verificadoEm,
         ]);
 
         $contagem['total']++;
-        if ($p['situacao'] === 'concluiu') {
+        if ($situacaoGravada === 'dispensado') {
+            $contagem['dispensados']++;
+        } elseif ($p['situacao'] === 'concluiu') {
             $contagem['concluiram']++;
         } else {
             $contagem['pendentes']++;
