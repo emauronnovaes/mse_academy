@@ -7,7 +7,6 @@ require_once __DIR__ . '/../../src/Auth.php';
 require_once __DIR__ . '/../../src/Aprovacao.php';
 require_once __DIR__ . '/../../src/Email.php';
 require_once __DIR__ . '/../../src/EmailAprovacao.php';
-require_once __DIR__ . '/../../src/Departamentos.php';
 
 /**
  * Avisa os admins, por e-mail, que um vídeo está esperando aprovação.
@@ -49,42 +48,7 @@ if ($curso['aprovacao_status'] !== 'pendente' || $curso['notificado_em'] !== nul
 $admins = $pdo->query("SELECT email FROM users WHERE role = 'admin' AND active = 1 AND email <> ''")->fetchAll();
 $emails = array_column($admins, 'email');
 
-$stmt = $pdo->prepare('SELECT name, email, cargo FROM users WHERE id = ?');
-$stmt->execute([(int) $usuario['id']]);
-$autor = $stmt->fetch() ?: ['name' => '', 'email' => '', 'cargo' => ''];
-
-// Tudo o que o e-mail mostra: perguntas (com o momento em que aparecem)
-// e para quais departamentos o vídeo foi marcado como obrigatório.
-$temMomento = mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg');
-$stmt = $pdo->prepare(
-    'SELECT question_text, ' . ($temMomento ? 'momento_seg' : 'NULL AS momento_seg')
-    . ' FROM quiz_questions WHERE course_id = ? ORDER BY order_index ASC, id ASC'
-);
-$stmt->execute([$courseId]);
-$perguntas = array_map(static fn($q) => [
-    'texto' => $q['question_text'],
-    'momento_seg' => $q['momento_seg'] !== null ? (int) $q['momento_seg'] : null,
-], $stmt->fetchAll());
-
-$departamentos = mse_departamentos_do_curso($pdo, $courseId);
-if (mse_tem_tabela($pdo, 'course_areas')) {
-    $stmt = $pdo->prepare('SELECT a.name FROM course_areas ca JOIN areas a ON a.id = ca.area_id WHERE ca.course_id = ? ORDER BY a.name');
-    $stmt->execute([$courseId]);
-    $departamentos = array_merge($departamentos, $stmt->fetchAll(PDO::FETCH_COLUMN));
-}
-
-$dados = [
-    'titulo' => $curso['title'],
-    'descricao' => (string) $curso['description'],
-    'onde' => $curso['type'] === 'onboarding' ? 'Integração (trilha obrigatória)' : 'Curso · ' . ($curso['area_name'] ?: 'sem área'),
-    'departamentos' => $departamentos,
-    'origem' => ['youtube' => 'YouTube', 's3' => 'Arquivo enviado', 'playlist' => 'Playlist do YouTube'][$curso['video_source']] ?? $curso['video_source'],
-    'duracao_min' => (int) $curso['duration_minutes'],
-    'perguntas' => $perguntas,
-    'autor' => ['nome' => $autor['name'], 'email' => $autor['email'], 'cargo' => $autor['cargo']],
-    'enviado_em' => $curso['enviado_em'],
-    'link' => mse_url_academy() . '/?aprovar=' . $courseId,
-];
+$dados = mse_email_aprovacao_dados($pdo, $courseId);
 $html = mse_email_aprovacao_html($dados);
 $texto = mse_email_aprovacao_texto($dados);
 

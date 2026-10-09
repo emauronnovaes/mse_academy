@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/Aprovacao.php';
+require_once __DIR__ . '/Departamentos.php';
+
 /**
  * Layout do e-mail "vídeo para aprovação".
  *
@@ -163,4 +166,80 @@ function mse_email_aprovacao_texto(array $d): string
     $t .= "\nAbrir tela de aprovação: {$d['link']}\n";
     $t .= "\nO vídeo só aparece para os colaboradores depois que um administrador aprovar.\n";
     return $t;
+}
+
+/**
+ * Os dados do e-mail de um vídeo enviado: título, onde aparece,
+ * departamentos, perguntas (com o momento), quem enviou e o link.
+ * Usado pelo aviso de verdade e pelo "Testar e-mail" (que manda o mesmo
+ * e-mail, montado com o envio mais recente). null = vídeo não existe.
+ */
+function mse_email_aprovacao_dados(PDO $pdo, int $courseId): ?array
+{
+    $stmt = $pdo->prepare(
+        'SELECT c.id, c.title, c.description, c.type, c.video_source, c.duration_minutes, c.enviado_por, c.enviado_em,
+                a.name AS area_name
+         FROM courses c LEFT JOIN areas a ON a.id = c.area_id
+         WHERE c.id = ?'
+    );
+    $stmt->execute([$courseId]);
+    $curso = $stmt->fetch();
+    if (!$curso) {
+        return null;
+    }
+
+    $stmt = $pdo->prepare('SELECT name, email, cargo FROM users WHERE id = ?');
+    $stmt->execute([(int) $curso['enviado_por']]);
+    $autor = $stmt->fetch() ?: ['name' => '', 'email' => '', 'cargo' => ''];
+
+    $temMomento = mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg');
+    $stmt = $pdo->prepare(
+        'SELECT question_text, ' . ($temMomento ? 'momento_seg' : 'NULL AS momento_seg')
+        . ' FROM quiz_questions WHERE course_id = ? ORDER BY order_index ASC, id ASC'
+    );
+    $stmt->execute([$courseId]);
+    $perguntas = array_map(static fn($q) => [
+        'texto' => $q['question_text'],
+        'momento_seg' => $q['momento_seg'] !== null ? (int) $q['momento_seg'] : null,
+    ], $stmt->fetchAll());
+
+    $departamentos = mse_departamentos_do_curso($pdo, $courseId);
+    if (mse_tem_tabela($pdo, 'course_areas')) {
+        $stmt = $pdo->prepare('SELECT a.name FROM course_areas ca JOIN areas a ON a.id = ca.area_id WHERE ca.course_id = ? ORDER BY a.name');
+        $stmt->execute([$courseId]);
+        $departamentos = array_merge($departamentos, $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    return [
+        'titulo' => $curso['title'],
+        'descricao' => (string) $curso['description'],
+        'onde' => $curso['type'] === 'onboarding' ? 'Integração (trilha obrigatória)' : 'Curso · ' . ($curso['area_name'] ?: 'sem área'),
+        'departamentos' => $departamentos,
+        'origem' => ['youtube' => 'YouTube', 's3' => 'Arquivo enviado', 'playlist' => 'Playlist do YouTube'][$curso['video_source']] ?? $curso['video_source'],
+        'duracao_min' => (int) $curso['duration_minutes'],
+        'perguntas' => $perguntas,
+        'autor' => ['nome' => $autor['name'], 'email' => $autor['email'], 'cargo' => $autor['cargo']],
+        'enviado_em' => $curso['enviado_em'],
+        'link' => mse_url_academy() . '/?aprovar=' . $courseId,
+    ];
+}
+
+/** Dados de exemplo para o "Testar e-mail" quando ainda não há nenhum vídeo enviado. */
+function mse_email_aprovacao_exemplo(array $admin): array
+{
+    return [
+        'titulo' => 'Trabalho em altura: uso correto do cinto paraquedista (exemplo)',
+        'descricao' => 'Este é um e-mail de teste. O aviso de verdade traz aqui a descrição escrita por quem enviou o vídeo.',
+        'onde' => 'Integração (trilha obrigatória)',
+        'departamentos' => ['HSE', 'OBRAS'],
+        'origem' => 'Arquivo enviado',
+        'duracao_min' => 12,
+        'perguntas' => [
+            ['texto' => 'Antes de usar, o que deve ser inspecionado no cinto?', 'momento_seg' => 95],
+            ['texto' => 'Qual NR trata de trabalho em altura?', 'momento_seg' => null],
+        ],
+        'autor' => ['nome' => (string) ($admin['name'] ?? 'Colaborador'), 'email' => (string) ($admin['email'] ?? ''), 'cargo' => (string) ($admin['cargo'] ?? '')],
+        'enviado_em' => (new DateTime('now', new DateTimeZone('America/Sao_Paulo')))->format('Y-m-d H:i:s'),
+        'link' => mse_url_academy() . '/',
+    ];
 }
