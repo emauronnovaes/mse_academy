@@ -3190,6 +3190,53 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('adminModalEmail').focus();
     const feedback = document.getElementById('adminModalFeedback');
     feedback.hidden = true;
+    carregarListaAdmins();
+  }
+
+  // Quem é admin hoje, cada um com o botão de remover. O próprio admin
+  // logado não tem botão (o servidor também recusa), nem o último admin.
+  async function carregarListaAdmins(){
+    const caixa = document.getElementById('adminModalLista');
+    caixa.innerHTML = '<span class="admin-field-hint">Carregando...</span>';
+    let admins;
+    try{
+      admins = (await apiFetch('api/admin/manage_admins.php')).admins || [];
+    }catch(e){
+      caixa.innerHTML = `<span class="admin-field-hint">Não consegui carregar os admins: ${esc(e.message)}</span>`;
+      return;
+    }
+    caixa.innerHTML = admins.map(a => `
+      <div class="adm-item">
+        <div class="adm-item-info">
+          <strong>${esc(a.nome || a.email)}${a.eu ? ' <span class="adm-voce">você</span>' : ''}</strong>
+          <span>${esc(a.email)}${a.ultimo_acesso ? ' · último acesso ' + esc(trnFmtData(a.ultimo_acesso)) : ' · ainda não acessou'}</span>
+        </div>
+        ${a.eu || admins.length <= 1 ? '' : `<button type="button" class="adm-remover" data-email="${esc(a.email)}" data-nome="${esc(a.nome || a.email)}">Remover</button>`}
+      </div>`).join('') || '<span class="admin-field-hint">Nenhum admin.</span>';
+    caixa.querySelectorAll('.adm-remover').forEach(b => b.addEventListener('click', () => removerAdmin(b)));
+  }
+
+  async function removerAdmin(btn){
+    const { email, nome } = btn.dataset;
+    if(!confirm(`Remover ${nome} (${email}) dos admins?\n\nA pessoa continua acessando a Academy normalmente, só perde as funções de admin.`)) return;
+    const feedback = document.getElementById('adminModalFeedback');
+    btn.disabled = true;
+    btn.textContent = 'Removendo...';
+    try{
+      const r = await apiFetch('api/admin/manage_admins.php', {
+        method: 'POST', body: JSON.stringify({ email, action: 'demote' }),
+      });
+      feedback.hidden = false;
+      feedback.className = 'admin-modal-feedback ok';
+      feedback.textContent = r.message || `${email} não é mais admin.`;
+      carregarListaAdmins();
+    }catch(e){
+      feedback.hidden = false;
+      feedback.className = 'admin-modal-feedback erro';
+      feedback.textContent = e.message;
+      btn.disabled = false;
+      btn.textContent = 'Remover';
+    }
   }
   function closeAdminModal(){
     document.getElementById('adminModalOverlay').hidden = true;
@@ -3218,6 +3265,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       feedback.hidden = false;
       feedback.className = 'admin-modal-feedback ok';
       feedback.textContent = data.message || (email + ' agora é admin — vai poder adicionar vídeos e outras pessoas também, assim que ela acessar a Academy pela primeira vez.');
+      document.getElementById('adminModalEmail').value = '';
+      carregarListaAdmins();
     }catch(e){
       feedback.hidden = false;
       feedback.className = 'admin-modal-feedback erro';

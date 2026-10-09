@@ -8,6 +8,19 @@ require_once __DIR__ . '/../../src/Auth.php';
 mse_cors();
 $admin = mse_require_admin(); // só admin existente pode promover outro
 
+// GET: quem é admin hoje (pra tela poder listar e remover).
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    $lista = mse_db()->query(
+        "SELECT name, email, last_access_date FROM users WHERE role = 'admin' AND active = 1 ORDER BY name ASC"
+    )->fetchAll();
+    mse_json(['admins' => array_map(static fn($u) => [
+        'nome' => $u['name'],
+        'email' => $u['email'],
+        'ultimo_acesso' => $u['last_access_date'],
+        'eu' => strtolower((string) $u['email']) === strtolower((string) $admin['email']),
+    ], $lista)]);
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     mse_error('Método não permitido.', 405);
 }
@@ -43,10 +56,19 @@ if ($action === 'promote') {
 
     mse_json(['email' => $email, 'role' => 'admin', 'message' => "{$email} agora é admin."]);
 } else {
-    $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
+    $stmt = $pdo->prepare('SELECT id, role FROM users WHERE email = ?');
     $stmt->execute([$email]);
-    if (!$stmt->fetch()) {
+    $alvo = $stmt->fetch();
+    if (!$alvo) {
         mse_error("{$email} não tem conta na Academy ainda (nunca acessou), não tem o que remover.", 404);
+    }
+    if ($alvo['role'] !== 'admin') {
+        mse_error("{$email} já não é admin.", 409);
+    }
+    // Nunca deixa a Academy sem nenhum admin.
+    $total = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1")->fetchColumn();
+    if ($total <= 1) {
+        mse_error('Não dá pra remover o último admin da Academy.', 409);
     }
 
     $stmt = $pdo->prepare("UPDATE users SET role = 'colaborador' WHERE email = ?");

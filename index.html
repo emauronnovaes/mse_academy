@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261008j">
+<link rel="stylesheet" href="style.css?v=20261009a">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -50,7 +50,7 @@
       <i class="fa-solid fa-circle-play" aria-hidden="true"></i> Adicionar vídeo
     </button>
     <button type="button" id="btnAdicionarPessoas" class="btn-add-people" hidden>
-      <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Adicionar pessoas
+      <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Admins
     </button>
     <button type="button" id="btnAdicionarVideo" class="btn-add-people btn-add-video" hidden>
       <i class="fa-solid fa-circle-play" aria-hidden="true"></i> Adicionar vídeo
@@ -83,11 +83,14 @@
     <button type="button" class="admin-modal-close" id="adminModalClose" aria-label="Fechar">
       <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
     </button>
-    <h3 id="adminModalTitle">Adicionar pessoa como admin</h3>
-    <p>A pessoa poderá adicionar vídeos aos cursos e também promover outras pessoas — mesmo que ela nunca tenha acessado a Academy ainda.</p>
+    <h3 id="adminModalTitle">Admins da Academy</h3>
+    <p>Admin pode adicionar vídeos, aprovar envios, ver relatórios e gerenciar outros admins — mesmo que ainda não tenha acessado a Academy.</p>
+    <label class="admin-field-label" for="adminModalEmail">Adicionar admin</label>
     <input type="email" id="adminModalEmail" placeholder="email@mse.com.br" autocomplete="off">
     <button type="button" id="adminModalSubmit" class="admin-modal-submit">Adicionar</button>
     <div class="admin-modal-feedback" id="adminModalFeedback" hidden></div>
+    <span class="admin-field-label adm-lista-titulo">Admins atuais</span>
+    <div class="adm-lista" id="adminModalLista"><span class="admin-field-hint">Carregando...</span></div>
   </div>
 </div>
 
@@ -648,7 +651,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261008j"></script>
+<script src="script.js?v=20261009a"></script>
 
 </body>
 </html>
