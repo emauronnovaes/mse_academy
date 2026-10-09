@@ -22,7 +22,7 @@ mse_cors();
 mse_require_admin();
 
 $pdo = mse_db();
-$resposta = ['pendentes' => [], 'video' => null, 'email_configurado' => mse_email_configurado()];
+$resposta = ['pendentes' => [], 'recusados' => [], 'video' => null, 'email_configurado' => mse_email_configurado()];
 if (!mse_tem_coluna($pdo, 'courses', 'aprovacao_status')) {
     mse_json($resposta); // ninguém enviou nada ainda (as colunas nascem no primeiro envio)
 }
@@ -44,6 +44,27 @@ $resposta['pendentes'] = array_map(static function ($l) {
      LEFT JOIN users u ON u.id = c.enviado_por
      WHERE c.aprovacao_status = 'pendente'
      ORDER BY c.enviado_em ASC, c.id ASC"
+)->fetchAll());
+
+// Histórico de recusados (os 50 mais recentes): ficam guardados, e um
+// admin pode mudar de ideia e aprovar depois.
+$resposta['recusados'] = array_map(static function ($l) {
+    return [
+        'id' => (int) $l['id'],
+        'titulo' => $l['title'],
+        'enviado_por' => $l['autor'],
+        'recusado_por' => $l['decisor'],
+        'recusado_em' => $l['decidido_em'],
+        'motivo' => trim((string) $l['motivo_recusa']) !== '' ? trim((string) $l['motivo_recusa']) : null,
+    ];
+}, $pdo->query(
+    "SELECT c.id, c.title, c.decidido_em, c.motivo_recusa, u.name AS autor, d.name AS decisor
+     FROM courses c
+     LEFT JOIN users u ON u.id = c.enviado_por
+     LEFT JOIN users d ON d.id = c.decidido_por
+     WHERE c.aprovacao_status = 'recusado'
+     ORDER BY c.decidido_em DESC, c.id DESC
+     LIMIT 50"
 )->fetchAll());
 
 $id = (int) ($_GET['id'] ?? 0);

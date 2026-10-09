@@ -5458,6 +5458,17 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <strong>${esc(p.titulo)}</strong>
           <span>${esc(p.enviado_por || 'Sem nome')} · ${esc(aprovData(p.enviado_em))}</span>
         </button>`).join('') : '<div class="aprov-vazio">Nenhum vídeo esperando aprovação.</div>');
+
+    // Histórico de recusados: ficam guardados e dá para aprovar depois.
+    const recusados = d.recusados || [];
+    if(recusados.length){
+      lista.innerHTML += '<div class="aprov-lista-titulo aprov-hist-titulo">Recusados (' + recusados.length + ')</div>'
+        + recusados.map(r => `
+        <button type="button" class="aprov-item aprov-item-recusado" data-id="${r.id}" aria-current="${r.id === id}">
+          <strong>${esc(r.titulo)}</strong>
+          <span>${esc(r.enviado_por || 'Sem nome')} · recusado em ${esc(aprovData(r.recusado_em))}</span>
+        </button>`).join('');
+    }
     lista.querySelectorAll('.aprov-item').forEach(b => b.addEventListener('click', () => carregarAprovacoes(parseInt(b.dataset.id, 10))));
 
     detalhe.innerHTML = d.video ? aprovDetalheHtml(d.video)
@@ -5513,6 +5524,15 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         </li>`).join('')}
       </ol>` : '<p class="aprov-secao">Sem perguntas</p>';
 
+    const reconsiderar = v.status === 'recusado' ? `
+      <div class="aprov-acoes">
+        <p class="aprov-hist-aviso">Este vídeo foi recusado${v.decidido_por ? ' por ' + esc(v.decidido_por) : ''} e continua escondido dos colaboradores.
+          Mudou de ideia? Você pode aprová-lo agora: ele é publicado na hora.</p>
+        <div class="aprov-botoes">
+          <button type="button" class="trn-btn aprov-aprovar">Aprovar mesmo assim</button>
+        </div>
+        <div class="admin-modal-feedback" id="aprovFeedback" hidden></div>
+      </div>` : '';
     const acoes = v.status === 'pendente' ? `
       <div class="aprov-acoes">
         <label class="trn-rotulo" for="aprovMotivo">Motivo, se for recusar (opcional)</label>
@@ -5533,7 +5553,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         ${largos.map(([r, valor]) => `<div class="aprov-largo"><dt>${esc(r)}</dt><dd>${esc(valor)}</dd></div>`).join('')}
       </dl>
       ${perguntas}
-      ${acoes}`;
+      ${acoes}${reconsiderar}`;
   }
 
   async function aprovDecidir(acao){
@@ -5551,9 +5571,13 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       if(acao === 'aprovar') recarregarTelaConteudo(); // já aparece na trilha/catálogo
       const aviso = document.getElementById('aprovAvisoEmail');
       aviso.className = 'aprov-aviso is-ok';
-      aviso.textContent = acao === 'aprovar' ? `"${v.titulo}" foi aprovado e já está publicado.` : `"${v.titulo}" foi recusado.`;
+      aviso.textContent = acao === 'aprovar'
+        ? `"${v.titulo}" foi aprovado e já está publicado${v.status === 'recusado' ? ' (estava no histórico de recusados)' : ''}.`
+        : `"${v.titulo}" foi recusado. Ele fica no histórico de recusados, caso você queira aprovar depois.`;
       aviso.hidden = false;
-      carregarAprovacoes(null); // abre o próximo da fila
+      // Recusar ou aprovar um pendente abre o próximo da fila; reconsiderar
+      // um recusado mostra o próprio vídeo, já aprovado.
+      carregarAprovacoes(v.status === 'recusado' ? v.id : null);
     }catch(e){
       feedback.hidden = false;
       feedback.className = 'admin-modal-feedback erro';

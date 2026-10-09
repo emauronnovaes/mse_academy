@@ -229,7 +229,26 @@ function mse_portal_ficha_interpretar($response, int $httpCode, string $curlErro
         // Documentação não lista "email" entre os campos, mas alguns
         // registros trazem — pegamos se vier, sem depender disso.
         'email' => isset($ficha['email']) && $ficha['email'] !== '' ? strtolower(trim((string) $ficha['email'])) : null,
+        // Foto do cadastro no Portal (a API usa foto_google e, se vazia, foto).
+        'foto' => mse_portal_ficha_url_foto($ficha['foto'] ?? ($ficha['foto_google'] ?? null)),
     ]];
+}
+
+/**
+ * Endereço da foto, só se for utilizável: http(s) completo ou caminho
+ * começando em "/" (que vira endereço do Portal). Qualquer outra coisa
+ * (vazio, "data:", "javascript:") é ignorada.
+ */
+function mse_portal_ficha_url_foto($valor): ?string
+{
+    $url = is_scalar($valor) ? trim((string) $valor) : '';
+    if ($url === '') {
+        return null;
+    }
+    if ($url[0] === '/' && strpos($url, '//') !== 0) {
+        $url = 'https://portalmse.com.br' . $url;
+    }
+    return preg_match('#^https?://[^\s"\'<>]+$#i', $url) ? $url : null;
 }
 
 /**

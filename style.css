@@ -2151,3 +2151,6 @@
     .recusa-topo{ padding:18px; } .recusa-corpo{ padding:18px 18px 4px; } .recusa-rodape{ padding:14px 18px 18px; }
     .recusa-btn{ width:100%; }
   }
+  .aprov-hist-titulo{ margin-top:10px; border-top:1px solid var(--line); padding-top:14px; }
+  .aprov-item-recusado strong{ color:var(--steel); }
+  .aprov-hist-aviso{ margin:0 0 4px; font-size:13.5px; line-height:1.5; color:var(--steel); }

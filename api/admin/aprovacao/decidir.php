@@ -11,7 +11,9 @@ require_once __DIR__ . '/../../../src/Aprovacao.php';
  *
  * Aprovar publica na hora (is_published = 1), como se um admin tivesse
  * cadastrado. Recusar mantém escondido e guarda o motivo — nada é apagado.
- * Se dois admins decidirem ao mesmo tempo, vale o primeiro.
+ * Um vídeo recusado ainda pode ser aprovado depois (o histórico de
+ * recusados fica na tela de aprovação). Se dois admins decidirem ao mesmo
+ * tempo, vale o primeiro.
  *
  * POST {course_id, acao: 'aprovar' | 'recusar', motivo?}
  */
@@ -38,7 +40,7 @@ if (!mse_tem_coluna($pdo, 'courses', 'aprovacao_status')) {
 $stmt = $pdo->prepare(
     $acao === 'aprovar'
         ? "UPDATE courses SET is_published = 1, aprovacao_status = 'aprovado', decidido_por = ?, decidido_em = NOW(), motivo_recusa = NULL
-           WHERE id = ? AND aprovacao_status = 'pendente'"
+           WHERE id = ? AND aprovacao_status IN ('pendente', 'recusado')"
         : "UPDATE courses SET is_published = 0, aprovacao_status = 'recusado', decidido_por = ?, decidido_em = NOW(), motivo_recusa = ?
            WHERE id = ? AND aprovacao_status = 'pendente'"
 );

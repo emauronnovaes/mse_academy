@@ -77,6 +77,11 @@ function mse_email_aprovacao_html(array $d): string
             . "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">{$itens}</table>{$mais}";
     }
 
+    // Foto do Portal (se veio) ou as iniciais num círculo escuro.
+    $avatar = !empty($autor['foto'])
+        ? "<img src=\"{$e($autor['foto'])}\" width=\"40\" height=\"40\" alt=\"{$e($iniciais ?: 'Foto')}\" style=\"display:block;width:40px;height:40px;border-radius:20px;object-fit:cover;background:#191C2B;color:#fff;font:700 14px/40px Arial,sans-serif;text-align:center;border:0\">"
+        : "<div style=\"{$fonte}width:40px;height:40px;line-height:40px;border-radius:20px;background:#191C2B;color:#fff;text-align:center;font-size:14px;font-weight:700\">" . $e($iniciais ?: '?') . "</div>";
+
     $preheader = 'Enviado por ' . ($autor['nome'] ?: 'um colaborador') . ' — assista e aprove ou recuse.';
     $link = $e($d['link']);
 
@@ -115,7 +120,7 @@ function mse_email_aprovacao_html(array $d): string
         // Quem enviou
         . "<p style=\"{$fonte}margin:26px 0 8px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:{$cinza}\">Enviado por</p>"
         . "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\"><tr>"
-        . "<td style=\"width:44px;vertical-align:middle\"><div style=\"{$fonte}width:40px;height:40px;line-height:40px;border-radius:20px;background:#191C2B;color:#fff;text-align:center;font-size:14px;font-weight:700\">" . $e($iniciais ?: '?') . "</div></td>"
+        . "<td style=\"width:48px;vertical-align:middle\">" . $avatar . "</td>"
         . "<td style=\"{$fonte}padding-left:10px;vertical-align:middle\">"
         . "<div style=\"font-size:14px;font-weight:700;color:{$tinta}\">" . $e($autor['nome'] ?: 'Colaborador') . "</div>"
         . "<div style=\"font-size:12px;color:{$cinza};line-height:18px\">" . $e(implode(' · ', array_filter([$autor['cargo'], $autor['email']]))) . "</div>"
@@ -188,9 +193,19 @@ function mse_email_aprovacao_dados(PDO $pdo, int $courseId): ?array
         return null;
     }
 
-    $stmt = $pdo->prepare('SELECT name, email, cargo FROM users WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT name, email, cargo, cpf FROM users WHERE id = ?');
     $stmt->execute([(int) $curso['enviado_por']]);
-    $autor = $stmt->fetch() ?: ['name' => '', 'email' => '', 'cargo' => ''];
+    $autor = $stmt->fetch() ?: ['name' => '', 'email' => '', 'cargo' => '', 'cpf' => ''];
+
+    // Foto do cadastro no Portal (ficha de funcionário). Se a API não
+    // responder ou não achar, o e-mail usa as iniciais — nunca trava o aviso.
+    $foto = null;
+    try {
+        $ficha = mse_portal_ficha_buscar_pessoa($autor['cpf'] ?? null, $autor['name'] ?? null)['ficha'] ?? null;
+        $foto = $ficha['foto'] ?? null;
+    } catch (Throwable $e) {
+        error_log('[email aprovacao] foto: ' . $e->getMessage());
+    }
 
     $temMomento = mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg');
     $stmt = $pdo->prepare(
@@ -218,7 +233,7 @@ function mse_email_aprovacao_dados(PDO $pdo, int $courseId): ?array
         'origem' => ['youtube' => 'YouTube', 's3' => 'Arquivo enviado', 'playlist' => 'Playlist do YouTube'][$curso['video_source']] ?? $curso['video_source'],
         'duracao_min' => (int) $curso['duration_minutes'],
         'perguntas' => $perguntas,
-        'autor' => ['nome' => $autor['name'], 'email' => $autor['email'], 'cargo' => $autor['cargo']],
+        'autor' => ['nome' => $autor['name'], 'email' => $autor['email'], 'cargo' => $autor['cargo'], 'foto' => $foto],
         'enviado_em' => $curso['enviado_em'],
         'link' => mse_url_academy() . '/?aprovar=' . $courseId,
     ];
