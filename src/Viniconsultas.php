@@ -9,7 +9,7 @@ require_once __DIR__ . '/Admitidos.php';
  * da prova de que concluíram, ou não, a integração na MSE Academy.
  *
  *   viniconsultas          um registro por pessoa (resumo)
- *   viniconsultas_eventos  o log: login, logout, saida, bau_aberto
+ *   viniconsultas_eventos  o log: login, video_entrada, video_saida, bau_aberto
  *
  * Migração 032. Se não rodou, as tabelas são criadas aqui sozinhas.
  */
@@ -27,6 +27,21 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
         foreach (array_filter(array_map('trim', explode(';', (string) $sql))) as $comando) {
             $pdo->exec($comando);
         }
+        // Quem já rodou a primeira versão da migração (sem o log por vídeo) ganha as colunas novas.
+        $tem = static function (string $tabela, string $coluna) use ($pdo): bool {
+            $st = $pdo->prepare('SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?');
+            $st->execute([$tabela, $coluna]);
+            return $st->fetchColumn() !== false;
+        };
+        if (!$tem('viniconsultas_eventos', 'curso_id')) {
+            $pdo->exec('ALTER TABLE viniconsultas_eventos ADD COLUMN curso_id INT UNSIGNED NOT NULL DEFAULT 0, ADD COLUMN curso VARCHAR(200) NULL');
+            $pdo->exec('ALTER TABLE viniconsultas_eventos DROP INDEX uq_viniconsultas_eventos, ADD UNIQUE KEY uq_viniconsultas_eventos (user_id, tipo, evento_em, curso_id)');
+        }
+        foreach (['total_entradas_video' => 'INT NOT NULL DEFAULT 0', 'ultima_entrada_video' => 'DATETIME NULL', 'ultima_saida_video' => 'DATETIME NULL'] as $col => $def) {
+            if (!$tem('viniconsultas', $col)) {
+                $pdo->exec("ALTER TABLE viniconsultas ADD COLUMN {$col} {$def}");
+            }
+        }
         return $ok = true;
     } catch (Throwable $e) {
         error_log('[viniconsultas] Não consegui criar as tabelas (rode a migração 032): ' . $e->getMessage());
@@ -41,7 +56,7 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
  *
  * @param array|null $detalhe vira JSON na coluna "detalhe"
  */
-function mse_vini_registrar_evento(int $userId, string $tipo, ?array $detalhe = null): void
+function mse_vini_registrar_evento(int $userId, string $tipo, ?array $detalhe = null, int $cursoId = 0, ?string $curso = null, ?string $quando = null): void
 {
     try {
         if ($userId <= 0) {
@@ -55,13 +70,16 @@ function mse_vini_registrar_evento(int $userId, string $tipo, ?array $detalhe = 
         $st->execute([$userId]);
         $u = $st->fetch() ?: ['email' => null, 'cpf' => null];
         $cpf = preg_replace('/\D/', '', (string) $u['cpf']);
+        // $quando: a hora exata do registro original (check-in/out de vídeo), para
+        // o espelho e a cópia do histórico serem o MESMO registro (sem duplicar).
         $pdo->prepare(
-            'INSERT IGNORE INTO viniconsultas_eventos (user_id, cpf, email, tipo, evento_em, detalhe)
-             VALUES (?, ?, ?, ?, NOW(), ?)'
-        )->execute([
-            $userId, strlen($cpf) === 11 ? $cpf : null, $u['email'] ?: null, $tipo,
-            $detalhe ? json_encode($detalhe, JSON_UNESCAPED_UNICODE) : null,
-        ]);
+            'INSERT IGNORE INTO viniconsultas_eventos (user_id, cpf, email, tipo, evento_em, curso_id, curso, detalhe)
+             VALUES (?, ?, ?, ?, ' . ($quando !== null ? '?' : 'NOW()') . ', ?, ?, ?)'
+        )->execute(array_merge(
+            [$userId, strlen($cpf) === 11 ? $cpf : null, $u['email'] ?: null, $tipo],
+            $quando !== null ? [$quando] : [],
+            [$cursoId, $curso, $detalhe ? json_encode($detalhe, JSON_UNESCAPED_UNICODE) : null]
+        ));
     } catch (Throwable $e) {
         error_log('[viniconsultas] evento ' . $tipo . ': ' . $e->getMessage());
     }
@@ -90,22 +108,32 @@ function mse_vini_cursos_obrigatorios(PDO $pdo, ?int $userId): array
         return [];
     }
     $marc = implode(',', array_fill(0, count($ids), '?'));
+    $temLog = mse_tem_tabela($pdo, 'presenca_log');
     $st = $pdo->prepare(
         "SELECT c.id, c.title, p.status, p.watched_pct, p.completed_at,
                 (SELECT COUNT(DISTINCT t.question_id) FROM quiz_attempts t JOIN quiz_questions qq ON qq.id = t.question_id
                   WHERE qq.course_id = c.id AND t.user_id = ? AND t.is_correct = 1) AS acertos,
-                (SELECT COUNT(*) FROM quiz_questions qq2 WHERE qq2.course_id = c.id) AS perguntas
+                (SELECT COUNT(*) FROM quiz_questions qq2 WHERE qq2.course_id = c.id) AS perguntas,
+                " . ($temLog
+        ? "(SELECT COUNT(*) FROM presenca_log pl WHERE pl.user_id = ? AND pl.course_id = c.id AND pl.evento = 'checkin') AS entradas,
+                (SELECT MIN(pl.criado_em) FROM presenca_log pl WHERE pl.user_id = ? AND pl.course_id = c.id AND pl.evento = 'checkin') AS primeira_entrada,
+                (SELECT MAX(pl.criado_em) FROM presenca_log pl WHERE pl.user_id = ? AND pl.course_id = c.id AND pl.evento = 'checkout') AS ultima_saida"
+        : 'NULL AS entradas, NULL AS primeira_entrada, NULL AS ultima_saida') . "
          FROM courses c
          LEFT JOIN user_course_progress p ON p.course_id = c.id AND p.user_id = ?
          WHERE c.id IN ({$marc})
          ORDER BY c.order_index ASC, c.id ASC"
     );
-    $st->execute(array_merge([(int) $userId, (int) $userId], array_values($ids)));
+    $st->execute(array_merge($temLog ? [(int) $userId, (int) $userId, (int) $userId, (int) $userId, (int) $userId] : [(int) $userId, (int) $userId], array_values($ids)));
     return array_map(static fn($l) => [
         'curso' => $l['title'],
         'status' => $l['status'] ?: 'nao_iniciado',
         'percentual_assistido' => $l['watched_pct'] !== null ? (int) $l['watched_pct'] : 0,
         'concluido_em' => $l['completed_at'],
+        // Entrada (check-in) e saída (check-out) deste vídeo.
+        'entradas' => (int) $l['entradas'],
+        'primeira_entrada' => $l['primeira_entrada'],
+        'ultima_saida' => $l['ultima_saida'],
         'perguntas_certas' => (int) $l['acertos'],
         'perguntas' => (int) $l['perguntas'],
     ], $st->fetchAll());
@@ -155,6 +183,16 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
          SELECT t.user_id, ?, ?, 'login', t.created_at, '{\"origem\":\"historico\"}'
          FROM auth_tokens t WHERE t.user_id = ?" . ($corte ? ' AND t.created_at < ?' : '')
     );
+    // Entradas e saídas de cada vídeo (presenca_log): copiadas para o log, com a
+    // mesma hora do registro original, então repetir a cópia nunca duplica.
+    $temLog = mse_tem_tabela($pdo, 'presenca_log');
+    $copiaVideos = $temLog ? $pdo->prepare(
+        "INSERT IGNORE INTO viniconsultas_eventos (user_id, cpf, email, tipo, evento_em, curso_id, curso, detalhe)
+         SELECT p.user_id, ?, ?, IF(p.evento = 'checkin', 'video_entrada', 'video_saida'), p.criado_em, p.course_id, c.title,
+                CONCAT('{\"origem\":\"video\",\"percentual_assistido\":', IFNULL(CAST(p.watched_pct AS CHAR), 'null'), '}')
+         FROM presenca_log p JOIN courses c ON c.id = p.course_id
+         WHERE p.user_id = ? AND p.evento IN ('checkin', 'checkout')"
+    ) : null;
     $resumoEventos = $pdo->prepare(
         "SELECT tipo, COUNT(*) AS n, MIN(evento_em) AS primeiro, MAX(evento_em) AS ultimo
          FROM viniconsultas_eventos WHERE user_id = ? GROUP BY tipo"
@@ -165,15 +203,16 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
     $upsert = $pdo->prepare(
         'INSERT INTO viniconsultas
            (chave, nome, cpf, email, cargo, departamento, data_admissao, user_id, entrou_na_academy, primeiro_login, ultimo_login,
-            total_logins, ultimo_logout, ultima_saida, situacao_integracao, integracao_concluida, integracao_concluida_em,
+            total_logins, total_entradas_video, ultima_entrada_video, ultima_saida_video, situacao_integracao, integracao_concluida, integracao_concluida_em,
             aulas_obrigatorias, aulas_concluidas, cursos_obrigatorios, bau_vezes, bau_primeira_abertura, bau_ultima_abertura,
             bau_prova, verificado_em)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON DUPLICATE KEY UPDATE
            nome = VALUES(nome), cpf = VALUES(cpf), email = VALUES(email), cargo = VALUES(cargo), departamento = VALUES(departamento),
            user_id = VALUES(user_id), entrou_na_academy = VALUES(entrou_na_academy), primeiro_login = VALUES(primeiro_login),
-           ultimo_login = VALUES(ultimo_login), total_logins = VALUES(total_logins), ultimo_logout = VALUES(ultimo_logout),
-           ultima_saida = VALUES(ultima_saida), situacao_integracao = VALUES(situacao_integracao),
+           ultimo_login = VALUES(ultimo_login), total_logins = VALUES(total_logins),
+           total_entradas_video = VALUES(total_entradas_video), ultima_entrada_video = VALUES(ultima_entrada_video),
+           ultima_saida_video = VALUES(ultima_saida_video), situacao_integracao = VALUES(situacao_integracao),
            integracao_concluida = VALUES(integracao_concluida), integracao_concluida_em = VALUES(integracao_concluida_em),
            aulas_obrigatorias = VALUES(aulas_obrigatorias), aulas_concluidas = VALUES(aulas_concluidas),
            cursos_obrigatorios = VALUES(cursos_obrigatorios), bau_vezes = VALUES(bau_vezes),
@@ -186,7 +225,7 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
         $userId = !empty($p['user_id']) ? (int) $p['user_id'] : null;
         $cpf = preg_replace('/\D/', '', (string) ($p['cpf'] ?? ''));
 
-        $ev = ['login' => null, 'logout' => null, 'saida' => null, 'bau_aberto' => null];
+        $ev = ['login' => null, 'video_entrada' => null, 'video_saida' => null, 'bau_aberto' => null];
         $bauProva = null;
         if ($userId) {
             $args = [strlen($cpf) === 11 ? $cpf : null, $p['email'] ?? null, $userId];
@@ -194,6 +233,9 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
                 $args[] = $corte;
             }
             $historico->execute($args);
+            if ($copiaVideos) {
+                $copiaVideos->execute([strlen($cpf) === 11 ? $cpf : null, $p['email'] ?? null, $userId]);
+            }
             $resumoEventos->execute([$userId]);
             foreach ($resumoEventos->fetchAll() as $l) {
                 $ev[$l['tipo']] = $l;
@@ -211,7 +253,7 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
             $p['nome'], strlen($cpf) === 11 ? $cpf : null, $p['email'] ?? null, $p['funcao'] ?? null, $p['departamento'] ?? null,
             $p['data_admissao'], $userId, $userId && $ev['login'] ? 1 : 0,
             $ev['login']['primeiro'] ?? null, $ev['login']['ultimo'] ?? null, (int) ($ev['login']['n'] ?? 0),
-            $ev['logout']['ultimo'] ?? null, $ev['saida']['ultimo'] ?? null,
+            (int) ($ev['video_entrada']['n'] ?? 0), $ev['video_entrada']['ultimo'] ?? null, $ev['video_saida']['ultimo'] ?? null,
             !empty($p['dispensado']) ? 'dispensado' : $p['situacao'],
             $p['situacao'] === 'concluiu' ? 1 : 0, $p['concluiu_em'] ?? null,
             (int) ($p['obrigatorias'] ?? count($cursos)), (int) ($p['concluidas'] ?? 0),

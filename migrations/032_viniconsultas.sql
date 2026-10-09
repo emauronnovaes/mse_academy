@@ -6,9 +6,10 @@
                          nome, CPF, e-mail, login na Academy, se concluiu a
                          integração, abertura do baú, cursos obrigatórios
   viniconsultas_eventos  o log, um registro por acontecimento, com data e
-                         hora: login, logout, saída da Academy e abertura
-                         do baú (esta com a prova, na hora, do que a pessoa
-                         já tinha concluído)
+                         hora: login na Academy, entrada em cada vídeo
+                         (check-in), saída de cada vídeo (check-out) e
+                         abertura do baú (esta com a prova, na hora, do que
+                         a pessoa já tinha concluído)
 
   A Academy preenche e atualiza tudo sozinha (botão "Atualizar banco" em
   Relatórios > Pendentes e a chamada agendada api/integracao/sincronizar.php;
@@ -40,8 +41,9 @@ CREATE TABLE IF NOT EXISTS viniconsultas (
   primeiro_login           DATETIME     NULL,
   ultimo_login             DATETIME     NULL,
   total_logins             INT          NOT NULL DEFAULT 0,
-  ultimo_logout            DATETIME     NULL,
-  ultima_saida             DATETIME     NULL,
+  total_entradas_video     INT          NOT NULL DEFAULT 0,
+  ultima_entrada_video     DATETIME     NULL,
+  ultima_saida_video       DATETIME     NULL,
   situacao_integracao      VARCHAR(20)  NOT NULL,
   integracao_concluida     TINYINT(1)   NOT NULL DEFAULT 0,
   integracao_concluida_em  DATETIME     NULL,
@@ -66,9 +68,11 @@ CREATE TABLE IF NOT EXISTS viniconsultas_eventos (
   email      VARCHAR(150) NULL,
   tipo       VARCHAR(20)  NOT NULL,
   evento_em  DATETIME     NOT NULL,
+  curso_id   INT UNSIGNED NOT NULL DEFAULT 0,
+  curso      VARCHAR(200) NULL,
   detalhe    LONGTEXT     NULL,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_viniconsultas_eventos (user_id, tipo, evento_em),
+  UNIQUE KEY uq_viniconsultas_eventos (user_id, tipo, evento_em, curso_id),
   KEY idx_viniconsultas_eventos_tipo (tipo, evento_em),
   KEY idx_viniconsultas_eventos_cpf (cpf)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

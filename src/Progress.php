@@ -277,5 +277,24 @@ function mse_registrar_evento(PDO $pdo, int $userId, int $courseId, string $even
         $pct === false ? null : $pct,
         mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255) ?: null,
     ]);
+
+    // Entrada e saída de vídeo também vão para o log de consulta (viniconsultas_eventos),
+    // com a MESMA hora deste registro. Nunca atrapalha o registro principal.
+    if ($evento === 'checkin' || $evento === 'checkout') {
+        try {
+            $reg = $pdo->prepare('SELECT p.criado_em, p.watched_pct, c.title FROM presenca_log p JOIN courses c ON c.id = p.course_id WHERE p.id = ?');
+            $reg->execute([(int) $pdo->lastInsertId()]);
+            if ($r = $reg->fetch()) {
+                require_once __DIR__ . '/Viniconsultas.php';
+                mse_vini_registrar_evento(
+                    $userId, $evento === 'checkin' ? 'video_entrada' : 'video_saida',
+                    ['origem' => 'video', 'percentual_assistido' => $r['watched_pct'] !== null ? (float) $r['watched_pct'] : null],
+                    $courseId, (string) $r['title'], (string) $r['criado_em']
+                );
+            }
+        } catch (Throwable $e) {
+            error_log('[viniconsultas] espelho do vídeo: ' . $e->getMessage());
+        }
+    }
     return true;
 }

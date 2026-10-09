@@ -4127,16 +4127,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     processarFila();
   }
 
-  // Saída da Academy (fechou a aba ou foi para outro site): vai para o log de
-  // consulta. keepalive deixa o pedido terminar mesmo com a página fechando.
-  window.addEventListener('pagehide', () => {
-    try{
-      const token = getRealSessionToken();
-      if(!token) return;
-      fetch('api/sessao/saida.php', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, keepalive: true });
-    }catch(e){ /* segue sem registrar */ }
-  });
-
   // Fechar a aba no meio do envio perde o que faltava — o navegador
   // simplesmente para de mandar os bytes. Avisa antes.
   window.addEventListener('beforeunload', (e) => {
