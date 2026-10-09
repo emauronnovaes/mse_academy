@@ -68,7 +68,7 @@ $courseId = $metodo === 'GET'
 if ($courseId <= 0) {
     mse_error('Informe course_id.', 422);
 }
-mse_exigir_admin_ou_autor($pdo, $usuario, $courseId);
+mse_exigir_admin_ou_dono($pdo, $usuario, $courseId);
 
 $temMomento = mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg');
 $temDuracao = mse_tem_coluna($pdo, 'courses', 'duration_seconds');

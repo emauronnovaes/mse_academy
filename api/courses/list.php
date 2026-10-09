@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../src/Response.php';
 require_once __DIR__ . '/../../src/Auth.php';
 require_once __DIR__ . '/../../src/Progress.php';
 require_once __DIR__ . '/../../src/Departamentos.php';
+require_once __DIR__ . '/../../src/Assuntos.php';
 
 mse_cors();
 $user = mse_require_auth();
@@ -51,17 +52,29 @@ if ($type === 'onboarding' || $type === 'curso') {
     $params[] = $type;
 }
 
-if ($areaSlug) {
-    // Filtro explícito manda mais que a recomendação automática
-    $sql .= ' AND a.slug = ?';
-    $params[] = $areaSlug;
-}
-
 $sql .= ' ORDER BY c.order_index ASC, c.id ASC';
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $courses = $stmt->fetchAll();
+
+// Um vídeo pode estar em vários assuntos (os cartões da seção Cursos).
+$mapaAssuntos = mse_assuntos_mapa($pdo, array_map(static fn($c) => (int) $c['id'], $courses));
+$assuntosPorId = [];
+foreach ($pdo->query('SELECT id, slug, name FROM areas') as $a) {
+    $assuntosPorId[(int) $a['id']] = $a;
+}
+if ($areaSlug) {
+    // Filtro explícito manda mais que a recomendação automática
+    $courses = array_values(array_filter($courses, static function ($c) use ($mapaAssuntos, $assuntosPorId, $areaSlug) {
+        foreach ($mapaAssuntos[(int) $c['id']] ?? [] as $id) {
+            if (isset($assuntosPorId[$id]) && $assuntosPorId[$id]['slug'] === $areaSlug) {
+                return true;
+            }
+        }
+        return false;
+    }));
+}
 
 // Recomendação automática (só quando não há filtro explícito de área):
 // um curso "sobe" pra recomendado se é da MESMA ÁREA da pessoa OU se
@@ -71,8 +84,8 @@ $courses = $stmt->fetchAll();
 // A trilha de integração (onboarding) nunca é filtrada — obrigatória
 // pra todo mundo, de qualquer área/cargo.
 if (!$areaSlug && $scope === 'recommended' && $type !== 'onboarding') {
-    $courses = array_values(array_filter($courses, function ($course) use ($user, $pdo) {
-        $matchesArea = $user['area_id'] && (int) $course['area_id'] === (int) $user['area_id'];
+    $courses = array_values(array_filter($courses, function ($course) use ($user, $pdo, $mapaAssuntos) {
+        $matchesArea = $user['area_id'] && in_array((int) $user['area_id'], $mapaAssuntos[(int) $course['id']] ?? [(int) $course['area_id']], true);
         $matchesCargo = !empty($user['cargo']) && mse_cargo_matches_course($pdo, $user['cargo'], (int) $course['id']);
         return $matchesArea || $matchesCargo;
     }));
@@ -138,6 +151,19 @@ foreach ($courses as &$course) {
     $course['order_index'] = (int) $course['order_index'];
     $course['tem_quiz'] = (bool) $course['tem_quiz'];
     $course['obrigatorio'] = (bool) $course['obrigatorio'];
+    // Assuntos do vídeo, o principal primeiro (area_slug/area_name seguem sendo o principal).
+    $slugsDoVideo = [];
+    $nomesDoVideo = [];
+    $ordemAssuntos = $mapaAssuntos[$course['id']] ?? [];
+    usort($ordemAssuntos, static fn($x, $y) => ($x === $course['area_id'] ? 0 : 1) <=> ($y === $course['area_id'] ? 0 : 1));
+    foreach ($ordemAssuntos as $idAssunto) {
+        if (isset($assuntosPorId[$idAssunto])) {
+            $slugsDoVideo[] = $assuntosPorId[$idAssunto]['slug'];
+            $nomesDoVideo[] = $assuntosPorId[$idAssunto]['name'];
+        }
+    }
+    $course['area_slugs'] = $slugsDoVideo ?: ($course['area_slug'] ? [$course['area_slug']] : []);
+    $course['area_names'] = $nomesDoVideo ?: ($course['area_name'] ? [$course['area_name']] : []);
 
     // Curso restrito a áreas continua VISÍVEL pra quem é de fora — só
     // deixa de ser pendência dele e sai da barra de progresso. Quem

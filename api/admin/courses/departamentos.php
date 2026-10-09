@@ -17,7 +17,7 @@ require_once __DIR__ . '/../../../src/Departamentos.php';
  * GET  ?course_id=N                    → lista os departamentos e os marcados
  * POST {course_id, departamentos:[nomes]} → substitui a seleção
  *
- * Admin, ou quem enviou o vídeo enquanto ele espera aprovação.
+ * Admin, ou quem enviou o vídeo (só o dele).
  */
 
 mse_cors();
@@ -29,7 +29,7 @@ $courseId = (int) ($_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['course_id'] ??
 if ($courseId <= 0) {
     mse_error('Informe course_id.', 422);
 }
-mse_exigir_admin_ou_autor($pdo, $usuario, $courseId);
+mse_exigir_admin_ou_dono($pdo, $usuario, $courseId);
 
 $stmt = $pdo->prepare('SELECT id, title FROM courses WHERE id = ?');
 $stmt->execute([$courseId]);

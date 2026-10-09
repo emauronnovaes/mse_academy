@@ -2179,3 +2179,13 @@
   /* Editar antes de aprovar */
   .aprov-edicao{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:6px 0 16px; padding:12px 14px; border:1px dashed var(--line); border-radius:10px; background:#FAFAF8; }
   .aprov-edicao .aprov-secao{ margin:0 auto 0 0; }
+
+  /* Meus vídeos (quem não é admin edita só os próprios) */
+  .mv-lista{ border:1px solid var(--line); border-radius:10px; }
+  .mv-item{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:12px 14px; }
+  .mv-item + .mv-item{ border-top:1px solid var(--line); }
+  .mv-info{ min-width:0; }
+  .mv-info strong{ display:block; font-size:14px; overflow-wrap:anywhere; margin-bottom:4px; }
+  .mv-motivo{ display:block; margin-top:5px; padding:6px 10px; border-left:3px solid var(--red); background:#FBF1F1; font-size:12.5px; border-radius:0 6px 6px 0; }
+  .mv-acoes{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; flex-shrink:0; }
+  @media (max-width:640px){ .mv-item{ flex-direction:column; } .mv-acoes{ justify-content:flex-start; } }

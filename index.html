@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261009m">
+<link rel="stylesheet" href="style.css?v=20261009o">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -49,6 +49,10 @@
     <button type="button" id="btnEnviarVideo" class="btn-add-people" hidden>
       <i class="fa-solid fa-circle-play" aria-hidden="true"></i> Adicionar vídeo
     </button>
+    <!-- Só aparece para quem não é admin e já enviou algum vídeo: edita só os dele -->
+    <button type="button" id="btnMeusVideos" class="btn-add-people btn-meus-videos" hidden>
+      <i class="fa-solid fa-play" aria-hidden="true"></i> Meus vídeos
+    </button>
     <button type="button" id="btnAdicionarPessoas" class="btn-add-people" hidden>
       <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Admins
     </button>
@@ -63,7 +67,7 @@
       <i class="fa-solid fa-chart-line" aria-hidden="true"></i> Relatórios
     </button>
     <button type="button" id="btnDepartamentos" class="btn-add-people btn-departamentos" hidden>
-      <i class="fa-solid fa-folder-open" aria-hidden="true"></i> Departamentos
+      <i class="fa-solid fa-folder-open" aria-hidden="true"></i> Assuntos
     </button>
     <!-- Vídeos enviados por colaboradores esperando aprovação -->
     <button type="button" id="btnAprovacoes" class="btn-add-people btn-aprovacoes" hidden>
@@ -111,8 +115,9 @@
     <p class="admin-field-hint" id="videoModalOndeAparece"></p>
 
     <div id="adminVideoModalAreaWrap">
-      <label class="admin-field-label">Área</label>
-      <select id="adminVideoModalArea"></select>
+      <label class="admin-field-label">Assuntos</label>
+      <div class="vm-obrigatorio" id="adminVideoModalAreas"><span class="admin-field-hint">Carregando assuntos...</span></div>
+      <p class="admin-field-hint">Marque um ou mais assuntos: o vídeo aparece em todos eles. O primeiro que você marcar é o principal.</p>
     </div>
 
     <label class="admin-field-label">Título</label>
@@ -369,17 +374,16 @@
      quantos módulos de integração já concluiu. Números absolutos (não
      porcentagem — não temos o total real de colaboradores do Portal
      pra calcular uma % de cobertura de verdade). -->
-<!-- Departamentos: criar, renomear e trocar o ícone dos cartões da seção
-     "Cursos". Não há excluir de propósito — apagar um departamento deixaria
-     os vídeos dele sem nenhuma tela onde aparecer. Departamento sem vídeo
-     publicado já não é mostrado pra quem não é admin. -->
+<!-- Assuntos: criar, renomear e trocar o ícone dos cartões da seção
+     "Cursos" (antes chamados de áreas/departamentos). Assunto sem vídeo
+     publicado não é mostrado pra quem não é admin. -->
 <div class="admin-modal-overlay" id="areasModalOverlay" hidden>
   <div class="admin-modal admin-modal-wide" role="dialog" aria-modal="true" aria-labelledby="areasModalTitle">
     <button type="button" class="admin-modal-close" id="areasModalClose" aria-label="Fechar">
       <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
     </button>
-    <h3 id="areasModalTitle">Departamentos</h3>
-    <p id="areasModalSubtitle">O cartão só aparece pra quem não é admin depois que o departamento tem pelo menos um vídeo publicado.</p>
+    <h3 id="areasModalTitle">Assuntos</h3>
+    <p id="areasModalSubtitle">O cartão só aparece pra quem não é admin depois que o assunto tem pelo menos um vídeo publicado.</p>
     <div id="areasModalBody"></div>
   </div>
 </div>
@@ -567,7 +571,7 @@
   <div class="wrap">
     <div class="section-head">
       <div>
-        <span class="index-no">Áreas do portal</span>
+        <span class="index-no">Assuntos do portal</span>
         <h2>Sobre o que você quer aprender?</h2>
       </div>
       <button type="button" class="fav-view-btn" id="favViewBtn">
@@ -582,7 +586,7 @@
          trocado no banco nao mudava na tela, e 21 dos 22 abriam numa tela vazia
          porque nao tinham video nenhum. -->
     <div class="areas-grid areas-grid-wide" id="areasGrid">
-      <p class="areas-vazio" id="areasCarregando">Carregando os departamentos...</p>
+      <p class="areas-vazio" id="areasCarregando">Carregando os assuntos...</p>
     </div>
   </div>
 </section>
@@ -620,13 +624,13 @@
   </div>
 </div>
 
-<!-- Tela cheia com os tutoriais de uma área específica (aberta ao clicar num card de área) -->
+<!-- Tela cheia com os tutoriais de um assunto específico (aberta ao clicar num card de assunto) -->
 <div class="video-modal-backdrop area-modal-backdrop" id="areaModal" hidden>
   <div class="video-modal" role="dialog" aria-modal="true" aria-labelledby="areaModalTitle">
     <div class="video-modal-head">
       <div>
-        <span id="areaModalEyebrow">Tutoriais da área</span>
-        <h3 id="areaModalTitle" style="margin-top:4px;">Nome da área</h3>
+        <span id="areaModalEyebrow">Tutoriais do assunto</span>
+        <h3 id="areaModalTitle" style="margin-top:4px;">Nome do assunto</h3>
       </div>
       <button type="button" class="video-modal-close" id="areaModalClose" aria-label="Fechar">
         <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
@@ -635,7 +639,7 @@
     <div class="video-modal-body">
       <div class="video-modal-inner area-modal-inner">
         <div class="course-grid" id="areaCourseGrid"></div>
-        <p class="no-results" id="areaNoResults" hidden>Ainda não há tutoriais publicados nessa área.</p>
+        <p class="no-results" id="areaNoResults" hidden>Ainda não há tutoriais publicados nesse assunto.</p>
       </div>
     </div>
   </div>
@@ -678,7 +682,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261009m"></script>
+<script src="script.js?v=20261009o"></script>
 
 </body>
 </html>

@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../../src/Response.php';
 require_once __DIR__ . '/../../../src/Auth.php';
 require_once __DIR__ . '/../../../src/Treinamentos.php';
 require_once __DIR__ . '/../../../src/Aprovacao.php';
+require_once __DIR__ . '/../../../src/Assuntos.php';
 
 mse_cors();
 // Qualquer pessoa logada pode cadastrar. Admin publica na hora; os demais
@@ -45,7 +46,8 @@ if (!in_array($type, ['curso', 'onboarding'], true)) {
 // não importa a área da pessoa — por isso não exigimos área pra eles.
 // Só o catálogo (type='curso') precisa de uma área pra recomendação
 // funcionar.
-if ($type === 'curso' && $areaSlug === '') {
+$pediuAssunto = $areaSlug !== '' || (isset($input['area_slugs']) && is_array($input['area_slugs']) && count($input['area_slugs']) > 0);
+if ($type === 'curso' && !$pediuAssunto) {
     mse_error('Informe area_slug (ex: "financeiro", "ti", "obras").', 422);
 }
 if ($title === '') {
@@ -90,16 +92,10 @@ if ($paraAprovacao && !mse_garantir_colunas_aprovacao($pdo)) {
     mse_error('Este servidor ainda não aceita envio para aprovação. Falta rodar a migração 024 no banco (migrations/024_aprovacao_de_videos.sql).', 409);
 }
 
-$areaId = null;
-if ($areaSlug !== '') {
-    $stmt = $pdo->prepare('SELECT id FROM areas WHERE slug = ?');
-    $stmt->execute([$areaSlug]);
-    $area = $stmt->fetch();
-    if (!$area) {
-        mse_error("Área \"{$areaSlug}\" não existe. Veja os slugs válidos em GET /api/courses/list.php ou na tabela areas.", 422);
-    }
-    $areaId = (int) $area['id'];
-}
+// Assuntos do vídeo (os cartões da seção Cursos): vários possíveis; o
+// primeiro vira o principal (courses.area_id).
+$areaIds = mse_ler_assuntos($pdo, $input);
+$areaId = $areaIds[0] ?? null;
 
 // Pergunta do quiz é opcional na criação — dá pra criar o vídeo primeiro
 // e adicionar a pergunta depois, mas se vier, valida ela inteira também
@@ -183,6 +179,10 @@ if (mse_tem_campos_auditoria($pdo)) {
     }
 }
 
+// A tabela de assuntos é criada ANTES da transação (criar tabela dentro dela
+// encerraria a transação). Com um assunto só, usa a tabela se ela já existe.
+$usaTabelaAssuntos = count($areaIds) > 1 ? mse_garantir_tabela_assuntos($pdo) : mse_tem_assuntos($pdo);
+
 // Curso + pergunta + opções tudo junto numa transação — se qualquer
 // parte falhar, desfaz tudo.
 $pdo->beginTransaction();
@@ -201,6 +201,9 @@ try {
         $stmt->execute([$areaId, $type, $title, $description, $videoSource, $youtubeId, $videoKey ?: null, $durationMinutes, $orderIndex, $paraAprovacao ? 0 : 1]);
     }
     $courseId = (int) $pdo->lastInsertId();
+    if ($usaTabelaAssuntos) {
+        mse_gravar_assuntos($pdo, $courseId, $areaIds);
+    }
 
     if ($paraAprovacao) {
         $pdo->prepare(

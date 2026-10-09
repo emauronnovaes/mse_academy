@@ -159,3 +159,26 @@ function mse_excluir_arquivo_recusado(PDO $pdo, int $courseId): array
     return ['excluido' => true, 'aviso' => null];
 }
 
+/**
+ * Admin, ou quem ENVIOU o vídeo (courses.enviado_por = a própria pessoa), em
+ * qualquer situação (esperando, aprovado ou recusado).
+ *
+ * É a única porta pela qual um colaborador mexe em vídeo (editar, perguntas,
+ * departamentos, excluir). Vídeo de outra pessoa, ou cadastrado por admin
+ * (enviado_por vazio), nunca passa: 403.
+ */
+function mse_exigir_admin_ou_dono(PDO $pdo, array $user, int $courseId): void
+{
+    if (($user['role'] ?? '') === 'admin') {
+        return;
+    }
+    if ($courseId > 0 && mse_tem_coluna($pdo, 'courses', 'enviado_por')) {
+        $stmt = $pdo->prepare('SELECT 1 FROM courses WHERE id = ? AND enviado_por IS NOT NULL AND enviado_por = ?');
+        $stmt->execute([$courseId, (int) $user['id']]);
+        if ($stmt->fetchColumn() !== false) {
+            return;
+        }
+    }
+    mse_error('Você só pode mexer nos vídeos que você mesmo enviou.', 403);
+}
+

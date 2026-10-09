@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/Aprovacao.php';
 require_once __DIR__ . '/Departamentos.php';
+require_once __DIR__ . '/Assuntos.php';
 
 /**
  * Layout do e-mail "vídeo para aprovação".
@@ -228,7 +229,8 @@ function mse_email_aprovacao_dados(PDO $pdo, int $courseId): ?array
     return [
         'titulo' => $curso['title'],
         'descricao' => (string) $curso['description'],
-        'onde' => $curso['type'] === 'onboarding' ? 'Integração (trilha obrigatória)' : 'Curso · ' . ($curso['area_name'] ?: 'sem área'),
+        'onde' => $curso['type'] === 'onboarding' ? 'Integração (trilha obrigatória)'
+            : 'Curso · ' . (implode(', ', array_column(mse_assuntos_do_curso($pdo, $courseId), 'name')) ?: ($curso['area_name'] ?: 'sem assunto')),
         'departamentos' => $departamentos,
         'origem' => ['youtube' => 'YouTube', 's3' => 'Arquivo enviado', 'playlist' => 'Playlist do YouTube'][$curso['video_source']] ?? $curso['video_source'],
         'duracao_min' => (int) $curso['duration_minutes'],

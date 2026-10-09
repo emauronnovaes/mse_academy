@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../../src/Aprovacao.php';
 require_once __DIR__ . '/../../../src/AwsS3.php';
 require_once __DIR__ . '/../../../src/Email.php';
 require_once __DIR__ . '/../../../src/Departamentos.php';
+require_once __DIR__ . '/../../../src/Assuntos.php';
 
 /**
  * Tela de aprovação: vídeos esperando aprovação e, com ?id=N, tudo sobre
@@ -141,6 +142,8 @@ $resposta['video'] = [
     'descricao' => $c['description'],
     'tipo' => $c['type'],
     'area' => $c['area_name'],
+    // Todos os assuntos do vídeo (o principal primeiro).
+    'assuntos_do_video' => mse_assuntos_do_curso($pdo, $id),
     'origem' => $c['video_source'],
     'youtube_id' => $c['video_source'] !== 's3' ? $c['youtube_id'] : null,
     'video_url' => $videoUrl,

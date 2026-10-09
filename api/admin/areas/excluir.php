@@ -41,14 +41,14 @@ $input = mse_input();
 
 $id = (int) ($input['id'] ?? 0);
 if ($id <= 0) {
-    mse_error('Informe o departamento.', 422);
+    mse_error('Informe o assunto.', 422);
 }
 
 $stmt = $pdo->prepare('SELECT id, slug, name FROM areas WHERE id = ?');
 $stmt->execute([$id]);
 $area = $stmt->fetch();
 if (!$area) {
-    mse_error('Departamento não encontrado.', 404);
+    mse_error('Assunto não encontrado.', 404);
 }
 
 // Conta TODOS os vídeos, inclusive os arquivados: arquivado continua
@@ -59,13 +59,13 @@ $totalCursos = (int) $stmt->fetchColumn();
 
 if ($totalCursos > 0) {
     mse_error(
-        'O departamento "' . $area['name'] . '" tem ' . $totalCursos . ' '
+        'O assunto "' . $area['name'] . '" tem ' . $totalCursos . ' '
         . ($totalCursos === 1 ? 'vídeo' : 'vídeos')
         . ' (contando os arquivados). Excluir deixaria '
         . ($totalCursos === 1 ? 'esse vídeo' : 'esses vídeos')
         . ' sem nenhuma tela onde aparecer. Mova '
         . ($totalCursos === 1 ? 'o vídeo' : 'os vídeos')
-        . ' para outro departamento ou exclua em "Gerenciar aulas" primeiro.',
+        . ' para outro assunto ou exclua em "Treinamentos" primeiro.',
         409
     );
 }
@@ -133,5 +133,5 @@ $stmt->execute([$id]);
 mse_json([
     'id' => $id,
     'nome' => $area['name'],
-    'message' => 'Departamento "' . $area['name'] . '" excluído.',
+    'message' => 'Assunto "' . $area['name'] . '" excluído.',
 ]);

@@ -5,9 +5,13 @@ require_once __DIR__ . '/../../../src/Cors.php';
 require_once __DIR__ . '/../../../src/Response.php';
 require_once __DIR__ . '/../../../src/Auth.php';
 require_once __DIR__ . '/../../../src/Treinamentos.php';
+require_once __DIR__ . '/../../../src/Assuntos.php';
+require_once __DIR__ . '/../../../src/Aprovacao.php';
 
 mse_cors();
-mse_require_admin();
+// Admin, ou o dono do vídeo (quem o enviou) — só o dele. Conferido abaixo,
+// quando o course_id é conhecido.
+$usuario = mse_require_auth();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     mse_error('Método não permitido.', 405);
@@ -30,6 +34,7 @@ if ($courseId <= 0) {
 }
 
 $pdo = mse_db();
+mse_exigir_admin_ou_dono($pdo, $usuario, $courseId);
 
 $stmt = $pdo->prepare('SELECT id, title, description FROM courses WHERE id = ?');
 $stmt->execute([$courseId]);
@@ -74,18 +79,15 @@ if (array_key_exists('type', $input)) {
         mse_error('type precisa ser "curso" ou "onboarding".', 422);
     }
     $areaId = null;
-    $areaSlug = trim((string) ($input['area_slug'] ?? ''));
+    $areaIds = [];
     if ($tipo === 'curso') {
-        if ($areaSlug === '') {
-            mse_error('Escolha a área do curso.', 422);
+        $areaIds = mse_ler_assuntos($pdo, $input);
+        if (!$areaIds) {
+            mse_error('Escolha pelo menos um assunto do curso.', 422);
         }
-        $st = $pdo->prepare('SELECT id FROM areas WHERE slug = ?');
-        $st->execute([$areaSlug]);
-        $areaId = $st->fetchColumn();
-        if ($areaId === false) {
-            mse_error('Área não existe.', 422);
-        }
+        $areaId = $areaIds[0];
     }
+    $gravarAssuntos = true;
     $st = $pdo->prepare('SELECT type FROM courses WHERE id = ?');
     $st->execute([$courseId]);
     if ($st->fetchColumn() !== $tipo) {
@@ -115,6 +117,13 @@ if (!$campos) {
 $valores[] = $courseId;
 $stmt = $pdo->prepare('UPDATE courses SET ' . implode(', ', $campos) . ' WHERE id = ?');
 $stmt->execute($valores);
+
+// Todos os assuntos do vídeo (só quando o tipo veio junto, como na edição da aprovação).
+if (!empty($gravarAssuntos)) {
+    if (count($areaIds) > 1 || mse_tem_assuntos($pdo)) {
+        mse_gravar_assuntos($pdo, $courseId, $areaIds);
+    }
+}
 
 $stmt = $pdo->prepare('SELECT id, title, description FROM courses WHERE id = ?');
 $stmt->execute([$courseId]);

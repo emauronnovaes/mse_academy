@@ -104,6 +104,23 @@ foreach ($params as $k => $v) {
 $stmt->execute();
 $cursos = $stmt->fetchAll();
 
+require_once __DIR__ . '/../../../src/Assuntos.php';
+$nomesAssuntos = [];
+if (mse_tem_assuntos($pdo) && $cursos) {
+    $mapaA = mse_assuntos_mapa($pdo, array_map(static fn($c) => (int) $c['id'], $cursos));
+    $nomesA = [];
+    foreach ($pdo->query('SELECT id, name FROM areas') as $a) {
+        $nomesA[(int) $a['id']] = $a['name'];
+    }
+    foreach ($cursos as $c) {
+        $ids = $mapaA[(int) $c['id']] ?? [];
+        usort($ids, static fn($x, $y) => ($x === (int) $c['area_id'] ? 0 : 1) <=> ($y === (int) $c['area_id'] ? 0 : 1));
+        $nomes = array_values(array_filter(array_map(static fn($i) => $nomesA[$i] ?? null, $ids)));
+        if (count($nomes) > 1) {
+            $nomesAssuntos[(int) $c['id']] = implode(', ', $nomes);
+        }
+    }
+}
 $areasObrigatorias = [];
 if ($pdo->query("SHOW TABLES LIKE 'course_areas'")->fetch() !== false) {
     foreach ($pdo->query('SELECT ca.course_id, a.name FROM course_areas ca JOIN areas a ON a.id = ca.area_id ORDER BY a.name') as $l) {
@@ -185,7 +202,8 @@ foreach ($cursos as $c) {
         'instrutor' => $c['instrutor'],
         'conteudo_programatico' => $c['conteudo_programatico'],
         'assuntos' => $c['assuntos'],
-        'area' => $c['area_name'],
+        // Todos os assuntos do vídeo, separados por vírgula.
+        'area' => $nomesAssuntos[(int) $c['id']] ?? $c['area_name'],
         'trilha' => $c['type'] === 'onboarding',
         'type' => $c['type'],
         'arquivado' => (int) $c['is_published'] === 0,

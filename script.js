@@ -1997,7 +1997,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         img: IMAGENS_DO_CARROSSEL[i],
         title: curso.title,
         lead: curso.label
-          ? `Tutorial da área <b>${curso.label}</b>. ${curso.desc || ''}`.trim()
+          ? `Tutorial do assunto <b>${curso.label}</b>. ${curso.desc || ''}`.trim()
           : (curso.desc || '')
       });
     });
@@ -2031,7 +2031,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(!grid) return;
 
     if(!areas.length){
-      grid.innerHTML = '<p class="areas-vazio">Nenhum departamento tem vídeo publicado ainda.</p>';
+      grid.innerHTML = '<p class="areas-vazio">Nenhum assunto tem vídeo publicado ainda.</p>';
       return;
     }
 
@@ -2060,7 +2060,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       renderAreas();
     }catch(e){
       const grid = document.getElementById('areasGrid');
-      if(grid) grid.innerHTML = `<p class="areas-vazio">Não foi possível carregar os departamentos: ${escaparHtml(e.message)}</p>`;
+      if(grid) grid.innerHTML = `<p class="areas-vazio">Não foi possível carregar os assuntos: ${escaparHtml(e.message)}</p>`;
     }
   }
 
@@ -2091,7 +2091,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     courses = (catalogo.courses || []).map(c => ({
       id: c.id,
       cat: c.area_slug,
-      label: c.area_name || '',
+      // Um vídeo pode estar em vários assuntos (cartões); cat é o principal.
+      cats: (c.area_slugs && c.area_slugs.length) ? c.area_slugs : [c.area_slug],
+      label: (c.area_names && c.area_names.length) ? c.area_names.join(', ') : (c.area_name || ''),
       title: c.title,
       desc: c.description || '',
       time: formatarDuracao(c.duration_seconds, c.duration_minutes),
@@ -2156,7 +2158,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   }
 
   function isAreaFullyDone(slug){
-    const areaCourses = courses.filter(c => c.cat === slug);
+    const areaCourses = courses.filter(c => c.cats.includes(slug));
     if(areaCourses.length === 0) return false;
     return areaCourses.every(c => catalogProgress.completed.includes(c.id));
   }
@@ -2164,7 +2166,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   function getDistinctAreasCompleted(){
     return new Set(
       catalogProgress.completed
-        .map(id => courses.find(c => c.id === id)?.cat)
+        .flatMap(id => (courses.find(c => c.id === id) || { cats: [] }).cats)
         .filter(Boolean)
     );
   }
@@ -2184,9 +2186,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       name: 'Explorador',
       check: () => getDistinctAreasCompleted().size >= 3,
       progress: () => {
-        const slugs = [...new Set(courses.map(c => c.cat))];
+        const slugs = [...new Set(courses.flatMap(c => c.cats))];
         const ratios = slugs.map(slug => {
-          const areaCourses = courses.filter(c => c.cat === slug);
+          const areaCourses = courses.filter(c => c.cats.includes(slug));
           if(areaCourses.length === 0) return 0;
           const done = areaCourses.filter(c => catalogProgress.completed.includes(c.id)).length;
           return done / areaCourses.length;
@@ -2196,7 +2198,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     },
     {
       name: 'Piloto de Rota',
-      check: () => [...new Set(courses.map(c => c.cat))].some(isAreaFullyDone),
+      check: () => [...new Set(courses.flatMap(c => c.cats))].some(isAreaFullyDone),
       progress: () => courses.length ? catalogProgress.completed.length / courses.length : 0,
     },
     {
@@ -2249,7 +2251,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     },
     {
       id: 'rota-dominada', label: 'Rota Dominada', icon: 'fa-check',
-      check: () => [...new Set(courses.map(c => c.cat))].some(isAreaFullyDone)
+      check: () => [...new Set(courses.flatMap(c => c.cats))].some(isAreaFullyDone)
     },
     {
       id: 'mapa-completo', label: 'Mapa Completo', icon: 'fa-check',
@@ -2424,7 +2426,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     // Contagem discreta em cada card de área ("3 de 5 concluídos")
     document.querySelectorAll('.area-card').forEach(card => {
       const slug = card.dataset.area;
-      const areaCourses = courses.filter(c => c.cat === slug);
+      const areaCourses = courses.filter(c => c.cats.includes(slug));
       let tag = card.querySelector('.area-progress');
       if(areaCourses.length === 0){
         if(tag) tag.remove();
@@ -2564,7 +2566,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   function openCourseScreen({ eyebrow, title, results, emptyMessage }){
     areaModalLastFocusedEl = document.activeElement;
     currentAreaResults = results;
-    currentEmptyMessage = emptyMessage || 'Ainda não há tutoriais publicados nessa área.';
+    currentEmptyMessage = emptyMessage || 'Ainda não há tutoriais publicados nesse assunto.';
 
     areaModalEyebrowEl.textContent = eyebrow;
     areaModalTitleEl.textContent = title;
@@ -2593,11 +2595,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   function openAreaCourses(slug){
     const cardBtn = document.querySelector(`.area-card[data-area="${slug}"]`);
-    const areaName = cardBtn ? cardBtn.querySelector('h4').textContent : 'Área';
+    const areaName = cardBtn ? cardBtn.querySelector('h4').textContent : 'Assunto';
     openCourseScreen({
-      eyebrow: 'Tutoriais da área',
+      eyebrow: 'Tutoriais do assunto',
       title: areaName,
-      results: courses.filter(c => c.cat === slug)
+      results: courses.filter(c => c.cats.includes(slug))
     });
   }
 
@@ -3281,7 +3283,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // As áreas vêm do banco, não de uma lista fixa aqui — assim qualquer
   // área cadastrada aparece sozinha, sem precisar mexer no JavaScript.
   async function fillAreaSelect(){
-    const select = document.getElementById('adminVideoModalArea');
+    const select = document.getElementById('adminVideoModalAreas');
     if(!select) return;
     // Departamentos em que o vídeo pode ser obrigatório: sempre recarrega,
     // pra refletir departamentos criados depois.
@@ -3300,21 +3302,15 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }catch(e){
       caixas.innerHTML = `<span class="admin-field-hint">Não consegui carregar os departamentos: ${esc(e.message)}</span>`;
     }
-    if(select.options.length) return; // já preenchido
+    // Assuntos (os cartões da seção Cursos): um vídeo pode ficar em vários.
     try{
-      const data = await apiFetch('api/areas/list.php');
-      data.areas.forEach(a => {
-        const opt = document.createElement('option');
-        opt.value = a.slug;
-        opt.textContent = a.name;
-        select.appendChild(opt);
-      });
+      const data = await apiFetch('api/areas/list.php?todas=1'); // todos, até os sem vídeo publicado
+      const marcados = new Set(Array.from(select.querySelectorAll('input:checked')).map(i => i.value));
+      select.innerHTML = (data.areas || []).map(a => `
+        <label class="areas-aula-item"><input type="checkbox" value="${esc(a.slug)}" ${marcados.has(a.slug) ? 'checked' : ''}> <span>${esc(a.name)}</span></label>`).join('')
+        || '<span class="admin-field-hint">Nenhum assunto cadastrado.</span>';
     }catch(e){
-      // Sem isso o seletor ficaria vazio sem explicação nenhuma.
-      const opt = document.createElement('option');
-      opt.textContent = 'Não consegui carregar as áreas: ' + e.message;
-      opt.disabled = true;
-      select.appendChild(opt);
+      select.innerHTML = '<span class="admin-field-hint">Não consegui carregar os assuntos: ' + esc(e.message) + '</span>';
     }
   }
 
@@ -3328,7 +3324,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const type = document.getElementById('videoModalType').value;
     alvo.innerHTML = type === 'onboarding'
       ? 'Vai aparecer na <strong>trilha de Integração</strong>, que todo colaborador percorre.'
-      : 'Vai aparecer no <strong>catálogo</strong>, dentro da área escolhida — <strong>não</strong> na trilha de Integração.';
+      : 'Vai aparecer no <strong>catálogo</strong>, dentro dos assuntos escolhidos — <strong>não</strong> na trilha de Integração.';
   }
 
   function atualizarVisibilidadeArea(){
@@ -3338,14 +3334,14 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const hint = document.getElementById('videoModalHint');
     if(type === 'onboarding'){
       areaWrap.style.display = 'none';
-      hint.textContent = 'Vídeo de integração — aparece igual pra todo mundo, não importa a área da pessoa.';
+      hint.textContent = 'Vídeo de integração — aparece igual pra todo mundo, não importa o departamento da pessoa.';
     } else {
       areaWrap.style.display = '';
-      hint.textContent = 'O curso já fica disponível pra quem tiver acesso àquela área assim que salvar.';
+      hint.textContent = 'O curso já fica disponível nos assuntos escolhidos assim que salvar.';
     }
     if(vmParaAprovacao){
       hint.textContent = 'Seu vídeo vai para aprovação: um administrador assiste e libera. '
-        + (type === 'onboarding' ? 'Depois disso aparece na integração de todo mundo.' : 'Depois disso aparece pra quem tiver acesso àquela área.');
+        + (type === 'onboarding' ? 'Depois disso aparece na integração de todo mundo.' : 'Depois disso aparece nos assuntos escolhidos.');
     }
   }
 
@@ -3752,7 +3748,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   async function submitAddVideo(){
     const type = document.getElementById('videoModalType').value;
-    const areaSlug = type === 'onboarding' ? '' : document.getElementById('adminVideoModalArea').value;
+    const areaSlugs = type === 'onboarding' ? [] : Array.from(document.querySelectorAll('#adminVideoModalAreas input:checked')).map(i => i.value);
     const titulo = document.getElementById('videoModalTitulo').value.trim();
     const descricao = document.getElementById('videoModalDescricao').value.trim();
     const duracao = parseInt(document.getElementById('videoModalDuracao').value, 10) || 5;
@@ -3788,10 +3784,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     // Conferido aqui, antes de enfileirar: se a área faltar, o erro só
     // apareceria ao criar o curso — depois do vídeo inteiro já ter
     // subido, jogando fora os minutos de envio.
-    if(type !== 'onboarding' && !areaSlug){
+    if(type !== 'onboarding' && !areaSlugs.length){
       feedback.hidden = false;
       feedback.className = 'admin-modal-feedback erro';
-      feedback.textContent = 'Escolha a área do curso.';
+      feedback.textContent = 'Marque pelo menos um assunto para o curso.';
       return;
     }
     let youtubeId = null;
@@ -3834,7 +3830,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     try{
       const body = {
-        area_slug: areaSlug,
+        area_slugs: areaSlugs, // um ou mais assuntos; o primeiro é o principal
         type,
         title: titulo,
         description: descricao,
@@ -3887,6 +3883,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         }
         const pendente = !!(criado && criado.pendente_aprovacao);
         const avisou = pendente ? await vmAvisarAdmins(criado.course.id) : false;
+        if(pendente) atualizarBotaoMeusVideos(); // agora ele tem um vídeo: o botão de meus vídeos aparece
         feedback.hidden = false;
         feedback.className = 'admin-modal-feedback ok';
         feedback.textContent = pendente
@@ -4086,7 +4083,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         throw new Error('vídeo enviado, mas os departamentos obrigatórios não foram salvos — marque em Treinamentos > Áreas (' + e.message + ')');
       }
       job.pendente = !!(criado && criado.pendente_aprovacao);
-      if(job.pendente) job.avisou = await vmAvisarAdmins(criado.course.id);
+      if(job.pendente){
+        job.avisou = await vmAvisarAdmins(criado.course.id);
+        atualizarBotaoMeusVideos();
+      }
       job.status = 'concluido';
       job.pct = 100;
       if(!job.pendente) recarregarTelaConteudo(); // a aula nova já aparece sem recarregar a página
@@ -4125,7 +4125,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   });
 
   // ---------- Modal de "gerenciar aulas" ----------
-  // ---------- Modal de "Departamentos" ----------
+  // ---------- Modal de "Assuntos" ----------
   // Criar, renomear e trocar o ícone dos cartões da seção "Cursos".
   //
   // Só os ícones que a fonte do site realmente tem. O Font Awesome daqui é
@@ -4179,7 +4179,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <label>Ícone</label>
         ${seletorDeIcone(criando ? 'fa-folder-open' : area.icon)}
         <div class="area-form-acoes">
-          <button type="button" class="admin-modal-submit area-form-salvar">${criando ? 'Criar departamento' : 'Salvar'}</button>
+          <button type="button" class="admin-modal-submit area-form-salvar">${criando ? 'Criar assunto' : 'Salvar'}</button>
           <button type="button" class="area-form-cancelar">Cancelar</button>
         </div>
         <div class="admin-modal-feedback area-form-feedback" hidden></div>
@@ -4195,7 +4195,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       const lista = data.areas || [];
 
       body.innerHTML = `
-        <button type="button" class="area-novo-btn" id="areaNovoBtn">+ Novo departamento</button>
+        <button type="button" class="area-novo-btn" id="areaNovoBtn">+ Novo assunto</button>
         <div id="areaNovoWrap"></div>
         <ul class="areas-admin-list">
           ${lista.map(a => `
@@ -4339,7 +4339,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         aviso.classList.toggle('erro', !!erro);
       };
 
-      if(!nome){ mostrar('Escreva o nome do departamento.', true); return; }
+      if(!nome){ mostrar('Escreva o nome do assunto.', true); return; }
 
       salvar.disabled = true;
       try{
@@ -5172,7 +5172,7 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
     lista.forEach(t => {
       const perguntasDoFim = t.total_perguntas - t.total_atividades;
       const detalhes = [
-        t.trilha ? 'Integração' : (t.area || 'Sem área'),
+        t.trilha ? 'Integração' : (t.area || 'Sem assunto'),
         t.total_atividades ? `${t.total_atividades} ${t.total_atividades === 1 ? 'atividade' : 'atividades'} no vídeo` : '',
         perguntasDoFim > 0 ? `${perguntasDoFim} ${perguntasDoFim === 1 ? 'pergunta' : 'perguntas'} no fim` : '',
         t.total_perguntas === 0 ? '<span class="aulas-sem-pergunta">sem pergunta</span>' : '',
@@ -5692,13 +5692,13 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
 
   // Editar o envio antes de aprovar ou recusar: tudo o que o formulário de
   // adicionar vídeo tinha (menos o arquivo e o link do vídeo).
-  async function abrirEditarEnvio(v){
-    const corpo = abrirDialogoAula('Editar antes de aprovar', v.titulo, true);
-    dgAoFechar = () => carregarAprovacoes(v.id);
+  async function abrirEditarEnvio(v, aoFechar){
+    const corpo = abrirDialogoAula(aoFechar ? 'Editar meu vídeo' : 'Editar antes de aprovar', v.titulo, true);
+    dgAoFechar = aoFechar || (() => carregarAprovacoes(v.id));
     corpo.innerHTML = '<p>Carregando...</p>';
     let areas = [], deptos = [];
     try{
-      areas = (await apiFetch('api/areas/list.php')).areas || [];
+      areas = (await apiFetch('api/areas/list.php?todas=1')).areas || [];
       deptos = (await apiFetch('api/admin/courses/departamentos.php?course_id=' + encodeURIComponent(v.id))).departamentos || [];
     }catch(e){
       corpo.innerHTML = `<p class="trn-vazio-lista">Não foi possível carregar: ${esc(e.message)}</p>`;
@@ -5717,8 +5717,10 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
         <option value="onboarding" ${v.tipo === 'onboarding' ? 'selected' : ''}>Integração (trilha obrigatória)</option>
       </select>
       <div id="eeAreaWrap">
-        <label class="admin-field-label" for="eeArea">Área</label>
-        <select id="eeArea">${areas.map(a => `<option value="${esc(a.slug)}" ${a.slug === v.area_slug ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>
+        <label class="admin-field-label">Assuntos</label>
+        <div class="vm-obrigatorio" id="eeAreas">${areas.map(a => `
+          <label class="areas-aula-item"><input type="checkbox" value="${esc(a.slug)}" ${(v.assuntos_do_video || []).some(x => x.slug === a.slug) || (!(v.assuntos_do_video || []).length && a.slug === v.area_slug) ? 'checked' : ''}> <span>${esc(a.name)}</span></label>`).join('')}</div>
+        <p class="admin-field-hint">O vídeo aparece em todos os assuntos marcados; o primeiro é o principal.</p>
       </div>
       <label class="admin-field-label" for="eeDuracao">Duração (minutos)</label>
       <input type="number" id="eeDuracao" min="0" max="600" value="${esc(v.duracao_min || 0)}">
@@ -5767,7 +5769,7 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
         conteudo_programatico: document.getElementById('eeConteudo').value.trim(),
         assuntos: document.getElementById('eeAssuntos').value.trim(),
       };
-      if(tipo === 'curso') dados.area_slug = document.getElementById('eeArea').value;
+      if(tipo === 'curso') dados.area_slugs = Array.from(corpo.querySelectorAll('#eeAreas input:checked')).map(i => i.value);
       salvar.disabled = true;
       try{
         await apiFetch('api/admin/courses/update.php', { method: 'POST', body: JSON.stringify(dados) });
@@ -5807,7 +5809,7 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
     const info = [
       ['Enviado por', [autor.nome, autor.cargo].filter(Boolean).join(' · ') + (autor.email ? '\n' + autor.email : '')],
       ['Enviado em', aprovData(v.enviado_em)],
-      ['Onde aparece', v.tipo === 'onboarding' ? 'Integração (trilha obrigatória)' : 'Curso · ' + (v.area || 'sem área')],
+      ['Onde aparece', v.tipo === 'onboarding' ? 'Integração (trilha obrigatória)' : 'Curso · ' + ((v.assuntos_do_video || []).map(x => x.name).join(', ') || v.area || 'sem assunto')],
       ['Obrigatório para', v.departamentos.length ? v.departamentos.join(', ') : 'Todos os departamentos'],
       ['Origem', { youtube: 'YouTube', s3: 'Arquivo enviado', playlist: 'Playlist do YouTube' }[v.origem] || v.origem],
       ['Duração informada', v.duracao_min ? v.duracao_min + ' min' : ''],
@@ -6001,6 +6003,82 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
     // Ao fechar o diálogo (por qualquer caminho), quem abriu atualiza a própria lista.
     dgAoFechar = aoFechar || null;
     recarregar();
+  }
+
+  // ---------- Meus vídeos (quem não é admin) ----------
+  // Quem enviou vídeos edita, mexe nas perguntas e exclui SÓ os dele. A
+  // trava de verdade está no servidor (enviado_por = a própria pessoa); aqui
+  // só se mostra o que ele já pode mexer.
+  const MV_STATUS = { pendente: 'Esperando aprovação', aprovado: 'Aprovado', recusado: 'Recusado' };
+
+  async function atualizarBotaoMeusVideos(){
+    const btn = document.getElementById('btnMeusVideos');
+    if(!btn || window.mseEhAdmin || !getRealSessionToken()) return;
+    try{
+      const d = await apiFetch('api/meus_videos/lista.php');
+      btn.hidden = !(d.total > 0);
+      if(!btn.dataset.ligado){
+        btn.dataset.ligado = '1';
+        btn.addEventListener('click', abrirMeusVideos);
+      }
+    }catch(e){ /* sem o botão a Academy segue normal */ }
+  }
+
+  async function abrirMeusVideos(){
+    const corpo = abrirDialogoAula('Meus vídeos', 'Os vídeos que você enviou: você só enxerga e edita os seus', true);
+    corpo.innerHTML = '<p>Carregando...</p>';
+    let d;
+    try{
+      d = await apiFetch('api/meus_videos/lista.php');
+    }catch(e){
+      corpo.innerHTML = `<p class="trn-vazio-lista">Não foi possível carregar: ${esc(e.message)}</p>`;
+      return;
+    }
+    const btn = document.getElementById('btnMeusVideos');
+    if(btn) btn.hidden = !(d.total > 0);
+    const videos = d.videos || [];
+    if(!videos.length){
+      corpo.innerHTML = '<p class="trn-vazio-lista">Você ainda não enviou nenhum vídeo.</p>';
+      return;
+    }
+    corpo.innerHTML = '<div class="mv-lista">' + videos.map(v => `
+      <div class="mv-item" data-id="${v.id}">
+        <div class="mv-info">
+          <strong>${esc(v.titulo)}</strong>
+          <span class="adm-sit adm-sit-${v.status === 'aprovado' ? 'concluiu' : v.status === 'recusado' ? 'sem_acesso' : 'em_andamento'}">${esc(MV_STATUS[v.status] || v.status)}</span>
+          <span class="trn-sub">${esc([v.tipo === 'onboarding' ? 'Integração' : (v.assuntos_do_video || []).map(a => a.name).join(', ') || 'Sem assunto', v.duracao_min ? v.duracao_min + ' min' : '', v.enviado_em ? 'enviado em ' + aprovData(v.enviado_em) : '', v.total_perguntas ? v.total_perguntas + (v.total_perguntas === 1 ? ' pergunta' : ' perguntas') : ''].filter(Boolean).join(' · '))}</span>
+          ${v.status === 'recusado' ? `<span class="mv-motivo">Motivo: ${esc(v.motivo_recusa || 'não informado')}</span>` : ''}
+        </div>
+        <div class="mv-acoes">
+          <button type="button" class="aulas-btn" data-mv="editar">Editar</button>
+          <button type="button" class="aulas-btn" data-mv="perguntas">Perguntas</button>
+          <button type="button" class="adm-remover" data-mv="excluir">Excluir</button>
+        </div>
+      </div>`).join('') + '</div>';
+
+    corpo.querySelectorAll('.mv-item').forEach(el => {
+      const v = videos.find(x => x.id === parseInt(el.dataset.id, 10));
+      el.querySelector('[data-mv="editar"]').addEventListener('click', () => abrirEditarEnvio(v, abrirMeusVideos));
+      el.querySelector('[data-mv="perguntas"]').addEventListener('click', () => {
+        abrirPerguntaDaAula(v.id, v.titulo);
+        dgAoFechar = abrirMeusVideos; // ao fechar, volta para a lista
+      });
+      el.querySelector('[data-mv="excluir"]').addEventListener('click', async (ev) => {
+        const aviso = v.origem === 's3' && !v.arquivo_excluido ? ' O arquivo do vídeo será apagado e não dá para recuperar.' : '';
+        if(!confirm('Excluir "' + v.titulo + '"?' + aviso)) return;
+        const b = ev.currentTarget;
+        b.disabled = true;
+        try{
+          await apiFetch('api/admin/courses/delete.php', {
+            method: 'POST', body: JSON.stringify({ course_id: v.id, confirmacao: v.titulo }),
+          });
+          abrirMeusVideos(); // recarrega a lista (e o botão some se não sobrou nenhum)
+        }catch(e){
+          b.disabled = false;
+          alert('Não foi possível excluir: ' + e.message);
+        }
+      });
+    });
   }
 
   // ---------- Aviso de vídeo recusado ----------
@@ -6996,6 +7074,7 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
     // aprovação (os admins usam o botão da barra deles).
     const btnEnviarVideo = document.getElementById('btnEnviarVideo');
     if(!isAdmin && getRealSessionToken()) mostrarAvisosDeRecusa();
+    if(!isAdmin && getRealSessionToken()) atualizarBotaoMeusVideos();
     if(btnEnviarVideo && !isAdmin && getRealSessionToken()){
       // Mesma barra do admin, só com este botão (vermelho).
       document.getElementById('adminToolbar').hidden = false;

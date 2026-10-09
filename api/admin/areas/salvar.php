@@ -43,10 +43,10 @@ $icone = trim((string) ($input['icon'] ?? ''));
 $descricao = trim((string) ($input['descricao'] ?? ''));
 
 if ($nome === '') {
-    mse_error('O nome do departamento não pode ficar em branco.', 422);
+    mse_error('O nome do assunto não pode ficar em branco.', 422);
 }
 if (mb_strlen($nome) > 120) {
-    mse_error('O nome do departamento passou de 120 caracteres.', 422);
+    mse_error('O nome do assunto passou de 120 caracteres.', 422);
 }
 if (mb_strlen($descricao) > 255) {
     mse_error('A descrição passou de 255 caracteres.', 422);
@@ -85,7 +85,7 @@ if ($id > 0) {
     $stmt->execute([$id]);
     $area = $stmt->fetch();
     if (!$area) {
-        mse_error('Departamento não encontrado.', 404);
+        mse_error('Assunto não encontrado.', 404);
     }
 
     // Dois departamentos com o mesmo nome deixam impossível saber qual é
@@ -93,7 +93,7 @@ if ($id > 0) {
     $stmt = $pdo->prepare('SELECT id FROM areas WHERE name = ? AND id <> ? LIMIT 1');
     $stmt->execute([$nome, $id]);
     if ($stmt->fetch()) {
-        mse_error('Já existe outro departamento com esse nome.', 409);
+        mse_error('Já existe outro assunto com esse nome.', 409);
     }
 
     $stmt = $pdo->prepare('UPDATE areas SET name = ?, icon = ?, descricao = ? WHERE id = ?');
@@ -117,7 +117,7 @@ if ($id > 0) {
 $stmt = $pdo->prepare('SELECT id FROM areas WHERE name = ? LIMIT 1');
 $stmt->execute([$nome]);
 if ($stmt->fetch()) {
-    mse_error('Já existe um departamento com esse nome.', 409);
+    mse_error('Já existe um assunto com esse nome.', 409);
 }
 
 // Slug a partir do nome: minúsculas, sem acento, espaços viram hífen.
@@ -155,5 +155,5 @@ mse_json([
     'icon' => $icone,
     'descricao' => $descricao,
     'total_cursos' => 0,
-    'message' => 'Departamento "' . $nome . '" criado. Ele só aparece na seção Cursos depois que tiver pelo menos um vídeo publicado.',
+    'message' => 'Assunto "' . $nome . '" criado. Ele só aparece na seção Cursos depois que tiver pelo menos um vídeo publicado.',
 ], 201);

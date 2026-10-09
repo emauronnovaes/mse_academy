@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../src/Cors.php';
 require_once __DIR__ . '/../../src/Response.php';
 require_once __DIR__ . '/../../src/Auth.php';
+require_once __DIR__ . '/../../src/Assuntos.php';
 
 mse_cors();
 
@@ -40,9 +41,14 @@ $campos = $temColunasNovas
 
 $ordenacao = $temColunasNovas ? 'a.ordem ASC, a.name ASC' : 'a.name ASC';
 
+// Um vídeo pode estar em vários assuntos: conta o principal (courses.area_id)
+// e os da tabela course_assuntos, sem contar o mesmo vídeo duas vezes.
+$noAssunto = mse_tem_assuntos($pdo)
+    ? '(c.area_id = a.id OR EXISTS (SELECT 1 FROM course_assuntos ca WHERE ca.course_id = c.id AND ca.area_id = a.id))'
+    : 'c.area_id = a.id';
 $sql = "SELECT {$campos},
                (SELECT COUNT(*) FROM courses c
-                 WHERE c.area_id = a.id AND c.type = 'curso' AND c.is_published = 1) AS total_cursos
+                 WHERE {$noAssunto} AND c.type = 'curso' AND c.is_published = 1) AS total_cursos
         FROM areas a
         ORDER BY {$ordenacao}";
 
@@ -51,7 +57,9 @@ $areas = $pdo->query($sql)->fetchAll();
 $lista = [];
 foreach ($areas as $a) {
     $total = (int) $a['total_cursos'];
-    if (!$ehAdmin && $total === 0) {
+    // Quem escolhe o assunto de um vídeo (formulário e edição) precisa ver todos,
+    // inclusive os que ainda não têm vídeo publicado: ?todas=1.
+    if (!$ehAdmin && $total === 0 && empty($_GET['todas'])) {
         continue;
     }
     $lista[] = [
