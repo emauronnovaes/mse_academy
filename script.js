@@ -4722,9 +4722,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
 ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'} e ${r.concluiram} que já concluíram`
         + ` (${r.novos} nova${r.novos === 1 ? '' : 's'} no banco).`
-        + (r.aviso ? '
-
-Atenção: ' + r.aviso : ''));
+        + (r.aviso ? ' — Atenção: ' + r.aviso : ''));
     }catch(e){
       alert('Não foi possível atualizar o banco: ' + e.message);
     }finally{
