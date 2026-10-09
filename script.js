@@ -516,9 +516,21 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     renderOnbPath();             // ...antes do anel de progresso ler esse valor
   }
 
+  async function registrarAberturaDoBau(){
+    try{
+      const token = localStorage.getItem('mse_academy_real_session_token');
+      if(!token) return;
+      await fetch('api/progress/bau.php', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, keepalive: true });
+    }catch(e){ /* o log não pode atrapalhar a animação */ }
+  }
+
   function openChestAnimation(node){
     const svg = node.querySelector('.chest-svg');
     if(!svg || svg.classList.contains('is-open')) return; // evita clique duplo no meio da animação
+
+    // Registra a abertura do baú no log (o servidor confere e guarda se a
+    // integração estava completa naquele momento). Falha aqui não atrapalha.
+    registrarAberturaDoBau();
 
     svg.classList.add('is-open');
     // Pausa o "flutuar" ambiente enquanto acontece o momento principal —
@@ -4114,6 +4126,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     renderPainelUploads();
     processarFila();
   }
+
+  // Saída da Academy (fechou a aba ou foi para outro site): vai para o log de
+  // consulta. keepalive deixa o pedido terminar mesmo com a página fechando.
+  window.addEventListener('pagehide', () => {
+    try{
+      const token = getRealSessionToken();
+      if(!token) return;
+      fetch('api/sessao/saida.php', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, keepalive: true });
+    }catch(e){ /* segue sem registrar */ }
+  });
 
   // Fechar a aba no meio do envio perde o que faltava — o navegador
   // simplesmente para de mandar os bytes. Avisa antes.

@@ -5,6 +5,7 @@ require_once __DIR__ . '/Progress.php';
 require_once __DIR__ . '/IntegracaoApi.php';
 require_once __DIR__ . '/PortalFichaApi.php';
 require_once __DIR__ . '/Admitidos.php';
+require_once __DIR__ . '/Viniconsultas.php';
 
 /**
  * Grava no banco, para outro sistema consultar, quem foi admitido e se fez a
@@ -177,5 +178,7 @@ function mse_sincronizar_integracao(PDO $pdo, string $de, string $ate): array
             $contagem['novos']++;
         }
     }
+    // viniconsultas: a mesma lista de contratados, com login, baú e cursos obrigatórios.
+    $contagem['viniconsultas'] = mse_viniconsultas_gravar($pdo, $montado['pessoas'], $verificadoEm);
     return $contagem;
 }
