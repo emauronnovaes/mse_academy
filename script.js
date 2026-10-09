@@ -3095,7 +3095,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }, options, { headers }));
     const data = await res.json().catch(() => ({}));
     if(!res.ok){
-      const err = new Error(data.error || 'Erro na API');
+      // Sem mensagem do servidor (resposta que não é JSON, geralmente tempo esgotado ou erro do servidor): mostra o código HTTP.
+      const err = new Error(data.error || ('Erro na API (HTTP ' + res.status + ')'));
       err.status = res.status;
       throw err;
     }
@@ -4838,18 +4839,39 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // quem não fez a integração, com a prova, para o outro sistema consultar.
   async function admAtualizarBanco(){
     const btn = document.getElementById('trnAdmSync');
-    const f = trnFiltros();
+    // Usa a lista que está na tela (mesmo período das datas) e manda poucas
+    // pessoas por vez: assim nenhuma chamada passa do tempo limite do servidor.
+    if(!admDados || !admDados.pessoas || !admDados.pessoas.length){
+      alert('Espere a lista de admitidos carregar na tela (ou ajuste as datas) e clique de novo.');
+      return;
+    }
+    const lista = admDados.pessoas;
+    const LOTE = 8;
+    const soma = { pendentes: 0, concluiram: 0, dispensados: 0, novos: 0 };
+    const somar = (r) => { Object.keys(soma).forEach(k => { soma[k] += (r && r[k]) || 0; }); };
     btn.disabled = true;
-    btn.textContent = 'Atualizando...';
     try{
-      const r = await apiComLimite('api/integracao/sincronizar.php', {
-        method: 'POST', body: JSON.stringify({ data_de: f.data_de || undefined, data_ate: f.data_ate || undefined }),
-      }, 280000);
-      alert(`Banco atualizado.
-
-${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, ${r.concluiram} que já concluíram`
-        + ` e ${r.dispensados || 0} dispensada${(r.dispensados || 0) === 1 ? '' : 's'} (${r.novos} nova${r.novos === 1 ? '' : 's'} no banco).`
-        + (r.aviso ? ' — Atenção: ' + r.aviso : ''));
+      btn.textContent = 'Preparando...';
+      const ini = await apiComLimite('api/integracao/sincronizar.php', { method: 'POST', body: JSON.stringify({ fase: 'inicio' }) }, 30000);
+      for(let i = 0; i < lista.length; i += LOTE){
+        btn.textContent = `Atualizando ${Math.min(i + LOTE, lista.length)}/${lista.length}...`;
+        const parte = lista.slice(i, i + LOTE).map(p => ({
+          nome: p.nome, cpf: p.cpf, data_admissao: p.data_admissao, funcao: p.funcao, obra: p.obra, vinculo: p.vinculo, empresa: p.empresa,
+        }));
+        somar(await apiComLimite('api/integracao/sincronizar.php', { method: 'POST', body: JSON.stringify({ fase: 'lote', pessoas: parte }) }, 90000));
+      }
+      // Quem já estava pendente no banco e ficou fora do período também é reconferido.
+      let restantes = 1, voltas = 0;
+      while(restantes > 0 && voltas++ < 100){
+        btn.textContent = 'Reconferindo pendentes antigos...';
+        const r = await apiComLimite('api/integracao/sincronizar.php', { method: 'POST', body: JSON.stringify({ fase: 'antigos', inicio: ini.inicio }) }, 90000);
+        somar(r.contagem);
+        restantes = r.restantes;
+      }
+      alert('Banco atualizado.' + String.fromCharCode(10) + String.fromCharCode(10)
+        + `${soma.pendentes} ${soma.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, ${soma.concluiram} que já concluíram`
+        + ` e ${soma.dispensados} dispensada${soma.dispensados === 1 ? '' : 's'} (${soma.novos} nova${soma.novos === 1 ? '' : 's'} no banco).`
+        + (admDados.aviso ? ' — Atenção: ' + admDados.aviso : ''));
     }catch(e){
       alert('Não foi possível atualizar o banco: ' + e.message);
     }finally{

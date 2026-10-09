@@ -83,6 +83,21 @@ function mse_sincronizar_integracao(PDO $pdo, string $de, string $ate): array
         }
     }
 
+    $contagem = mse_sincronizar_lista($pdo, $admitidos, $hoje, $verificadoEm);
+    $contagem['aviso'] = $aviso;
+    return $contagem;
+}
+
+/**
+ * O miolo da sincronização: completa com a ficha, cruza com a Academy e grava
+ * integracao_admitidos e viniconsultas para a lista de admitidos recebida.
+ * Serve tanto para a atualização inteira (cron) quanto para um LOTE pequeno
+ * (botão "Atualizar banco": o navegador manda poucas pessoas por vez, para
+ * nenhuma chamada passar do tempo limite do servidor).
+ */
+function mse_sincronizar_lista(PDO $pdo, array $admitidos, string $hoje, string $verificadoEm): array
+{
+    $todasChaves = array_flip($pdo->query('SELECT chave FROM integracao_admitidos')->fetchAll(PDO::FETCH_COLUMN));
     // Fichas de funcionário, em partes de 40 pra não estourar o tempo.
     $fichas = [];
     foreach (array_chunk($admitidos, 40, true) as $parte) {
@@ -114,7 +129,7 @@ function mse_sincronizar_integracao(PDO $pdo, string $de, string $ate): array
            detalhe_aulas = VALUES(detalhe_aulas), verificado_em = VALUES(verificado_em)'
     );
 
-    $contagem = ['total' => 0, 'pendentes' => 0, 'concluiram' => 0, 'dispensados' => 0, 'novos' => 0, 'aviso' => $aviso];
+    $contagem = ['total' => 0, 'pendentes' => 0, 'concluiram' => 0, 'dispensados' => 0, 'novos' => 0, 'aviso' => null];
     $processadas = [];
     foreach ($montado['pessoas'] as $p) {
         // Usa a chave que já existe no banco (por CPF ou por nome); sem nenhuma, a do CPF.
@@ -182,3 +197,54 @@ function mse_sincronizar_integracao(PDO $pdo, string $de, string $ate): array
     $contagem['viniconsultas'] = mse_viniconsultas_gravar($pdo, $montado['pessoas'], $verificadoEm);
     return $contagem;
 }
+
+/** Garante a tabela e devolve o instante da verificação e o dia de hoje (Brasília). */
+function mse_sincronizar_agora(PDO $pdo): array
+{
+    if (!mse_garantir_tabela_integracao($pdo)) {
+        throw new RuntimeException('Não consegui criar a tabela. Rode a migração 027 no banco (migrations/027_integracao_pendentes.sql).');
+    }
+    $agora = new DateTime('now', new DateTimeZone('America/Sao_Paulo'));
+    return [$agora->format('Y-m-d'), $agora->format('Y-m-d H:i:s')];
+}
+
+/** Um lote pequeno de admitidos (vindos do navegador). */
+function mse_sincronizar_lote(PDO $pdo, array $admitidos): array
+{
+    [$hoje, $verificadoEm] = mse_sincronizar_agora($pdo);
+    return mse_sincronizar_lista($pdo, $admitidos, $hoje, $verificadoEm);
+}
+
+/**
+ * Reconfere, em lotes, quem já estava pendente na tabela e ficou de fora do
+ * período (não foi verificado desde $inicio). Devolve também quantos faltam.
+ *
+ * @return array{contagem: array, restantes: int}
+ */
+function mse_sincronizar_antigos(PDO $pdo, string $inicio, int $limite = 8): array
+{
+    [$hoje, $verificadoEm] = mse_sincronizar_agora($pdo);
+    $st = $pdo->prepare(
+        "SELECT chave, nome, cpf, data_admissao, cargo, obra, empresa, vinculo FROM integracao_admitidos
+         WHERE situacao <> 'concluiu' AND verificado_em < ? ORDER BY id ASC LIMIT " . max(1, $limite)
+    );
+    $st->execute([$inicio]);
+    $linhas = $st->fetchAll();
+    $admitidos = array_map(static fn($l) => [
+        'nome' => $l['nome'], 'cpf' => $l['cpf'], 'data_admissao' => $l['data_admissao'],
+        'funcao' => $l['cargo'], 'obra' => $l['obra'], 'vinculo' => $l['vinculo'], 'empresa' => $l['empresa'],
+    ], $linhas);
+    $contagem = $admitidos ? mse_sincronizar_lista($pdo, $admitidos, $hoje, $verificadoEm)
+        : ['total' => 0, 'pendentes' => 0, 'concluiram' => 0, 'dispensados' => 0, 'novos' => 0, 'aviso' => null, 'viniconsultas' => 0];
+    // Garante que cada chamada AVANÇA: as linhas lidas aqui contam como conferidas,
+    // mesmo que a regravação tenha caído em outra chave (nunca fica em laço).
+    if ($linhas) {
+        $marc = implode(',', array_fill(0, count($linhas), '?'));
+        $pdo->prepare("UPDATE integracao_admitidos SET verificado_em = ? WHERE verificado_em < ? AND chave IN ({$marc})")
+            ->execute(array_merge([$verificadoEm, $inicio], array_column($linhas, 'chave')));
+    }
+    $q = $pdo->prepare("SELECT COUNT(*) FROM integracao_admitidos WHERE situacao <> 'concluiu' AND verificado_em < ?");
+    $q->execute([$inicio]);
+    return ['contagem' => $contagem, 'restantes' => (int) $q->fetchColumn()];
+}
+

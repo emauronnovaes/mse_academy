@@ -31,6 +31,53 @@ if (!$porToken) {
 
 set_time_limit(300);
 $input = mse_input();
+$fase = (string) ($input['fase'] ?? '');
+
+// ---- Atualização em partes (botão "Atualizar banco"): cada chamada é curta,
+// pra nenhuma passar do tempo limite do servidor.
+if ($fase !== '') {
+    $pdo = mse_db();
+    try {
+        if ($fase === 'inicio') {
+            [, $inicio] = mse_sincronizar_agora($pdo);
+            mse_json(['inicio' => $inicio]);
+        }
+        if ($fase === 'lote') {
+            $lote = $input['pessoas'] ?? [];
+            if (!is_array($lote) || !$lote || count($lote) > 12) {
+                mse_error('Mande de 1 a 12 pessoas por vez.', 422);
+            }
+            $admitidos = [];
+            foreach ($lote as $p) {
+                $data = is_array($p) ? (string) ($p['data_admissao'] ?? '') : '';
+                if (!is_array($p) || trim((string) ($p['nome'] ?? '')) === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $data)) {
+                    mse_error('Pessoa inválida no lote.', 422);
+                }
+                $admitidos[] = [
+                    'nome' => mb_substr(trim((string) $p['nome']), 0, 200),
+                    'cpf' => preg_replace('/\D/', '', (string) ($p['cpf'] ?? '')) ?: null,
+                    'data_admissao' => $data,
+                    'funcao' => isset($p['funcao']) ? mb_substr((string) $p['funcao'], 0, 200) : null,
+                    'obra' => isset($p['obra']) ? mb_substr((string) $p['obra'], 0, 200) : null,
+                    'vinculo' => isset($p['vinculo']) ? mb_substr((string) $p['vinculo'], 0, 60) : null,
+                    'empresa' => isset($p['empresa']) ? mb_substr((string) $p['empresa'], 0, 200) : null,
+                ];
+            }
+            mse_json(mse_sincronizar_lote($pdo, $admitidos));
+        }
+        if ($fase === 'antigos') {
+            $inicio = (string) ($input['inicio'] ?? '');
+            if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $inicio)) {
+                mse_error('Informe o início da atualização.', 422);
+            }
+            mse_json(mse_sincronizar_antigos($pdo, $inicio, 8));
+        }
+    } catch (Throwable $e) {
+        mse_error($e->getMessage(), 502);
+    }
+    mse_error('fase inválida.', 422);
+}
+
 $hoje = (new DateTime('now', new DateTimeZone('America/Sao_Paulo')))->format('Y-m-d');
 $valida = static fn($d): bool => is_string($d) && (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', $d);
 $ate = $valida($input['data_ate'] ?? null) ? $input['data_ate'] : $hoje;
