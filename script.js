@@ -4393,6 +4393,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       : 'Online · ISO 9001, 14001 e 45001 · Evidência por check-in e check-out';
     // Gerenciar vídeos é só por treinamento; relatórios abrem por pessoa.
     document.getElementById('trnVisao').hidden = !relatorios;
+    document.getElementById('trnConsultarFicha').hidden = !relatorios;
     trnMudarVisao(relatorios ? 'pessoas' : 'treinamentos');
     document.getElementById('treinamentosTela').hidden = false;
     document.documentElement.classList.add('trn-aberta');
@@ -4678,6 +4679,64 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       if(bReat) bReat.addEventListener('click', () => admDispensar(p, false));
       corpo.appendChild(tr);
     });
+  }
+
+  // ---------- Consultar ficha no Portal ----------
+  // Busca de teste: mostra como a API de ficha devolve uma pessoa nas duas
+  // listas (só ativos, que a Academy usa, e geral, com todos os status).
+  // Serve para conferir casos como quem é "alocado na sede" e trabalha em obra.
+  const FICHA_ROTULOS = {
+    nome: 'Nome', status: 'Status', situacao: 'Situação', mse_sede: 'MSE sede', nome_obra: 'Obra',
+    obras_departamento: 'Departamento/obra', obra: 'Obra (id)', departamento: 'Departamento', local_alojado: 'Local alojado',
+    mobilizacao: 'Mobilização', desmobilizacao: 'Desmobilização', funcao: 'Função', tipo_contratacao: 'Contratação',
+    empresa_contratante: 'Empresa', centro_custo: 'Centro de custo', municipio: 'Município', uf: 'UF',
+  };
+  function abrirConsultaFicha(){
+    const corpo = abrirDialogoAula('Consultar ficha no Portal', 'Digite o nome de alguém para ver como a API de ficha devolve essa pessoa', true);
+    corpo.innerHTML = `
+      <div class="cf-busca">
+        <input type="search" class="trn-input" id="cfNome" placeholder="Nome completo ou parte do nome (mín. 3 letras)" autocomplete="off">
+        <button type="button" class="trn-btn" id="cfBuscar">Buscar</button>
+      </div>
+      <p class="trn-dica">Aparecem só os campos de lotação (sede, obra, departamento, status). CPF, telefone e endereço não são mostrados.</p>
+      <div id="cfResultado"></div>`;
+    const campo = document.getElementById('cfNome');
+    const buscar = () => consultarFicha(campo.value.trim());
+    document.getElementById('cfBuscar').addEventListener('click', buscar);
+    campo.addEventListener('keydown', e => { if(e.key === 'Enter') buscar(); });
+    campo.focus();
+  }
+  function cfTabelaHtml(titulo, explicacao, r){
+    if(r.erro) return `<h4 class="adm-secao">${esc(titulo)}</h4><p class="trn-vazio-lista">Erro: ${esc(r.erro)}</p>`;
+    if(!r.pessoas.length) return `<h4 class="adm-secao">${esc(titulo)}</h4><p class="cf-explica">${esc(explicacao)}</p><p class="trn-vazio-lista">Ninguém encontrado nesta lista.</p>`;
+    const colunas = Object.keys(FICHA_ROTULOS).filter(c => r.pessoas.some(p => c in p));
+    const valor = v => (v === null || v === '' || v === undefined) ? '—' : String(v);
+    return `<h4 class="adm-secao">${esc(titulo)} · ${r.total} ${r.total === 1 ? 'resultado' : 'resultados'}${r.total > r.pessoas.length ? ' (mostrando ' + r.pessoas.length + ')' : ''}</h4>
+      <p class="cf-explica">${esc(explicacao)}</p>
+      <div class="trn-tabela-wrap"><table class="trn-tabela">
+        <thead><tr>${colunas.map(c => `<th>${esc(FICHA_ROTULOS[c])}</th>`).join('')}</tr></thead>
+        <tbody>${r.pessoas.map(p => `<tr>${colunas.map(c => `<td>${esc(valor(p[c]))}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div>
+      <details class="cf-campos"><summary>Todos os campos que a API devolve (${r.campos.length})</summary><p>${esc(r.campos.join(', '))}</p></details>`;
+  }
+  async function consultarFicha(nome){
+    const alvo = document.getElementById('cfResultado');
+    if(nome.length < 3){
+      alvo.innerHTML = '<p class="trn-vazio-lista">Digite pelo menos 3 letras.</p>';
+      return;
+    }
+    alvo.innerHTML = '<p class="trn-vazio-lista">Consultando o Portal...</p>';
+    try{
+      const d = await apiComLimite('api/admin/consultar_ficha.php?busca=' + encodeURIComponent(nome), {}, 60000);
+      const soNoGeral = !d.ativos.erro && !d.geral.erro && !d.ativos.pessoas.length && d.geral.pessoas.length;
+      alvo.innerHTML = (soNoGeral
+        ? '<p class="aprov-aviso">Essa pessoa só aparece na lista geral: a ficha dela não está como ativa, por isso a Academy (que usa a lista de ativos) não a encontra.</p>'
+        : '')
+        + cfTabelaHtml('Lista de ativos (/v1/ff_infos)', 'É a lista que a Academy usa no login, nos departamentos e nos novos contratados.', d.ativos)
+        + cfTabelaHtml('Lista geral (/v1/ff_infos_geral)', 'Todas as fichas, com o status (ativo, desligado, desistente, aguardando).', d.geral);
+    }catch(e){
+      alvo.innerHTML = `<p class="trn-vazio-lista">Não foi possível consultar: ${esc(e.message)}</p>`;
+    }
   }
 
   // Dispensar: a pessoa não precisa fazer a integração e sai de Pendentes.
@@ -5509,6 +5568,7 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
     document.getElementById('trnNovoVideo').addEventListener('click', openVideoModal);
     document.getElementById('trnAdmCsv').addEventListener('click', admBaixarCsv);
     document.getElementById('trnAdmSync').addEventListener('click', admAtualizarBanco);
+    document.getElementById('trnConsultarFicha').addEventListener('click', abrirConsultaFicha);
     document.getElementById('trnAdmPdf').addEventListener('click', admBaixarPdf);
 
     // Esc fecha a janela de ação primeiro; sem nenhuma aberta, fecha a tela.
