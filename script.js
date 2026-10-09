@@ -4514,21 +4514,78 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(admDados && chave === admChaveCarregada) return renderAdmitidos(); // só mudou a busca ou a aba
     const pedido = ++trnEstado.pedido;
     const contagem = document.getElementById('trnContagem');
-    contagem.textContent = 'Consultando o RH e as fichas dos novos contratados...';
+    contagem.textContent = 'Consultando o RH...';
     document.getElementById('trnCorpoAdmitidos').innerHTML = '';
     try{
       const q = new URLSearchParams();
       if(f.data_de) q.set('data_de', f.data_de);
       if(f.data_ate) q.set('data_ate', f.data_ate);
-      const d = await apiFetch('api/admin/treinamentos/admitidos.php?' + q.toString());
+      // 1) A lista vem só da API de integração, rápida: já aparece na tela.
+      const d = await apiComLimite('api/admin/treinamentos/admitidos.php?' + q.toString(), {}, 100000);
       if(pedido !== trnEstado.pedido) return;
       admDados = d;
       admChaveCarregada = chave;
       renderAdmitidos();
+      // 2) As fichas de funcionário (e-mail, departamento, gerente...) chegam
+      //    depois, em lotes, e as linhas vão se completando.
+      completarFichasAdmitidos(pedido);
     }catch(e){
       if(pedido !== trnEstado.pedido) return;
       admDados = null;
       contagem.textContent = 'Não foi possível consultar os admitidos: ' + e.message;
+    }
+  }
+
+  // Como apiFetch, mas desiste depois de um tempo em vez de ficar esperando
+  // pra sempre (o "Consultando..." que nunca terminava).
+  async function apiComLimite(caminho, opcoes, ms){
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), ms);
+    try{
+      return await apiFetch(caminho, Object.assign({}, opcoes, { signal: ctl.signal }));
+    }catch(e){
+      if(e.name === 'AbortError') throw new Error('a consulta demorou mais de ' + Math.round(ms / 1000) + ' segundos. Tente de novo ou use um período menor.');
+      throw e;
+    }finally{
+      clearTimeout(timer);
+    }
+  }
+
+  const ADM_LOTE = 10;
+  async function completarFichasAdmitidos(pedido){
+    const dados = admDados;
+    if(!dados) return;
+    const total = dados.pessoas.length;
+    let feitos = 0, falhas = 0;
+    const contagem = document.getElementById('trnContagem');
+    for(let i = 0; i < total; i += ADM_LOTE){
+      if(pedido !== trnEstado.pedido || admDados !== dados) return; // mudou o período ou a aba foi trocada
+      const idx = [];
+      for(let j = i; j < Math.min(i + ADM_LOTE, total); j++){
+        if(dados.pessoas[j].ficha_pendente) idx.push(j);
+      }
+      if(!idx.length) continue;
+      try{
+        const r = await apiComLimite('api/admin/treinamentos/admitidos.php', {
+          method: 'POST',
+          body: JSON.stringify({ pessoas: idx.map(j => {
+            const p = dados.pessoas[j];
+            return { nome: p.nome, cpf: p.cpf, data_admissao: p.data_admissao, funcao: p.funcao, obra: p.obra, vinculo: p.vinculo, empresa: p.empresa };
+          }) }),
+        }, 60000);
+        r.pessoas.forEach((nova, k) => { dados.pessoas[idx[k]] = nova; });
+        if(r.ficha_erro) dados.ficha_erro = r.ficha_erro;
+        // O resumo muda quando a ficha ajuda a achar a pessoa na Academy.
+        dados.resumo = dados.pessoas.reduce((acc, p) => { acc[p.situacao] = (acc[p.situacao] || 0) + 1; return acc; }, {});
+      }catch(e){
+        falhas++;
+        dados.ficha_erro = e.message;
+      }
+      feitos = Math.min(i + ADM_LOTE, total);
+      if(pedido === trnEstado.pedido && admDados === dados){
+        renderAdmitidos();
+        if(feitos < total) contagem.textContent += ` · buscando fichas ${feitos}/${total}...`;
+      }
     }
   }
 
@@ -4573,6 +4630,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const periodo = admDados ? admDados.periodo : null;
     document.getElementById('trnContagem').textContent = admResumoTexto(lista)
       + (periodo ? ` · admissão de ${trnFmtData(periodo.de)} a ${trnFmtData(periodo.ate)}` : '')
+      + (admDados && admDados.aviso ? ` · ⚠ ${admDados.aviso}` : '')
       + (admDados && admDados.ficha_erro ? ` · sem os dados da ficha (${admDados.ficha_erro})` : '');
     const corpo = document.getElementById('trnCorpoAdmitidos');
     corpo.innerHTML = '';
@@ -4592,7 +4650,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <td>${p.gerente_nome ? esc(p.gerente_nome) : vazio}${p.gerente_email ? `<span class="trn-sub">${esc(p.gerente_email)}</span>` : ''}</td>
         <td class="trn-nowrap">${esc(trnFmtData(p.data_admissao))}<span class="trn-sub">há ${p.dias_desde_admissao} ${p.dias_desde_admissao === 1 ? 'dia' : 'dias'}</span></td>
         <td>${admSituacaoHtml(p)}</td>
-        <td><button type="button" class="aulas-btn">Ver dados</button></td>
+        <td><button type="button" class="aulas-btn">${p.ficha_pendente ? 'Ver dados...' : 'Ver dados'}</button></td>
       `;
       tr.querySelector('button').addEventListener('click', () => admVerDados(p));
       corpo.appendChild(tr);

@@ -126,8 +126,11 @@ function mse_integracao_data(?string $v): ?string
  * da admissão mais recente pra mais antiga, e para de paginar quando
  * passa de $de. Fica de fora quem a API marca como admitido = não.
  */
-function mse_integracao_admitidos(string $de, string $ate): array
+function mse_integracao_admitidos(string $de, string $ate, ?string &$aviso = null): array
 {
+    // Limites pra nunca ficar pendurado: 40 s no total e 12 páginas (2.400
+    // registros) por aba. Se estourar, devolve o que achou e diz no $aviso.
+    $inicio = microtime(true);
     $porPagina = 200;
     $pessoas = [];
     $vistos = [];
@@ -135,7 +138,11 @@ function mse_integracao_admitidos(string $de, string $ate): array
     $algumaData = false;
 
     foreach (['admissao', 'finalizada'] as $status) {
-        for ($pagina = 1; $pagina <= 50; $pagina++) {
+        for ($pagina = 1; $pagina <= 12; $pagina++) {
+            if (microtime(true) - $inicio > 40) {
+                $aviso = 'A API de integração demorou demais; a lista pode estar incompleta. Tente um período menor.';
+                break 2;
+            }
             $registros = mse_integracao_registros(mse_integracao_get('/v1/integracoes', [
                 'status' => $status,
                 'order_by' => 'data_admissao',
@@ -187,6 +194,9 @@ function mse_integracao_admitidos(string $de, string $ate): array
 
             if (count($registros) < $porPagina || $passouDoPeriodo) {
                 break;
+            }
+            if ($pagina === 12) {
+                $aviso = 'Muitos registros na API de integração; a lista pode estar incompleta. Tente um período menor.';
             }
         }
     }
