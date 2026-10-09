@@ -113,3 +113,49 @@ function mse_url_academy(): string
     $raiz = $pos === false ? '' : substr($caminho, 0, $pos);
     return ($https ? 'https' : 'http') . '://' . $host . $raiz;
 }
+
+/**
+ * Apaga da AWS (S3) o arquivo de um vídeo recusado.
+ *
+ * ⚠ Irreversível: o bucket não tem versionamento. Por isso só apaga arquivo
+ * da pasta de sugestões (sugestoes/), que é onde quem não é admin envia, e
+ * só se nenhum outro vídeo usa a mesma chave. Depois de apagado, o vídeo
+ * continua registrado (título, perguntas, motivo), mas sem arquivo: pra
+ * publicar, é preciso enviar de novo.
+ *
+ * Nunca lança erro: devolve ['excluido' => bool, 'aviso' => ?string].
+ */
+function mse_excluir_arquivo_recusado(PDO $pdo, int $courseId): array
+{
+    $stmt = $pdo->prepare('SELECT video_source, video_key FROM courses WHERE id = ?');
+    $stmt->execute([$courseId]);
+    $c = $stmt->fetch();
+    if (!$c || $c['video_source'] !== 's3' || trim((string) $c['video_key']) === '') {
+        return ['excluido' => false, 'aviso' => null]; // YouTube/playlist: não há arquivo na AWS
+    }
+    $chave = ltrim((string) $c['video_key'], '/');
+    if (!mse_str_starts_with($chave, MSE_PASTA_SUGESTOES)) {
+        return ['excluido' => false, 'aviso' => 'O arquivo não está na pasta de sugestões, por isso não foi apagado da AWS.'];
+    }
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM courses WHERE video_key = ? AND id <> ?');
+    $stmt->execute([$c['video_key'], $courseId]);
+    if ((int) $stmt->fetchColumn() > 0) {
+        return ['excluido' => false, 'aviso' => 'Outro vídeo usa o mesmo arquivo, por isso ele não foi apagado da AWS.'];
+    }
+
+    try {
+        require_once __DIR__ . '/AwsS3.php';
+        $bucket = mse_aws_bucket();
+        if ($bucket === '') {
+            throw new RuntimeException('bucket da AWS não configurado');
+        }
+        mse_s3_client()->deleteObject(['Bucket' => $bucket, 'Key' => $chave]);
+    } catch (Throwable $e) {
+        error_log('[aprovacao] não apaguei ' . $chave . ' da AWS: ' . $e->getMessage());
+        return ['excluido' => false, 'aviso' => 'O vídeo foi recusado, mas não consegui apagar o arquivo da AWS (confira se a chave da AWS tem permissão s3:DeleteObject).'];
+    }
+    // Registro continua, sem o caminho do arquivo (que não existe mais).
+    $pdo->prepare('UPDATE courses SET video_key = NULL WHERE id = ?')->execute([$courseId]);
+    return ['excluido' => true, 'aviso' => null];
+}
+

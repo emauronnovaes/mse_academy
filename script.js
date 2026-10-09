@@ -5675,11 +5675,115 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
     if(btnAprovar) btnAprovar.addEventListener('click', () => aprovDecidir('aprovar'));
     const btnRecusar = detalhe.querySelector('.aprov-recusar');
     if(btnRecusar) btnRecusar.addEventListener('click', () => aprovDecidir('recusar'));
+    // Editar antes de decidir; ao fechar o diálogo, a tela recarrega com o que mudou.
+    const btnEdDados = detalhe.querySelector('.aprov-ed-dados');
+    if(btnEdDados) btnEdDados.addEventListener('click', () => abrirEditarEnvio(d.video));
+    const btnEdPerg = detalhe.querySelector('.aprov-ed-perguntas');
+    if(btnEdPerg) btnEdPerg.addEventListener('click', () => {
+      abrirPerguntaDaAula(d.video.id, d.video.titulo);
+      dgAoFechar = () => carregarAprovacoes(d.video.id);
+    });
+  }
+
+  // Editar o envio antes de aprovar ou recusar: tudo o que o formulário de
+  // adicionar vídeo tinha (menos o arquivo e o link do vídeo).
+  async function abrirEditarEnvio(v){
+    const corpo = abrirDialogoAula('Editar antes de aprovar', v.titulo, true);
+    dgAoFechar = () => carregarAprovacoes(v.id);
+    corpo.innerHTML = '<p>Carregando...</p>';
+    let areas = [], deptos = [];
+    try{
+      areas = (await apiFetch('api/areas/list.php')).areas || [];
+      deptos = (await apiFetch('api/admin/courses/departamentos.php?course_id=' + encodeURIComponent(v.id))).departamentos || [];
+    }catch(e){
+      corpo.innerHTML = `<p class="trn-vazio-lista">Não foi possível carregar: ${esc(e.message)}</p>`;
+      return;
+    }
+    const tipos = ['Treinamento interno', 'DDS', 'Capacitação externa', 'Integração', 'Outro'];
+    const normas = ['ISO 9001', 'ISO 14001', 'ISO 45001'];
+    corpo.innerHTML = `
+      <label class="admin-field-label" for="eeTitulo">Título</label>
+      <input type="text" id="eeTitulo" maxlength="200" value="${esc(v.titulo)}">
+      <label class="admin-field-label" for="eeDescricao">Descrição</label>
+      <input type="text" id="eeDescricao" value="${esc(v.descricao || '')}">
+      <label class="admin-field-label" for="eeTipo">Onde aparece</label>
+      <select id="eeTipo">
+        <option value="curso" ${v.tipo === 'curso' ? 'selected' : ''}>Curso (catálogo)</option>
+        <option value="onboarding" ${v.tipo === 'onboarding' ? 'selected' : ''}>Integração (trilha obrigatória)</option>
+      </select>
+      <div id="eeAreaWrap">
+        <label class="admin-field-label" for="eeArea">Área</label>
+        <select id="eeArea">${areas.map(a => `<option value="${esc(a.slug)}" ${a.slug === v.area_slug ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>
+      </div>
+      <label class="admin-field-label" for="eeDuracao">Duração (minutos)</label>
+      <input type="number" id="eeDuracao" min="0" max="600" value="${esc(v.duracao_min || 0)}">
+      <label class="admin-field-label">Obrigatório para quais departamentos?</label>
+      <div class="vm-obrigatorio" id="eeDeptos">${deptos.map(d => `
+        <label class="areas-aula-item"><input type="checkbox" value="${esc(d.nome)}" ${d.marcado ? 'checked' : ''}> <span>${esc(d.nome)}</span></label>`).join('') || '<span class="admin-field-hint">Nenhum departamento.</span>'}</div>
+      <p class="admin-field-hint">Nenhum marcado = obrigatório para todos.</p>
+      <label class="admin-check"><input type="checkbox" id="eeAviso" ${v.aviso_presenca ? 'checked' : ''}> Aviso "Você ainda está aí?" durante o vídeo</label>
+      <details class="admin-auditoria-fields" ${v.instrutor || v.conteudo_programatico || v.assuntos ? 'open' : ''}>
+        <summary>Dados para auditoria</summary>
+        <label class="admin-field-label" for="eeTipoTrein">Tipo de treinamento</label>
+        <select id="eeTipoTrein">
+          <option value="">Automático</option>
+          ${tipos.map(t => `<option ${v.tipo_treinamento === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}
+        </select>
+        <span class="admin-field-label">Normas</span>
+        <div class="admin-normas" id="eeNormas">${normas.map(n => `<label><input type="checkbox" value="${esc(n)}" ${(v.normas || []).includes(n) ? 'checked' : ''}> ${esc(n)}</label>`).join('')}</div>
+        <label class="admin-field-label" for="eeInstrutor">Instrutor</label>
+        <input type="text" id="eeInstrutor" maxlength="150" value="${esc(v.instrutor || '')}">
+        <label class="admin-field-label" for="eeConteudo">Conteúdo programático</label>
+        <textarea id="eeConteudo" rows="3" maxlength="5000">${esc(v.conteudo_programatico || '')}</textarea>
+        <label class="admin-field-label" for="eeAssuntos">Assuntos</label>
+        <input type="text" id="eeAssuntos" maxlength="500" value="${esc(v.assuntos || '')}">
+      </details>
+      <button type="button" class="admin-modal-submit" id="eeSalvar">Salvar alterações</button>
+      <div class="admin-modal-feedback" id="eeFeedback" hidden></div>`;
+    const atualizaArea = () => { document.getElementById('eeAreaWrap').hidden = document.getElementById('eeTipo').value === 'onboarding'; };
+    document.getElementById('eeTipo').addEventListener('change', atualizaArea);
+    atualizaArea();
+    const salvar = document.getElementById('eeSalvar');
+    salvar.addEventListener('click', async () => {
+      const fb = document.getElementById('eeFeedback');
+      const titulo = document.getElementById('eeTitulo').value.trim();
+      if(!titulo){
+        fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = 'O título não pode ficar vazio.';
+        return;
+      }
+      const tipo = document.getElementById('eeTipo').value;
+      const dados = {
+        course_id: v.id, title: titulo, description: document.getElementById('eeDescricao').value.trim(),
+        type: tipo, duration_minutes: parseInt(document.getElementById('eeDuracao').value, 10) || 0,
+        aviso_presenca: document.getElementById('eeAviso').checked,
+        tipo_treinamento: document.getElementById('eeTipoTrein').value,
+        normas: Array.from(corpo.querySelectorAll('#eeNormas input:checked')).map(i => i.value),
+        instrutor: document.getElementById('eeInstrutor').value.trim(),
+        conteudo_programatico: document.getElementById('eeConteudo').value.trim(),
+        assuntos: document.getElementById('eeAssuntos').value.trim(),
+      };
+      if(tipo === 'curso') dados.area_slug = document.getElementById('eeArea').value;
+      salvar.disabled = true;
+      try{
+        await apiFetch('api/admin/courses/update.php', { method: 'POST', body: JSON.stringify(dados) });
+        await apiFetch('api/admin/courses/departamentos.php', {
+          method: 'POST',
+          body: JSON.stringify({ course_id: v.id, departamentos: Array.from(corpo.querySelectorAll('#eeDeptos input:checked')).map(i => i.value) }),
+        });
+        fb.hidden = false; fb.className = 'admin-modal-feedback ok'; fb.textContent = 'Alterações salvas.';
+        setTimeout(closeAulasModal, 700); // ao fechar, a tela de aprovação recarrega
+      }catch(e){
+        fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = e.message;
+        salvar.disabled = false;
+      }
+    });
   }
 
   function aprovDetalheHtml(v){
     let player;
-    if(v.origem === 's3'){
+    if(v.origem === 's3' && v.arquivo_excluido){
+      player = '<div class="aprov-player-vazio">O arquivo deste vídeo foi apagado da AWS quando ele foi recusado.</div>';
+    } else if(v.origem === 's3'){
       player = v.video_url ? `<video controls preload="metadata" src="${esc(v.video_url)}"></video>`
         : '<div class="aprov-player-vazio">Não consegui gerar o link do vídeo (confira a configuração da AWS).</div>';
     } else if(v.origem === 'playlist'){
@@ -5722,13 +5826,23 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
         </li>`).join('')}
       </ol>` : '<p class="aprov-secao">Sem perguntas</p>';
 
+    const podeEditar = v.status !== 'aprovado' && !v.arquivo_excluido;
+    const edicao = podeEditar ? `
+      <div class="aprov-edicao">
+        <span class="aprov-secao">Ajustar antes de decidir</span>
+        <button type="button" class="trn-btn aprov-ed-dados">Editar dados</button>
+        <button type="button" class="trn-btn aprov-ed-perguntas">Editar perguntas</button>
+      </div>` : '';
     const reconsiderar = v.status === 'recusado' ? `
       <div class="aprov-acoes">
-        <p class="aprov-hist-aviso">Este vídeo foi recusado${v.decidido_por ? ' por ' + esc(v.decidido_por) : ''} e continua escondido dos colaboradores.
-          Mudou de ideia? Você pode aprová-lo agora: ele é publicado na hora.</p>
-        <div class="aprov-botoes">
-          <button type="button" class="trn-btn aprov-aprovar">Aprovar mesmo assim</button>
-        </div>
+        ${v.arquivo_excluido
+          ? `<p class="aprov-hist-aviso">Este vídeo foi recusado${v.decidido_por ? ' por ' + esc(v.decidido_por) : ''} e <strong>o arquivo foi apagado da AWS</strong>, por isso não dá para aprová-lo.
+              Para publicar, a pessoa precisa enviar o vídeo de novo.</p>`
+          : `<p class="aprov-hist-aviso">Este vídeo foi recusado${v.decidido_por ? ' por ' + esc(v.decidido_por) : ''} e continua escondido dos colaboradores.
+              Mudou de ideia? Você pode aprová-lo agora: ele é publicado na hora.</p>
+            <div class="aprov-botoes">
+              <button type="button" class="trn-btn aprov-aprovar">Aprovar mesmo assim</button>
+            </div>`}
         <div class="admin-modal-feedback" id="aprovFeedback" hidden></div>
       </div>` : '';
     const acoes = v.status === 'pendente' ? `
@@ -5751,6 +5865,7 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
         ${largos.map(([r, valor]) => `<div class="aprov-largo"><dt>${esc(r)}</dt><dd>${esc(valor)}</dd></div>`).join('')}
       </dl>
       ${perguntas}
+      ${edicao}
       ${acoes}${reconsiderar}`;
   }
 
@@ -5758,12 +5873,18 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
     const v = aprovEstado.video;
     if(!v) return;
     const motivo = (document.getElementById('aprovMotivo') || {}).value || '';
-    if(acao === 'recusar' && !confirm(`Recusar "${v.titulo}"? Ele continua escondido dos colaboradores.`)) return;
+    if(acao === 'recusar'){
+      const apagaArquivo = v.origem === 's3';
+      const ok = confirm(`Recusar "${v.titulo}"?` + (apagaArquivo
+        ? ' O ARQUIVO DO VÍDEO SERÁ APAGADO DA AWS e não dá para recuperar. O registro, as perguntas e o motivo ficam no histórico.'
+        : ' Ele continua escondido dos colaboradores.'));
+      if(!ok) return;
+    }
     const botoes = document.querySelectorAll('#aprovDetalhe .aprov-botoes button');
     botoes.forEach(b => { b.disabled = true; });
     const feedback = document.getElementById('aprovFeedback');
     try{
-      await apiFetch('api/admin/aprovacao/decidir.php', {
+      const resp = await apiFetch('api/admin/aprovacao/decidir.php', {
         method: 'POST', body: JSON.stringify({ course_id: v.id, acao, motivo: motivo.trim() }),
       });
       if(acao === 'aprovar') recarregarTelaConteudo(); // já aparece na trilha/catálogo
@@ -5771,7 +5892,9 @@ ${r.pendentes} ${r.pendentes === 1 ? 'pessoa pendente' : 'pessoas pendentes'}, $
       aviso.className = 'aprov-aviso is-ok';
       aviso.textContent = acao === 'aprovar'
         ? `"${v.titulo}" foi aprovado e já está publicado${v.status === 'recusado' ? ' (estava no histórico de recusados)' : ''}.`
-        : `"${v.titulo}" foi recusado. Ele fica no histórico de recusados, caso você queira aprovar depois.`;
+        : `"${v.titulo}" foi recusado.` + (resp.arquivo_excluido
+          ? ' O arquivo foi apagado da AWS e o registro fica no histórico de recusados.'
+          : (resp.aviso_arquivo ? ' Atenção: ' + resp.aviso_arquivo : ' Ele fica no histórico de recusados, caso você queira aprovar depois.'));
       aviso.hidden = false;
       // Recusar ou aprovar um pendente abre o próximo da fila; reconsiderar
       // um recusado mostra o próprio vídeo, já aprovado.

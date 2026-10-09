@@ -2175,3 +2175,7 @@
   .dg-item.is-oculto .dg-nome{ color:var(--steel); text-decoration:line-through; }
   .dg-nome{ font-size:13.5px; overflow-wrap:anywhere; }
   .dg-nome em{ font-style:normal; font-size:11px; font-weight:700; color:var(--steel); background:#EFEEEA; padding:1px 7px; border-radius:20px; margin-left:4px; text-decoration:none; display:inline-block; }
+
+  /* Editar antes de aprovar */
+  .aprov-edicao{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:6px 0 16px; padding:12px 14px; border:1px dashed var(--line); border-radius:10px; background:#FAFAF8; }
+  .aprov-edicao .aprov-secao{ margin:0 auto 0 0; }

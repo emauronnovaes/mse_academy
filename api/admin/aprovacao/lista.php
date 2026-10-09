@@ -77,9 +77,9 @@ $temAviso = mse_tem_coluna($pdo, 'courses', 'aviso_presenca');
 $temSorteio = mse_tem_coluna($pdo, 'courses', 'grupo_sorteio');
 $stmt = $pdo->prepare(
     'SELECT c.id, c.title, c.description, c.type, c.video_source, c.youtube_id, c.video_key, c.duration_minutes,
-            c.aprovacao_status, c.enviado_em, c.decidido_em, c.motivo_recusa, a.name AS area_name,
-            ' . ($auditoria ? 'c.tipo_treinamento, c.instrutor, c.conteudo_programatico, c.assuntos'
-                            : 'NULL AS tipo_treinamento, NULL AS instrutor, NULL AS conteudo_programatico, NULL AS assuntos') . ',
+            c.aprovacao_status, c.enviado_em, c.decidido_em, c.motivo_recusa, a.name AS area_name, a.slug AS area_slug,
+            ' . ($auditoria ? 'c.tipo_treinamento, c.normas, c.instrutor, c.conteudo_programatico, c.assuntos'
+                            : 'NULL AS tipo_treinamento, NULL AS normas, NULL AS instrutor, NULL AS conteudo_programatico, NULL AS assuntos') . ',
             ' . ($temAviso ? 'c.aviso_presenca' : '1 AS aviso_presenca') . ',
             ' . ($temSorteio ? 'c.grupo_sorteio, c.obrigatorio' : 'NULL AS grupo_sorteio, 1 AS obrigatorio') . ',
             u.name AS autor_nome, u.email AS autor_email, u.cargo AS autor_cargo,
@@ -97,6 +97,7 @@ if (!$c) {
 }
 
 $videoUrl = null;
+$arquivoExcluido = $c['video_source'] === 's3' && trim((string) $c['video_key']) === '';
 if ($c['video_source'] === 's3' && $c['video_key']) {
     try {
         $videoUrl = mse_s3_presigned_url($c['video_key'], 1800);
@@ -143,6 +144,8 @@ $resposta['video'] = [
     'origem' => $c['video_source'],
     'youtube_id' => $c['video_source'] !== 's3' ? $c['youtube_id'] : null,
     'video_url' => $videoUrl,
+    'arquivo_excluido' => $arquivoExcluido,
+    'area_slug' => $c['area_slug'],
     'duracao_min' => (int) $c['duration_minutes'],
     'status' => $c['aprovacao_status'],
     'enviado_em' => $c['enviado_em'],
@@ -151,6 +154,7 @@ $resposta['video'] = [
     'decidido_em' => $c['decidido_em'],
     'motivo_recusa' => $c['motivo_recusa'],
     'tipo_treinamento' => $c['tipo_treinamento'],
+    'normas' => $auditoria && $c['normas'] !== null && $c['normas'] !== '' ? array_values(array_filter(explode(',', (string) $c['normas']))) : [],
     'instrutor' => $c['instrutor'],
     'conteudo_programatico' => $c['conteudo_programatico'],
     'assuntos' => $c['assuntos'],

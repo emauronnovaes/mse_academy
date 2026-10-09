@@ -59,6 +59,48 @@ if (array_key_exists('description', $input)) {
     $valores[] = trim((string) $input['description']);
 }
 
+// Onde o vídeo aparece (usado na tela de aprovação, ao editar antes de aprovar).
+if (array_key_exists('duration_minutes', $input)) {
+    $dur = (int) $input['duration_minutes'];
+    if ($dur < 0 || $dur > 600) {
+        mse_error('duration_minutes fora do intervalo esperado (0 a 600).', 422);
+    }
+    $campos[] = 'duration_minutes = ?';
+    $valores[] = $dur;
+}
+if (array_key_exists('type', $input)) {
+    $tipo = (string) $input['type'];
+    if (!in_array($tipo, ['curso', 'onboarding'], true)) {
+        mse_error('type precisa ser "curso" ou "onboarding".', 422);
+    }
+    $areaId = null;
+    $areaSlug = trim((string) ($input['area_slug'] ?? ''));
+    if ($tipo === 'curso') {
+        if ($areaSlug === '') {
+            mse_error('Escolha a área do curso.', 422);
+        }
+        $st = $pdo->prepare('SELECT id FROM areas WHERE slug = ?');
+        $st->execute([$areaSlug]);
+        $areaId = $st->fetchColumn();
+        if ($areaId === false) {
+            mse_error('Área não existe.', 422);
+        }
+    }
+    $st = $pdo->prepare('SELECT type FROM courses WHERE id = ?');
+    $st->execute([$courseId]);
+    if ($st->fetchColumn() !== $tipo) {
+        // Mudou de tipo: vai pro fim da fila do tipo novo (a ordem é por tipo).
+        $st = $pdo->prepare('SELECT COALESCE(MAX(order_index), 0) + 1 FROM courses WHERE type = ?');
+        $st->execute([$tipo]);
+        $campos[] = 'order_index = ?';
+        $valores[] = (int) $st->fetchColumn();
+    }
+    $campos[] = 'type = ?';
+    $valores[] = $tipo;
+    $campos[] = 'area_id = ?';
+    $valores[] = $areaId === null ? null : (int) $areaId;
+}
+
 // Dados de auditoria (tipo, normas, instrutor, conteúdo, assuntos): só
 // os que vierem no corpo são alterados.
 foreach (mse_ler_campos_auditoria($pdo, $input) + mse_ler_aviso_presenca($pdo, $input) as $coluna => $valor) {
@@ -67,7 +109,7 @@ foreach (mse_ler_campos_auditoria($pdo, $input) + mse_ler_aviso_presenca($pdo, $
 }
 
 if (!$campos) {
-    mse_error('Nada para alterar — envie title, description ou os dados de auditoria.', 422);
+    mse_error('Nada para alterar — envie title, description, tipo, duração ou os dados de auditoria.', 422);
 }
 
 $valores[] = $courseId;
