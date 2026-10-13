@@ -1078,15 +1078,28 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   let ultimoPctEnviado = -1;
   async function enviarProgresso(courseId, pct){
     const inteiro = Math.min(Math.round(pct * 100), 100);
-    if(inteiro <= ultimoPctEnviado || (inteiro % 5 !== 0 && inteiro < 100)) return;
+    if(inteiro <= ultimoPctEnviado || (inteiro % 5 !== 0 && inteiro < 100)) return null;
     ultimoPctEnviado = inteiro;
     try {
-      await apiPost('api/progress/update.php', { course_id: courseId, watched_pct: inteiro });
+      return await apiPost('api/progress/update.php', { course_id: courseId, watched_pct: inteiro });
     } catch(e){
       // Não interrompe a aula: no pior caso o quiz recusa e a pessoa
       // reassiste. Derrubar o player por causa disso seria pior.
       console.warn('[progresso] não consegui registrar:', e.message);
+      return null;
     }
+  }
+
+  // Aula do catálogo concluída ASSISTINDO (sem pergunta): o servidor já marcou;
+  // aqui o painel e os selos passam a contar na hora, sem recarregar a página.
+  function aoConcluirCatalogoAssistindo(courseId, resposta){
+    if(!resposta || resposta.status !== 'concluido') return;
+    if(!catalogProgress.completed.includes(courseId)){
+      catalogProgress.completed.push(courseId);
+      saveCatalogProgress(catalogProgress);
+    }
+    if(!areaModalEl.hidden) refreshCourseScreen();
+    renderProgressPanel();
   }
 
   // Tela cheia na moldura inteira (e não só no <video>): assim a barra
@@ -2178,9 +2191,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       .filter(p => p.status === 'concluido')
       .map(p => Number(p.course_id));
 
+    // Só conta o que aparece para a pessoa: aula de integração que não é a dela
+    // (sorteio), aula escondida ou fora do ar não entram na contagem.
     const idsTrilha = new Set(ONBOARDING.map(m => m.id));
+    const idsCatalogo = new Set(courses.map(c => c.id));
     onbProgress.completed = concluidos.filter(id => idsTrilha.has(id));
-    catalogProgress.completed = concluidos.filter(id => !idsTrilha.has(id));
+    catalogProgress.completed = concluidos.filter(id => !idsTrilha.has(id) && idsCatalogo.has(id));
   }
 
   // ---------- Progresso do catálogo (pontos + concluídos) ----------
@@ -2233,17 +2249,17 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   }
 
   // Vídeos vistos (concluídos), contando os de Integração e os de Cursos.
-  const META_PRATA = 10;
-  const META_OURO = 15;
-  const META_DIAMANTE = 20;
+  const META_PRATA = 5;
+  const META_OURO = 10;
+  const META_DIAMANTE = 15;
   function getVideosVistos(){
     return onbProgress.completed.length + catalogProgress.completed.length;
   }
   function textoProximoNivel(nome, meta){
-    return `Veja ${meta} vídeos (Integração e Cursos) para chegar ${nome === 'Ouro' ? 'ao' : 'à'} ${nome} (${Math.min(getVideosVistos(), meta)} de ${meta}).`;
+    return `Veja ${meta} vídeos (Integração e Cursos) para chegar ${nome === 'Prata' ? 'à' : 'ao'} ${nome} (${Math.min(getVideosVistos(), meta)} de ${meta}).`;
   }
 
-  // Bronze -> Prata (10 vídeos) -> Ouro (15) -> Diamante (20).
+  // Bronze -> Prata (5 vídeos) -> Ouro (10) -> Diamante (15). Metas provisórias: é só trocar os três números acima.
   // Contam todos os vídeos concluídos: os da trilha de Integração e os de Cursos.
   const LEVELS = [
     {
@@ -2817,7 +2833,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           if(voltarPara !== null) v.currentTime = voltarPara;
           enviarProgresso(course.id, trava.pct);
         });
-        v.addEventListener('ended', () => { enviarProgresso(course.id, 1); encerrarSessaoPresenca(); showBonusQuiz(); });
+        v.addEventListener('ended', () => { enviarProgresso(course.id, 1).then(r => aoConcluirCatalogoAssistindo(course.id, r)); encerrarSessaoPresenca(); showBonusQuiz(); });
         return;
       }
 
@@ -2892,7 +2908,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
               }, 500);
             },
             onStateChange: (e) => {
-              if(e.data === YT.PlayerState.ENDED){ enviarProgresso(course.id, 1); encerrarSessaoPresenca(); showBonusQuiz(); }
+              if(e.data === YT.PlayerState.ENDED){ enviarProgresso(course.id, 1).then(r => aoConcluirCatalogoAssistindo(course.id, r)); encerrarSessaoPresenca(); showBonusQuiz(); }
             }
           }
         });
