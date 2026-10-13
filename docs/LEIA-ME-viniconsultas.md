@@ -26,6 +26,7 @@ GRANT SELECT ON mse_academy.consultasmia TO 'usuario_consulta'@'%';
 | `assunto` | Assunto(s) da aula, separados por vírgula |
 | `descricao` | Descrição da aula |
 | `palavras_chave` | Palavras-chave da aula, separadas por vírgula |
+| `tempo_video` | Duração do vídeo da aula, em `mm:ss` (ou `h:mm:ss` a partir de 1 hora). Vazio se a duração não for conhecida |
 
 - Aulas obrigatórias são as marcadas como obrigatórias para o **departamento** da pessoa e as obrigatórias para todos.
   Aulas só **recomendadas** e cursos de **integração** não entram.

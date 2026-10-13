@@ -67,6 +67,12 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
         foreach (array_filter(array_map('trim', explode(';', (string) $sql))) as $comando) {
             $pdo->exec($comando);
         }
+        // Tempo de cada vídeo (coluna da migração 044): criada aqui se faltar.
+        $col = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consultasmia' AND COLUMN_NAME = 'tempo_video'");
+        $col->execute();
+        if ($col->fetchColumn() === false) {
+            $pdo->exec('ALTER TABLE consultasmia ADD COLUMN tempo_video VARCHAR(12) NULL AFTER palavras_chave');
+        }
         return $ok = true;
     } catch (Throwable $e) {
         error_log('[consultasmia] Não consegui criar as tabelas (rode a migração 032): ' . $e->getMessage());
@@ -311,6 +317,18 @@ function mse_vini_atualizar_aulas_do_usuario(int $userId): void
     }
 }
 
+/** Segundos -> "mm:ss" (ou "h:mm:ss" a partir de 1 hora). 0 ou vazio = sem tempo. */
+function mse_vini_formatar_tempo(int $segundos): ?string
+{
+    if ($segundos <= 0) {
+        return null;
+    }
+    $h = intdiv($segundos, 3600);
+    $m = intdiv($segundos % 3600, 60);
+    $s = $segundos % 60;
+    return $h > 0 ? sprintf('%d:%02d:%02d', $h, $m, $s) : sprintf('%02d:%02d', $m, $s);
+}
+
 /**
  * Regrava as linhas da pessoa em consultasmia: uma por aula obrigatória
  * concluída (com assunto, descrição e palavras-chave da aula). Sem nenhuma
@@ -327,7 +345,9 @@ function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?st
         $ids = array_map(static fn($c) => (int) $c['id'], $feitas);
         $marc = implode(',', array_fill(0, count($ids), '?'));
         $temPalavras = mse_tem_coluna($pdo, 'courses', 'palavras_chave');
-        $st = $pdo->prepare('SELECT c.id, c.title, c.description, a.name AS area_name, '
+        $temSeg = mse_tem_coluna($pdo, 'courses', 'duration_seconds');
+        $st = $pdo->prepare('SELECT c.id, c.title, c.description, c.duration_minutes, a.name AS area_name, '
+            . ($temSeg ? 'c.duration_seconds' : 'NULL AS duration_seconds') . ', '
             . ($temPalavras ? 'c.palavras_chave' : 'NULL AS palavras_chave')
             . " FROM courses c LEFT JOIN areas a ON a.id = c.area_id WHERE c.id IN ({$marc})");
         $st->execute($ids);
@@ -338,6 +358,7 @@ function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?st
                 'assunto' => $assuntos ? implode(', ', $assuntos) : $c['area_name'],
                 'descricao' => $c['description'] !== '' ? $c['description'] : null,
                 'palavras_chave' => $c['palavras_chave'] ?: null,
+                'tempo_video' => mse_vini_formatar_tempo($c['duration_seconds'] !== null ? (int) $c['duration_seconds'] : (int) $c['duration_minutes'] * 60),
             ];
         }
     }
@@ -352,14 +373,14 @@ function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?st
             $pdo->prepare('DELETE FROM consultasmia WHERE cpf IS NULL AND nome = ?')->execute([$nome]);
         }
         $ins = $pdo->prepare(
-            'INSERT INTO consultasmia (nome, cpf, email, aulas_obrigatorias_concluidas, aula, assunto, descricao, palavras_chave)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO consultasmia (nome, cpf, email, aulas_obrigatorias_concluidas, aula, assunto, descricao, palavras_chave, tempo_video)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
-        $linhas = $feitas ? array_map(static fn($c) => $detalhes[(int) $c['id']] ?? ['aula' => $c['curso'], 'assunto' => null, 'descricao' => null, 'palavras_chave' => null], $feitas)
-                          : [['aula' => null, 'assunto' => null, 'descricao' => null, 'palavras_chave' => null]];
+        $linhas = $feitas ? array_map(static fn($c) => $detalhes[(int) $c['id']] ?? ['aula' => $c['curso'], 'assunto' => null, 'descricao' => null, 'palavras_chave' => null, 'tempo_video' => null], $feitas)
+                          : [['aula' => null, 'assunto' => null, 'descricao' => null, 'palavras_chave' => null, 'tempo_video' => null]];
         foreach ($linhas as $l) {
             // Cada linha é UMA aula concluída: 1 por linha (0 na linha sem aula).
-            $ins->execute([$nome, $cpf, $email, $l['aula'] !== null ? 1 : 0, $l['aula'], $l['assunto'], $l['descricao'], $l['palavras_chave']]);
+            $ins->execute([$nome, $cpf, $email, $l['aula'] !== null ? 1 : 0, $l['aula'], $l['assunto'], $l['descricao'], $l['palavras_chave'], $l['tempo_video']]);
         }
         if (!$jaEmTransacao) {
             $pdo->commit();

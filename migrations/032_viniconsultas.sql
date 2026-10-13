@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS consultasmia (
   assunto                        VARCHAR(500) NULL,
   descricao                      TEXT         NULL,
   palavras_chave                 VARCHAR(1000) NULL,
+  tempo_video                    VARCHAR(12)  NULL,
   PRIMARY KEY (id),
   KEY idx_consultasmia_cpf (cpf),
   KEY idx_consultasmia_nome (nome)
