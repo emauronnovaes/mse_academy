@@ -28,13 +28,10 @@ GRANT SELECT ON mse_academy.consultasmia_2 TO 'usuario_consulta'@'%';
 | `primeiro_login`, `ultimo_login`, `total_logins` | Logins na Academy |
 | `ultima_entrada_video`, `ultima_saida_video` | Entradas (check-in) e saídas (check-out) de vídeo — ver abaixo |
 | `situacao_integracao` | `sem_acesso`, `nao_iniciou`, `em_andamento`, `concluiu` ou `dispensado` |
-| `integracao_concluida` | 1 = concluiu todos os cursos obrigatórios |
+| `integracao_concluida` | 1 = concluiu todos os cursos da **integração** (separada das aulas obrigatórias) |
 | `integracao_concluida_em` | Data e hora em que concluiu |
-| `integracao_aulas`, `integracao_aulas_concluidas` | **Integração** (cursos de onboarding, obrigatórios para todo contratado): quantos são e quantos já concluiu |
-| `integracao_cursos_concluidos`, `integracao_cursos_pendentes` | Texto, um curso por linha: os da integração concluídos (com data e hora) e os que faltam (com % assistido) |
-| `aulas_obrigatorias`, `aulas_concluidas` | **Aulas obrigatórias**: só as marcadas como obrigatórias para o **departamento** da pessoa. Quantas são e quantas já concluiu. Cursos de integração **não** entram aqui |
-| `cursos_concluidos`, `cursos_pendentes` | Texto, um curso por linha: as aulas obrigatórias do departamento concluídas (com data e hora) e as que faltam (com % assistido) |
-| `cursos_obrigatorios` | **JSON** das aulas obrigatórias do departamento: status, % assistido, data de conclusão, perguntas certas, nº de entradas, primeira entrada e última saída |
+| `aulas_obrigatorias` | Quantas aulas estão marcadas como obrigatórias para o **departamento** da pessoa (cursos de integração **não** entram). 0 = nenhuma exigida |
+| `aulas_concluidas` | **1** = concluiu TODAS as aulas obrigatórias do departamento; **0** = falta alguma (ou não há nenhuma exigida) |
 
 Exemplos:
 
@@ -44,10 +41,10 @@ SELECT nome, cpf, email, data_admissao, aulas_concluidas, aulas_obrigatorias, ul
 FROM consultasmia WHERE integracao_concluida = 0 AND situacao_integracao <> 'dispensado';
 
 -- O que cada um já fez e o que falta
-SELECT nome, cursos_concluidos, cursos_pendentes FROM consultasmia WHERE integracao_concluida = 0;
+SELECT nome, aulas_obrigatorias, aulas_concluidas FROM consultasmia WHERE aulas_obrigatorias > 0 AND aulas_concluidas = 0;
 
 -- Concluíram: com a data e a prova do baú
-SELECT nome, integracao_concluida_em, cursos_concluidos
+SELECT nome, integracao_concluida_em
 FROM consultasmia WHERE integracao_concluida = 1;
 ```
 
