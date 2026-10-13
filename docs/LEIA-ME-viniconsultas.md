@@ -21,7 +21,7 @@ GRANT SELECT ON mse_academy.consultasmia TO 'usuario_consulta'@'%';
 | Coluna | Significado |
 |---|---|
 | `nome`, `cpf` (11 dígitos), `email` | A pessoa (dados da ficha do Portal) |
-| `aulas_obrigatorias_concluidas` | Quantas aulas **obrigatórias** a pessoa já concluiu (repete em todas as linhas dela) |
+| `aulas_obrigatorias_concluidas` | **1** em cada linha de aula concluída (cada linha é uma aula); **0** na linha de quem ainda não concluiu nenhuma |
 | `aula` | Nome da aula obrigatória concluída daquela linha |
 | `assunto` | Assunto(s) da aula, separados por vírgula |
 | `descricao` | Descrição da aula |
@@ -39,8 +39,8 @@ Exemplos:
 -- Todas as aulas obrigatórias concluídas por uma pessoa
 SELECT aula, assunto, descricao, palavras_chave FROM consultasmia WHERE cpf = '00000000000';
 
--- Quantas cada pessoa concluiu (1 linha por pessoa)
-SELECT nome, cpf, email, MAX(aulas_obrigatorias_concluidas) AS concluidas
+-- Quantas cada pessoa concluiu (soma das linhas)
+SELECT nome, cpf, email, SUM(aulas_obrigatorias_concluidas) AS concluidas
 FROM consultasmia GROUP BY nome, cpf, email ORDER BY nome;
 ```
 

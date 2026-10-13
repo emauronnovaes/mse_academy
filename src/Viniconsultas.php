@@ -358,7 +358,8 @@ function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?st
         $linhas = $feitas ? array_map(static fn($c) => $detalhes[(int) $c['id']] ?? ['aula' => $c['curso'], 'assunto' => null, 'descricao' => null, 'palavras_chave' => null], $feitas)
                           : [['aula' => null, 'assunto' => null, 'descricao' => null, 'palavras_chave' => null]];
         foreach ($linhas as $l) {
-            $ins->execute([$nome, $cpf, $email, count($feitas), $l['aula'], $l['assunto'], $l['descricao'], $l['palavras_chave']]);
+            // Cada linha é UMA aula concluída: 1 por linha (0 na linha sem aula).
+            $ins->execute([$nome, $cpf, $email, $l['aula'] !== null ? 1 : 0, $l['aula'], $l['assunto'], $l['descricao'], $l['palavras_chave']]);
         }
         if (!$jaEmTransacao) {
             $pdo->commit();
