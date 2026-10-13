@@ -30,13 +30,11 @@ GRANT SELECT ON mse_academy.consultasmia_2 TO 'usuario_consulta'@'%';
 | `situacao_integracao` | `sem_acesso`, `nao_iniciou`, `em_andamento`, `concluiu` ou `dispensado` |
 | `integracao_concluida` | 1 = concluiu todos os cursos obrigatórios |
 | `integracao_concluida_em` | Data e hora em que concluiu |
-| `aulas_obrigatorias`, `aulas_concluidas` | Quantos cursos obrigatórios e quantos já concluídos |
-| `cursos_concluidos` | Texto: os cursos obrigatórios **já concluídos**, um por linha, com data e hora: `Nome do curso (dd/mm/aaaa hh:mm)` |
-| `cursos_pendentes` | Texto: os cursos obrigatórios que **ainda faltam**, um por linha, com o % assistido: `Nome do curso (40%)` |
-| `cursos_obrigatorios` | **JSON**: cada curso obrigatório com status, % assistido, data de conclusão, perguntas certas, nº de entradas, primeira entrada e última saída |
-| `bau_vezes`, `bau_primeira_abertura`, `bau_ultima_abertura` | Quantas vezes e quando abriu o baú |
-| `bau_prova` | Frase da **última** abertura do baú, dizendo se a integração estava completa |
-| `verificado_em` | Quando o resumo foi atualizado pela última vez |
+| `integracao_aulas`, `integracao_aulas_concluidas` | **Integração** (cursos de onboarding, obrigatórios para todo contratado): quantos são e quantos já concluiu |
+| `integracao_cursos_concluidos`, `integracao_cursos_pendentes` | Texto, um curso por linha: os da integração concluídos (com data e hora) e os que faltam (com % assistido) |
+| `aulas_obrigatorias`, `aulas_concluidas` | **Aulas obrigatórias**: só as marcadas como obrigatórias para o **departamento** da pessoa. Quantas são e quantas já concluiu. Cursos de integração **não** entram aqui |
+| `cursos_concluidos`, `cursos_pendentes` | Texto, um curso por linha: as aulas obrigatórias do departamento concluídas (com data e hora) e as que faltam (com % assistido) |
+| `cursos_obrigatorios` | **JSON** das aulas obrigatórias do departamento: status, % assistido, data de conclusão, perguntas certas, nº de entradas, primeira entrada e última saída |
 
 Exemplos:
 
@@ -49,7 +47,7 @@ FROM consultasmia WHERE integracao_concluida = 0 AND situacao_integracao <> 'dis
 SELECT nome, cursos_concluidos, cursos_pendentes FROM consultasmia WHERE integracao_concluida = 0;
 
 -- Concluíram: com a data e a prova do baú
-SELECT nome, integracao_concluida_em, bau_primeira_abertura, bau_prova
+SELECT nome, integracao_concluida_em, cursos_concluidos
 FROM consultasmia WHERE integracao_concluida = 1;
 ```
 
@@ -116,7 +114,7 @@ WHERE cpf = '00000000000' AND tipo IN ('video_entrada', 'video_saida') ORDER BY 
   com `detalhe = {"origem":"historico"}`), e as entradas e saídas de vídeo **anteriores** vêm do registro de
   check-in e check-out que já existia. O baú **não existe** antes da ativação.
 - O **resumo** (`consultasmia`) só muda quando um administrador clica em **Relatórios → Pendentes → Atualizar banco**
-  (ou quando a chamada agendada do servidor roda). Use `verificado_em` para saber de quando ele é.
+  (ou quando a chamada agendada do servidor roda).
 
 ## Cuidados
 
