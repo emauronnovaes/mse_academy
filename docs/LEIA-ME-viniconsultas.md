@@ -31,6 +31,8 @@ GRANT SELECT ON mse_academy.viniconsultas_eventos TO 'usuario_consulta'@'%';
 | `integracao_concluida` | 1 = concluiu todos os cursos obrigatórios |
 | `integracao_concluida_em` | Data e hora em que concluiu |
 | `aulas_obrigatorias`, `aulas_concluidas` | Quantos cursos obrigatórios e quantos já concluídos |
+| `cursos_concluidos` | Texto: os cursos obrigatórios **já concluídos**, um por linha, com data e hora: `Nome do curso (dd/mm/aaaa hh:mm)` |
+| `cursos_pendentes` | Texto: os cursos obrigatórios que **ainda faltam**, um por linha, com o % assistido: `Nome do curso (40%)` |
 | `cursos_obrigatorios` | **JSON**: cada curso obrigatório com status, % assistido, data de conclusão, perguntas certas, nº de entradas, primeira entrada e última saída |
 | `bau_vezes`, `bau_primeira_abertura`, `bau_ultima_abertura` | Quantas vezes e quando abriu o baú |
 | `bau_prova` | Frase da **última** abertura do baú, dizendo se a integração estava completa |
@@ -42,6 +44,9 @@ Exemplos:
 -- Contratados que NÃO concluíram a integração
 SELECT nome, cpf, email, data_admissao, aulas_concluidas, aulas_obrigatorias, ultimo_login
 FROM viniconsultas WHERE integracao_concluida = 0 AND situacao_integracao <> 'dispensado';
+
+-- O que cada um já fez e o que falta
+SELECT nome, cursos_concluidos, cursos_pendentes FROM viniconsultas WHERE integracao_concluida = 0;
 
 -- Concluíram: com a data e a prova do baú
 SELECT nome, integracao_concluida_em, bau_primeira_abertura, bau_prova

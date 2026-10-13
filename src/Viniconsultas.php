@@ -37,7 +37,7 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
             $pdo->exec('ALTER TABLE viniconsultas_eventos ADD COLUMN curso_id INT UNSIGNED NOT NULL DEFAULT 0, ADD COLUMN curso VARCHAR(200) NULL');
             $pdo->exec('ALTER TABLE viniconsultas_eventos DROP INDEX uq_viniconsultas_eventos, ADD UNIQUE KEY uq_viniconsultas_eventos (user_id, tipo, evento_em, curso_id)');
         }
-        foreach (['total_entradas_video' => 'INT NOT NULL DEFAULT 0', 'ultima_entrada_video' => 'DATETIME NULL', 'ultima_saida_video' => 'DATETIME NULL'] as $col => $def) {
+        foreach (['total_entradas_video' => 'INT NOT NULL DEFAULT 0', 'ultima_entrada_video' => 'DATETIME NULL', 'ultima_saida_video' => 'DATETIME NULL', 'cursos_concluidos' => 'TEXT NULL', 'cursos_pendentes' => 'TEXT NULL'] as $col => $def) {
             if (!$tem('viniconsultas', $col)) {
                 $pdo->exec("ALTER TABLE viniconsultas ADD COLUMN {$col} {$def}");
             }
@@ -204,9 +204,9 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
         'INSERT INTO viniconsultas
            (chave, nome, cpf, email, cargo, departamento, data_admissao, user_id, entrou_na_academy, primeiro_login, ultimo_login,
             total_logins, total_entradas_video, ultima_entrada_video, ultima_saida_video, situacao_integracao, integracao_concluida, integracao_concluida_em,
-            aulas_obrigatorias, aulas_concluidas, cursos_obrigatorios, bau_vezes, bau_primeira_abertura, bau_ultima_abertura,
+            aulas_obrigatorias, aulas_concluidas, cursos_concluidos, cursos_pendentes, cursos_obrigatorios, bau_vezes, bau_primeira_abertura, bau_ultima_abertura,
             bau_prova, verificado_em)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON DUPLICATE KEY UPDATE
            nome = VALUES(nome), cpf = VALUES(cpf), email = VALUES(email), cargo = VALUES(cargo), departamento = VALUES(departamento),
            user_id = VALUES(user_id), entrou_na_academy = VALUES(entrou_na_academy), primeiro_login = VALUES(primeiro_login),
@@ -215,6 +215,7 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
            ultima_saida_video = VALUES(ultima_saida_video), situacao_integracao = VALUES(situacao_integracao),
            integracao_concluida = VALUES(integracao_concluida), integracao_concluida_em = VALUES(integracao_concluida_em),
            aulas_obrigatorias = VALUES(aulas_obrigatorias), aulas_concluidas = VALUES(aulas_concluidas),
+           cursos_concluidos = VALUES(cursos_concluidos), cursos_pendentes = VALUES(cursos_pendentes),
            cursos_obrigatorios = VALUES(cursos_obrigatorios), bau_vezes = VALUES(bau_vezes),
            bau_primeira_abertura = VALUES(bau_primeira_abertura), bau_ultima_abertura = VALUES(bau_ultima_abertura),
            bau_prova = VALUES(bau_prova), verificado_em = VALUES(verificado_em)'
@@ -248,6 +249,15 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
         }
 
         $cursos = mse_vini_cursos_obrigatorios($pdo, $userId);
+        // Em texto simples, para consultar sem abrir o JSON: um curso por linha.
+        $feitos = $faltam = [];
+        foreach ($cursos as $c) {
+            if ($c['status'] === 'concluido') {
+                $feitos[] = $c['curso'] . ($c['concluido_em'] ? ' (' . date('d/m/Y H:i', strtotime((string) $c['concluido_em'])) . ')' : '');
+            } else {
+                $faltam[] = $c['curso'] . ' (' . (int) $c['percentual_assistido'] . '%)';
+            }
+        }
         $upsert->execute([
             mse_integracao_chave($cpf ?: null, (string) $p['nome'], (string) $p['data_admissao']),
             $p['nome'], strlen($cpf) === 11 ? $cpf : null, $p['email'] ?? null, $p['funcao'] ?? null, $p['departamento'] ?? null,
@@ -257,6 +267,9 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
             !empty($p['dispensado']) ? 'dispensado' : $p['situacao'],
             $p['situacao'] === 'concluiu' ? 1 : 0, $p['concluiu_em'] ?? null,
             (int) ($p['obrigatorias'] ?? count($cursos)), (int) ($p['concluidas'] ?? 0),
+            $feitos ? implode("
+", $feitos) : null, $faltam ? implode("
+", $faltam) : null,
             json_encode($cursos, JSON_UNESCAPED_UNICODE),
             (int) ($ev['bau_aberto']['n'] ?? 0), $ev['bau_aberto']['primeiro'] ?? null, $ev['bau_aberto']['ultimo'] ?? null,
             $bauProva, $verificadoEm,
