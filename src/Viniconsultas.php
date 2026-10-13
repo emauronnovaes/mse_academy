@@ -322,3 +322,38 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
     }
     return $gravadas;
 }
+
+/**
+ * Recalcula na hora as aulas obrigatórias/concluídas da pessoa em consultasmia
+ * (chamado quando ela conclui uma aula), sem esperar o "Atualizar banco".
+ * Só mexe em quem já tem linha na tabela (contratados recentes) e nunca
+ * lança erro: concluir a aula não pode falhar por causa disso.
+ */
+function mse_vini_atualizar_aulas_do_usuario(int $userId): void
+{
+    try {
+        $pdo = mse_db();
+        if ($userId <= 0 || !mse_tem_tabela($pdo, 'consultasmia') || !mse_tem_coluna($pdo, 'consultasmia', 'aulas_concluidas_nomes')) {
+            return;
+        }
+        $st = $pdo->prepare('SELECT id, departamento FROM consultasmia WHERE user_id = ?');
+        $st->execute([$userId]);
+        $linhas = $st->fetchAll();
+        if (!$linhas) {
+            return;
+        }
+        $upd = $pdo->prepare('UPDATE consultasmia SET aulas_obrigatorias = ?, aulas_concluidas = ?, aulas_concluidas_nomes = ? WHERE id = ?');
+        foreach ($linhas as $l) {
+            $aulas = mse_vini_aulas_do_departamento($pdo, $userId, $l['departamento'] !== null ? (string) $l['departamento'] : null);
+            $feitas = array_values(array_filter($aulas, static fn($c) => $c['status'] === 'concluido'));
+            $upd->execute([
+                count($aulas),
+                $aulas && count($feitas) === count($aulas) ? 1 : 0,
+                $feitas ? implode(' | ', array_column($feitas, 'curso')) : null,
+                (int) $l['id'],
+            ]);
+        }
+    } catch (Throwable $e) {
+        error_log('[consultasmia] atualizar aulas do usuário: ' . $e->getMessage());
+    }
+}

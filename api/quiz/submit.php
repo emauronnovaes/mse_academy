@@ -142,4 +142,10 @@ if ($concluiAula) {
     }
 }
 
+// Concluiu a aula: o banco de consulta (consultasmia) já reflete na hora.
+if ($concluiAula) {
+    require_once __DIR__ . '/../../src/Viniconsultas.php';
+    mse_vini_atualizar_aulas_do_usuario((int) $user['id']);
+}
+
 mse_json(['correct' => $isCorrect, 'concluido' => $concluiAula]);
