@@ -5,11 +5,11 @@ require_once __DIR__ . '/Progress.php';
 require_once __DIR__ . '/Admitidos.php';
 
 /**
- * viniconsultas: tabela de consulta (só leitura) dos contratados recentes e
+ * consultasmia: tabela de consulta (só leitura) dos contratados recentes e
  * da prova de que concluíram, ou não, a integração na MSE Academy.
  *
- *   viniconsultas          um registro por pessoa (resumo)
- *   viniconsultas_eventos  o log: login, video_entrada, video_saida, bau_aberto
+ *   consultasmia          um registro por pessoa (resumo)
+ *   consultasmia_2  o log: login, video_entrada, video_saida, bau_aberto
  *
  * Migração 032. Se não rodou, as tabelas são criadas aqui sozinhas.
  */
@@ -22,6 +22,18 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
         return $ok;
     }
     try {
+        // Nome antigo (viniconsultas / viniconsultas_eventos) -> consultasmia / consultasmia_2.
+        // RENAME TABLE mantém todos os dados e só roda se o nome novo ainda não existe.
+        $existe = static function (string $t) use ($pdo): bool {
+            $q = $pdo->prepare('SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?');
+            $q->execute([$t]);
+            return $q->fetchColumn() !== false;
+        };
+        foreach (['viniconsultas' => 'consultasmia', 'viniconsultas_eventos' => 'consultasmia_2'] as $velho => $novo) {
+            if ($existe($velho) && !$existe($novo)) {
+                $pdo->exec("RENAME TABLE {$velho} TO {$novo}");
+            }
+        }
         $sql = file_get_contents(__DIR__ . '/../migrations/032_viniconsultas.sql');
         $sql = preg_replace('#/\*.*?\*/#s', '', (string) $sql);
         foreach (array_filter(array_map('trim', explode(';', (string) $sql))) as $comando) {
@@ -33,18 +45,18 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
             $st->execute([$tabela, $coluna]);
             return $st->fetchColumn() !== false;
         };
-        if (!$tem('viniconsultas_eventos', 'curso_id')) {
-            $pdo->exec('ALTER TABLE viniconsultas_eventos ADD COLUMN curso_id INT UNSIGNED NOT NULL DEFAULT 0, ADD COLUMN curso VARCHAR(200) NULL');
-            $pdo->exec('ALTER TABLE viniconsultas_eventos DROP INDEX uq_viniconsultas_eventos, ADD UNIQUE KEY uq_viniconsultas_eventos (user_id, tipo, evento_em, curso_id)');
+        if (!$tem('consultasmia_2', 'curso_id')) {
+            $pdo->exec('ALTER TABLE consultasmia_2 ADD COLUMN curso_id INT UNSIGNED NOT NULL DEFAULT 0, ADD COLUMN curso VARCHAR(200) NULL');
+            $pdo->exec('ALTER TABLE consultasmia_2 DROP INDEX uq_viniconsultas_eventos, ADD UNIQUE KEY uq_viniconsultas_eventos (user_id, tipo, evento_em, curso_id)');
         }
         foreach (['total_entradas_video' => 'INT NOT NULL DEFAULT 0', 'ultima_entrada_video' => 'DATETIME NULL', 'ultima_saida_video' => 'DATETIME NULL', 'cursos_concluidos' => 'TEXT NULL', 'cursos_pendentes' => 'TEXT NULL'] as $col => $def) {
-            if (!$tem('viniconsultas', $col)) {
-                $pdo->exec("ALTER TABLE viniconsultas ADD COLUMN {$col} {$def}");
+            if (!$tem('consultasmia', $col)) {
+                $pdo->exec("ALTER TABLE consultasmia ADD COLUMN {$col} {$def}");
             }
         }
         return $ok = true;
     } catch (Throwable $e) {
-        error_log('[viniconsultas] Não consegui criar as tabelas (rode a migração 032): ' . $e->getMessage());
+        error_log('[consultasmia] Não consegui criar as tabelas (rode a migração 032): ' . $e->getMessage());
         return $ok = false;
     }
 }
@@ -73,7 +85,7 @@ function mse_vini_registrar_evento(int $userId, string $tipo, ?array $detalhe = 
         // $quando: a hora exata do registro original (check-in/out de vídeo), para
         // o espelho e a cópia do histórico serem o MESMO registro (sem duplicar).
         $pdo->prepare(
-            'INSERT IGNORE INTO viniconsultas_eventos (user_id, cpf, email, tipo, evento_em, curso_id, curso, detalhe)
+            'INSERT IGNORE INTO consultasmia_2 (user_id, cpf, email, tipo, evento_em, curso_id, curso, detalhe)
              VALUES (?, ?, ?, ?, ' . ($quando !== null ? '?' : 'NOW()') . ', ?, ?, ?)'
         )->execute(array_merge(
             [$userId, strlen($cpf) === 11 ? $cpf : null, $u['email'] ?: null, $tipo],
@@ -81,7 +93,7 @@ function mse_vini_registrar_evento(int $userId, string $tipo, ?array $detalhe = 
             [$cursoId, $curso, $detalhe ? json_encode($detalhe, JSON_UNESCAPED_UNICODE) : null]
         ));
     } catch (Throwable $e) {
-        error_log('[viniconsultas] evento ' . $tipo . ': ' . $e->getMessage());
+        error_log('[consultasmia] evento ' . $tipo . ': ' . $e->getMessage());
     }
 }
 
@@ -159,7 +171,7 @@ function mse_vini_prova_integracao(PDO $pdo, int $userId): array
 }
 
 /**
- * Atualiza viniconsultas com as pessoas contratadas (a lista vem da
+ * Atualiza consultasmia com as pessoas contratadas (a lista vem da
  * sincronização: cada item já traz nome, CPF, e-mail, admissão, user_id e a
  * situação da integração).
  *
@@ -176,10 +188,10 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
     }
     // Logins de antes do log existir: só os anteriores ao primeiro login registrado em tempo real.
     $corte = $pdo->query(
-        "SELECT MIN(evento_em) FROM viniconsultas_eventos WHERE tipo = 'login' AND (detalhe IS NULL OR detalhe NOT LIKE '%historico%')"
+        "SELECT MIN(evento_em) FROM consultasmia_2 WHERE tipo = 'login' AND (detalhe IS NULL OR detalhe NOT LIKE '%historico%')"
     )->fetchColumn();
     $historico = $pdo->prepare(
-        "INSERT IGNORE INTO viniconsultas_eventos (user_id, cpf, email, tipo, evento_em, detalhe)
+        "INSERT IGNORE INTO consultasmia_2 (user_id, cpf, email, tipo, evento_em, detalhe)
          SELECT t.user_id, ?, ?, 'login', t.created_at, '{\"origem\":\"historico\"}'
          FROM auth_tokens t WHERE t.user_id = ?" . ($corte ? ' AND t.created_at < ?' : '')
     );
@@ -187,7 +199,7 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
     // mesma hora do registro original, então repetir a cópia nunca duplica.
     $temLog = mse_tem_tabela($pdo, 'presenca_log');
     $copiaVideos = $temLog ? $pdo->prepare(
-        "INSERT IGNORE INTO viniconsultas_eventos (user_id, cpf, email, tipo, evento_em, curso_id, curso, detalhe)
+        "INSERT IGNORE INTO consultasmia_2 (user_id, cpf, email, tipo, evento_em, curso_id, curso, detalhe)
          SELECT p.user_id, ?, ?, IF(p.evento = 'checkin', 'video_entrada', 'video_saida'), p.criado_em, p.course_id, c.title,
                 CONCAT('{\"origem\":\"video\",\"percentual_assistido\":', IFNULL(CAST(p.watched_pct AS CHAR), 'null'), '}')
          FROM presenca_log p JOIN courses c ON c.id = p.course_id
@@ -195,13 +207,13 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
     ) : null;
     $resumoEventos = $pdo->prepare(
         "SELECT tipo, COUNT(*) AS n, MIN(evento_em) AS primeiro, MAX(evento_em) AS ultimo
-         FROM viniconsultas_eventos WHERE user_id = ? GROUP BY tipo"
+         FROM consultasmia_2 WHERE user_id = ? GROUP BY tipo"
     );
     $ultimoBau = $pdo->prepare(
-        "SELECT detalhe FROM viniconsultas_eventos WHERE user_id = ? AND tipo = 'bau_aberto' ORDER BY evento_em DESC LIMIT 1"
+        "SELECT detalhe FROM consultasmia_2 WHERE user_id = ? AND tipo = 'bau_aberto' ORDER BY evento_em DESC LIMIT 1"
     );
     $upsert = $pdo->prepare(
-        'INSERT INTO viniconsultas
+        'INSERT INTO consultasmia
            (chave, nome, cpf, email, cargo, departamento, data_admissao, user_id, entrou_na_academy, primeiro_login, ultimo_login,
             total_logins, total_entradas_video, ultima_entrada_video, ultima_saida_video, situacao_integracao, integracao_concluida, integracao_concluida_em,
             aulas_obrigatorias, aulas_concluidas, cursos_concluidos, cursos_pendentes, cursos_obrigatorios, bau_vezes, bau_primeira_abertura, bau_ultima_abertura,

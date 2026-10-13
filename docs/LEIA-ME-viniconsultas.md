@@ -1,24 +1,24 @@
-# viniconsultas — consulta dos contratados e da integração na MSE Academy
+# consultasmia — consulta dos contratados e da integração na MSE Academy
 
 Duas tabelas **só de consulta** no banco da MSE Academy (schema `mse_academy`).
 Quem consulta só **lê** (`SELECT`); quem grava é a própria Academy.
 
 | Tabela | O que é |
 |---|---|
-| `viniconsultas` | Uma linha por pessoa contratada recentemente (resumo) |
-| `viniconsultas_eventos` | O log: cada login, entrada e saída de vídeo e abertura do baú, com data e hora |
+| `consultasmia` | Uma linha por pessoa contratada recentemente (resumo) |
+| `consultasmia_2` | O log: cada login, entrada e saída de vídeo e abertura do baú, com data e hora |
 
 Os dados de acesso ao banco **não** estão aqui: peça ao TI um usuário **somente leitura**
 com `SELECT` nessas duas tabelas. Exemplo para o TI:
 
 ```sql
-GRANT SELECT ON mse_academy.viniconsultas TO 'usuario_consulta'@'%';
-GRANT SELECT ON mse_academy.viniconsultas_eventos TO 'usuario_consulta'@'%';
+GRANT SELECT ON mse_academy.consultasmia TO 'usuario_consulta'@'%';
+GRANT SELECT ON mse_academy.consultasmia_2 TO 'usuario_consulta'@'%';
 ```
 
 ---
 
-## viniconsultas (resumo por pessoa)
+## consultasmia (resumo por pessoa)
 
 | Coluna | Significado |
 |---|---|
@@ -43,19 +43,19 @@ Exemplos:
 ```sql
 -- Contratados que NÃO concluíram a integração
 SELECT nome, cpf, email, data_admissao, aulas_concluidas, aulas_obrigatorias, ultimo_login
-FROM viniconsultas WHERE integracao_concluida = 0 AND situacao_integracao <> 'dispensado';
+FROM consultasmia WHERE integracao_concluida = 0 AND situacao_integracao <> 'dispensado';
 
 -- O que cada um já fez e o que falta
-SELECT nome, cursos_concluidos, cursos_pendentes FROM viniconsultas WHERE integracao_concluida = 0;
+SELECT nome, cursos_concluidos, cursos_pendentes FROM consultasmia WHERE integracao_concluida = 0;
 
 -- Concluíram: com a data e a prova do baú
 SELECT nome, integracao_concluida_em, bau_primeira_abertura, bau_prova
-FROM viniconsultas WHERE integracao_concluida = 1;
+FROM consultasmia WHERE integracao_concluida = 1;
 ```
 
 ---
 
-## viniconsultas_eventos (o log)
+## consultasmia_2 (o log)
 
 | Coluna | Significado |
 |---|---|
@@ -65,11 +65,11 @@ FROM viniconsultas WHERE integracao_concluida = 1;
 | `evento_em` | Data e hora (horário de Brasília) |
 | `detalhe` | JSON. No `bau_aberto`: **a prova** — ver abaixo |
 
-**Ligar o log à pessoa:** `viniconsultas_eventos.cpf = viniconsultas.cpf` (ou `user_id`).
+**Ligar o log à pessoa:** `consultasmia_2.cpf = consultasmia.cpf` (ou `user_id`).
 
 ```sql
 -- Todos os acessos de uma pessoa, do mais antigo ao mais recente
-SELECT tipo, evento_em FROM viniconsultas_eventos
+SELECT tipo, evento_em FROM consultasmia_2
 WHERE cpf = '00000000000' ORDER BY evento_em;
 ```
 
@@ -105,17 +105,17 @@ Se `concluida` for `false`, a frase diz que a integração **não** está comple
 
 ```sql
 -- Entradas e saídas de vídeo de uma pessoa
-SELECT tipo, curso, evento_em FROM viniconsultas_eventos
+SELECT tipo, curso, evento_em FROM consultasmia_2
 WHERE cpf = '00000000000' AND tipo IN ('video_entrada', 'video_saida') ORDER BY evento_em;
 ```
 
 ## Quando os dados valem
 
-- O **log** (`viniconsultas_eventos`) é gravado **na hora** em que o acontecimento ocorre, desde o dia em que
+- O **log** (`consultasmia_2`) é gravado **na hora** em que o acontecimento ocorre, desde o dia em que
   o log foi ativado. Os logins **anteriores** vêm do histórico de sessões que a Academy já guardava (aparecem
   com `detalhe = {"origem":"historico"}`), e as entradas e saídas de vídeo **anteriores** vêm do registro de
   check-in e check-out que já existia. O baú **não existe** antes da ativação.
-- O **resumo** (`viniconsultas`) só muda quando um administrador clica em **Relatórios → Pendentes → Atualizar banco**
+- O **resumo** (`consultasmia`) só muda quando um administrador clica em **Relatórios → Pendentes → Atualizar banco**
   (ou quando a chamada agendada do servidor roda). Use `verificado_em` para saber de quando ele é.
 
 ## Cuidados

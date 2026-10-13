@@ -1,11 +1,11 @@
 /*
-  viniconsultas — tabela só de CONSULTA (leitura) com os contratados
+  consultasmia — tabela só de CONSULTA (leitura) com os contratados
   recentes e a prova de que fizeram, ou não, a integração na MSE Academy.
 
-  viniconsultas          uma linha por pessoa contratada recentemente:
+  consultasmia          uma linha por pessoa contratada recentemente:
                          nome, CPF, e-mail, login na Academy, se concluiu a
                          integração, abertura do baú, cursos obrigatórios
-  viniconsultas_eventos  o log, um registro por acontecimento, com data e
+  consultasmia_2  o log, um registro por acontecimento, com data e
                          hora: login na Academy, entrada em cada vídeo
                          (check-in), saída de cada vídeo (check-out) e
                          abertura do baú (esta com a prova, na hora, do que
@@ -27,7 +27,7 @@
   SQL, cole este arquivo inteiro e execute.
 */
 
-CREATE TABLE IF NOT EXISTS viniconsultas (
+CREATE TABLE IF NOT EXISTS consultasmia (
   id                       INT UNSIGNED NOT NULL AUTO_INCREMENT,
   chave                    VARCHAR(64)  NOT NULL,
   nome                     VARCHAR(200) NOT NULL,
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS viniconsultas (
   KEY idx_viniconsultas_cpf (cpf)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS viniconsultas_eventos (
+CREATE TABLE IF NOT EXISTS consultasmia_2 (
   id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id    INT UNSIGNED NOT NULL,
   cpf        VARCHAR(11)  NULL,

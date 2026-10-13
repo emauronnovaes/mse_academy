@@ -1,5 +1,5 @@
 /*
-  viniconsultas: colunas com os cursos obrigatórios que a pessoa JÁ CONCLUIU
+  consultasmia: colunas com os cursos obrigatórios que a pessoa JÁ CONCLUIU
   e os que AINDA FALTAM (texto simples, um curso por linha).
 
     cursos_concluidos  "Nome do curso (dd/mm/aaaa hh:mm)"
@@ -12,6 +12,6 @@
   Rode no banco da Academy (mse_academy), conexão de produção.
 */
 
-ALTER TABLE viniconsultas
+ALTER TABLE consultasmia
   ADD COLUMN cursos_concluidos TEXT NULL AFTER aulas_concluidas,
   ADD COLUMN cursos_pendentes  TEXT NULL AFTER cursos_concluidos;

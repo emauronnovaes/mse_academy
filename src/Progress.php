@@ -278,7 +278,7 @@ function mse_registrar_evento(PDO $pdo, int $userId, int $courseId, string $even
         mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255) ?: null,
     ]);
 
-    // Entrada e saída de vídeo também vão para o log de consulta (viniconsultas_eventos),
+    // Entrada e saída de vídeo também vão para o log de consulta (consultasmia_2),
     // com a MESMA hora deste registro. Nunca atrapalha o registro principal.
     if ($evento === 'checkin' || $evento === 'checkout') {
         try {
@@ -293,7 +293,7 @@ function mse_registrar_evento(PDO $pdo, int $userId, int $courseId, string $even
                 );
             }
         } catch (Throwable $e) {
-            error_log('[viniconsultas] espelho do vídeo: ' . $e->getMessage());
+            error_log('[consultasmia] espelho do vídeo: ' . $e->getMessage());
         }
     }
     return true;

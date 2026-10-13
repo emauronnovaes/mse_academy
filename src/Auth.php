@@ -32,7 +32,7 @@ function mse_create_session(int $userId): string
     );
     $stmt->execute([$userId, $hash, $expiresAt, $userAgent]);
 
-    // Log de consulta (viniconsultas_eventos): quando a pessoa entrou. Nunca
+    // Log de consulta (consultasmia_2): quando a pessoa entrou. Nunca
     // atrapalha o login (a função engole qualquer erro).
     require_once __DIR__ . '/Viniconsultas.php';
     mse_vini_registrar_evento($userId, 'login', ['origem' => 'academy']);

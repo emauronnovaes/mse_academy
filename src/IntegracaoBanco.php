@@ -90,7 +90,7 @@ function mse_sincronizar_integracao(PDO $pdo, string $de, string $ate): array
 
 /**
  * O miolo da sincronização: completa com a ficha, cruza com a Academy e grava
- * integracao_admitidos e viniconsultas para a lista de admitidos recebida.
+ * integracao_admitidos e consultasmia para a lista de admitidos recebida.
  * Serve tanto para a atualização inteira (cron) quanto para um LOTE pequeno
  * (botão "Atualizar banco": o navegador manda poucas pessoas por vez, para
  * nenhuma chamada passar do tempo limite do servidor).
@@ -193,8 +193,8 @@ function mse_sincronizar_lista(PDO $pdo, array $admitidos, string $hoje, string 
             $contagem['novos']++;
         }
     }
-    // viniconsultas: a mesma lista de contratados, com login, baú e cursos obrigatórios.
-    $contagem['viniconsultas'] = mse_viniconsultas_gravar($pdo, $montado['pessoas'], $verificadoEm);
+    // consultasmia: a mesma lista de contratados, com login, baú e cursos obrigatórios.
+    $contagem['consultasmia'] = mse_viniconsultas_gravar($pdo, $montado['pessoas'], $verificadoEm);
     return $contagem;
 }
 
@@ -235,7 +235,7 @@ function mse_sincronizar_antigos(PDO $pdo, string $inicio, int $limite = 8): arr
         'funcao' => $l['cargo'], 'obra' => $l['obra'], 'vinculo' => $l['vinculo'], 'empresa' => $l['empresa'],
     ], $linhas);
     $contagem = $admitidos ? mse_sincronizar_lista($pdo, $admitidos, $hoje, $verificadoEm)
-        : ['total' => 0, 'pendentes' => 0, 'concluiram' => 0, 'dispensados' => 0, 'novos' => 0, 'aviso' => null, 'viniconsultas' => 0];
+        : ['total' => 0, 'pendentes' => 0, 'concluiram' => 0, 'dispensados' => 0, 'novos' => 0, 'aviso' => null, 'consultasmia' => 0];
     // Garante que cada chamada AVANÇA: as linhas lidas aqui contam como conferidas,
     // mesmo que a regravação tenha caído em outra chave (nunca fica em laço).
     if ($linhas) {
