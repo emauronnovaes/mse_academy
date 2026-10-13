@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS consultasmia (
   integracao_concluida_em  DATETIME     NULL,
   aulas_obrigatorias       INT          NOT NULL DEFAULT 0,
   aulas_concluidas         INT          NOT NULL DEFAULT 0,
+  aulas_concluidas_nomes   TEXT         NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_viniconsultas_chave (chave),
   KEY idx_viniconsultas_user (user_id),

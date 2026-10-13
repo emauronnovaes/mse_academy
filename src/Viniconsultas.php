@@ -49,6 +49,10 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
             $pdo->exec('ALTER TABLE consultasmia_2 ADD COLUMN curso_id INT UNSIGNED NOT NULL DEFAULT 0, ADD COLUMN curso VARCHAR(200) NULL');
             $pdo->exec('ALTER TABLE consultasmia_2 DROP INDEX uq_viniconsultas_eventos, ADD UNIQUE KEY uq_viniconsultas_eventos (user_id, tipo, evento_em, curso_id)');
         }
+        // Nomes das aulas obrigatórias (do departamento) já concluídas.
+        if (!$tem('consultasmia', 'aulas_concluidas_nomes')) {
+            $pdo->exec('ALTER TABLE consultasmia ADD COLUMN aulas_concluidas_nomes TEXT NULL');
+        }
         // verificado_em foi retirado da tabela. Enquanto a coluna ainda existir (ela só some quando
         // a migração 035 é rodada), passa a aceitar vazio, para a gravação não falhar sem ela.
         $st = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consultasmia' AND COLUMN_NAME = 'verificado_em' AND IS_NULLABLE = 'NO'");
@@ -264,15 +268,16 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
         'INSERT INTO consultasmia
            (chave, nome, cpf, email, cargo, departamento, data_admissao, user_id, entrou_na_academy, primeiro_login, ultimo_login,
             total_logins, situacao_integracao, integracao_concluida, integracao_concluida_em,
-            aulas_obrigatorias, aulas_concluidas)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            aulas_obrigatorias, aulas_concluidas, aulas_concluidas_nomes)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON DUPLICATE KEY UPDATE
            nome = VALUES(nome), cpf = VALUES(cpf), email = VALUES(email), cargo = VALUES(cargo), departamento = VALUES(departamento),
            user_id = VALUES(user_id), entrou_na_academy = VALUES(entrou_na_academy), primeiro_login = VALUES(primeiro_login),
            ultimo_login = VALUES(ultimo_login), total_logins = VALUES(total_logins),
            situacao_integracao = VALUES(situacao_integracao),
            integracao_concluida = VALUES(integracao_concluida), integracao_concluida_em = VALUES(integracao_concluida_em),
-           aulas_obrigatorias = VALUES(aulas_obrigatorias), aulas_concluidas = VALUES(aulas_concluidas)'
+           aulas_obrigatorias = VALUES(aulas_obrigatorias), aulas_concluidas = VALUES(aulas_concluidas),
+           aulas_concluidas_nomes = VALUES(aulas_concluidas_nomes)'
     );
 
     $gravadas = 0;
@@ -299,6 +304,7 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
         // Aulas obrigatórias = só as marcadas para o departamento da pessoa (integração fica de fora).
         // aulas_concluidas: 1 = concluiu TODAS; 0 = falta alguma (ou não há nenhuma exigida).
         $aulas = mse_vini_aulas_do_departamento($pdo, $userId, isset($p['departamento']) ? (string) $p['departamento'] : null);
+        $nomesFeitas = array_map(static fn($c) => $c['curso'], array_filter($aulas, static fn($c) => $c['status'] === 'concluido'));
         $todasFeitas = $aulas && !array_filter($aulas, static fn($c) => $c['status'] !== 'concluido');
         $upsert->execute([
             mse_integracao_chave($cpf ?: null, (string) $p['nome'], (string) $p['data_admissao']),
@@ -307,7 +313,7 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
             $ev['login']['primeiro'] ?? null, $ev['login']['ultimo'] ?? null, (int) ($ev['login']['n'] ?? 0),
             !empty($p['dispensado']) ? 'dispensado' : $p['situacao'],
             $p['situacao'] === 'concluiu' ? 1 : 0, $p['concluiu_em'] ?? null,
-            count($aulas), $todasFeitas ? 1 : 0,
+            count($aulas), $todasFeitas ? 1 : 0, $nomesFeitas ? implode(' | ', $nomesFeitas) : null,
         ]);
         $gravadas++;
     }

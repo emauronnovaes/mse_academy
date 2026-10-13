@@ -31,6 +31,7 @@ GRANT SELECT ON mse_academy.consultasmia_2 TO 'usuario_consulta'@'%';
 | `integracao_concluida_em` | Data e hora em que concluiu |
 | `aulas_obrigatorias` | Quantas aulas estão marcadas como obrigatórias para o **departamento** da pessoa (cursos de integração **não** entram). 0 = nenhuma exigida |
 | `aulas_concluidas` | **1** = concluiu TODAS as aulas obrigatórias do departamento; **0** = falta alguma (ou não há nenhuma exigida) |
+| `aulas_concluidas_nomes` | Os **nomes** das aulas obrigatórias do departamento que a pessoa já concluiu, separados por ` \| ` (a integração não entra). Vazio = nenhuma ainda |
 
 Exemplos:
 
