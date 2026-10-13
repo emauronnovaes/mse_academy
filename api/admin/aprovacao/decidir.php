@@ -133,6 +133,10 @@ try {
 // Recusou: o arquivo do vídeo é apagado da AWS (⚠ irreversível — ver mse_excluir_arquivo_recusado).
 $arquivo = $acao === 'recusar' ? mse_excluir_arquivo_recusado($pdo, $courseId) : ['excluido' => false, 'aviso' => null];
 
+// Aulas mudaram: o banco de consulta se atualiza em até 1 minuto.
+require_once __DIR__ . '/../../../src/Viniconsultas.php';
+mse_vini_recalcular_agendado();
+
 mse_json([
     'ok' => true,
     'status' => $acao === 'aprovar' ? 'aprovado' : 'recusado',

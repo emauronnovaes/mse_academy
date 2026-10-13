@@ -22,4 +22,8 @@ foreach ($progress as &$row) {
     $row['watched_pct'] = (float) $row['watched_pct'];
 }
 
+// Aulas mudaram: o banco de consulta se atualiza em até 1 minuto.
+require_once __DIR__ . '/../../src/Viniconsultas.php';
+mse_vini_recalcular_agendado();
+
 mse_json(['progress' => $progress]);

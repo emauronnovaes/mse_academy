@@ -262,6 +262,10 @@ try {
     mse_error('Falha ao salvar. Nada foi gravado (a transação desfez tudo). Detalhe: ' . $e->getMessage(), 500);
 }
 
+// Aulas mudaram: o banco de consulta se atualiza em até 1 minuto.
+require_once __DIR__ . '/../../../src/Viniconsultas.php';
+mse_vini_recalcular_agendado();
+
 mse_json([
     'course' => [
         'id' => $courseId,

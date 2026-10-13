@@ -96,6 +96,10 @@ if (!$ehAdmin) {
 $stmt = $pdo->prepare('DELETE FROM courses WHERE id = ?');
 $stmt->execute([$courseId]);
 
+// Aulas mudaram: o banco de consulta se atualiza em até 1 minuto.
+require_once __DIR__ . '/../../../src/Viniconsultas.php';
+mse_vini_recalcular_agendado();
+
 // O arquivo no S3 é mantido de propósito: o bucket não tem versionamento,
 // então apagar aqui seria perda definitiva do vídeo.
 mse_json([

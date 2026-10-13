@@ -302,18 +302,113 @@ function mse_vini_atualizar_aulas_do_usuario(int $userId): void
         if (!$linha) {
             return;
         }
-        $aulas = mse_vini_aulas_do_departamento($pdo, $userId, null);
-        mse_vini_gravar_linhas_pessoa($pdo, (string) $linha['nome'], $cpf, $linha['email'] ?: $u['email'], $aulas);
-        // Resumo por pessoa (consultasmia_2): só as colunas das aulas.
-        if (mse_tem_coluna($pdo, 'consultasmia_2', 'aulas_concluidas_nomes')) {
-            $feitas = array_values(array_filter($aulas, static fn($c) => $c['status'] === 'concluido'));
-            $pdo->prepare('UPDATE consultasmia_2 SET aulas_obrigatorias = ?, aulas_concluidas = ?, aulas_concluidas_nomes = ? WHERE user_id = ?')->execute([
-                count($aulas), $aulas && count($feitas) === count($aulas) ? 1 : 0,
-                $feitas ? implode(' | ', array_column($feitas, 'curso')) : null, $userId,
-            ]);
-        }
+        mse_vini_recalcular_pessoa($pdo, $userId, (string) $linha['nome'], $cpf, $linha['email'] ?: $u['email']);
     } catch (Throwable $e) {
         error_log('[consultasmia] atualizar aulas do usuário: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Recalcula as aulas obrigatórias de UMA pessoa e regrava as duas tabelas
+ * (consultasmia: uma linha por aula concluída; consultasmia_2: resumo).
+ * O departamento vem do resumo (ficha do Portal) quando existe.
+ */
+function mse_vini_recalcular_pessoa(PDO $pdo, ?int $userId, string $nome, ?string $cpf, ?string $email): void
+{
+    $depto = null;
+    if (mse_tem_tabela($pdo, 'consultasmia_2') && mse_tem_coluna($pdo, 'consultasmia_2', 'aulas_concluidas_nomes')) {
+        $st = $pdo->prepare($cpf ? 'SELECT departamento FROM consultasmia_2 WHERE cpf = ? LIMIT 1' : 'SELECT departamento FROM consultasmia_2 WHERE email = ? LIMIT 1');
+        $st->execute([$cpf ?: $email]);
+        $d = $st->fetchColumn();
+        $depto = $d !== false && trim((string) $d) !== '' ? (string) $d : null;
+    }
+    $aulas = mse_vini_aulas_do_departamento($pdo, $userId, $depto);
+    mse_vini_gravar_linhas_pessoa($pdo, $nome, $cpf, $email, $aulas);
+    if ($depto !== null || ($userId && mse_tem_tabela($pdo, 'consultasmia_2'))) {
+        $feitas = array_values(array_filter($aulas, static fn($c) => $c['status'] === 'concluido'));
+        $where = $cpf ? 'cpf = ?' : 'email = ?';
+        $pdo->prepare("UPDATE consultasmia_2 SET aulas_obrigatorias = ?, aulas_concluidas = ?, aulas_concluidas_nomes = ? WHERE {$where}")->execute([
+            count($aulas), $aulas && count($feitas) === count($aulas) ? 1 : 0,
+            $feitas ? implode(' | ', array_column($feitas, 'curso')) : null, $cpf ?: $email,
+        ]);
+    }
+}
+
+/**
+ * Recalcula TODAS as pessoas que estão em consultasmia (só banco, sem chamar
+ * API de fora): pega aula nova, aula editada ou excluída, mudança de
+ * departamento ou de obrigatoriedade. Devolve quantas pessoas recalculou.
+ */
+function mse_vini_recalcular_todos(PDO $pdo): int
+{
+    if (!mse_tem_tabela($pdo, 'consultasmia') || !mse_tem_coluna($pdo, 'consultasmia', 'aulas_obrigatorias_concluidas')) {
+        return 0;
+    }
+    $pessoas = $pdo->query('SELECT nome, cpf, email FROM consultasmia GROUP BY nome, cpf, email')->fetchAll();
+    $achaPorCpf = $pdo->prepare('SELECT id FROM users WHERE cpf = ? LIMIT 1');
+    $achaPorEmail = $pdo->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
+    $n = 0;
+    foreach ($pessoas as $p) {
+        $uid = null;
+        if ($p['cpf']) {
+            $achaPorCpf->execute([$p['cpf']]);
+            $uid = $achaPorCpf->fetchColumn() ?: null;
+        }
+        if (!$uid && $p['email']) {
+            $achaPorEmail->execute([$p['email']]);
+            $uid = $achaPorEmail->fetchColumn() ?: null;
+        }
+        try {
+            mse_vini_recalcular_pessoa($pdo, $uid ? (int) $uid : null, (string) $p['nome'], $p['cpf'] ?: null, $p['email'] ?: null);
+            $n++;
+        } catch (Throwable $e) {
+            error_log('[consultasmia] recalcular ' . $p['nome'] . ': ' . $e->getMessage());
+        }
+    }
+    return $n;
+}
+
+/**
+ * Chamada de dentro de qualquer requisição (progresso, presença, mudança de
+ * aula): recalcula todo mundo NO MÁXIMO uma vez por minuto, depois de a
+ * resposta já ter sido entregue, para ninguém esperar. Nunca lança erro.
+ */
+function mse_vini_recalcular_agendado(): void
+{
+    try {
+        $pdo = mse_db();
+        if (!mse_tem_tabela($pdo, 'consultasmia')) {
+            return;
+        }
+        require_once __DIR__ . '/Configuracoes.php';
+        if (!mse_garantir_configuracoes($pdo)) {
+            return;
+        }
+        // Quem pegar o "turno" do minuto roda; os outros seguem sem fazer nada (UPDATE atômico).
+        $pdo->exec("INSERT IGNORE INTO configuracoes (chave, valor, atualizado_em) VALUES ('consultasmia_recalculo_em', '2000-01-01 00:00:00', NOW())");
+        $st = $pdo->prepare("UPDATE configuracoes SET valor = NOW(), atualizado_em = NOW() WHERE chave = 'consultasmia_recalculo_em' AND valor <= DATE_SUB(NOW(), INTERVAL 60 SECOND)");
+        $st->execute();
+        if ($st->rowCount() !== 1) {
+            return;
+        }
+        $rodar = static function () use ($pdo): void {
+            try {
+                ignore_user_abort(true);
+                @set_time_limit(120);
+                mse_vini_recalcular_todos($pdo);
+            } catch (Throwable $e) {
+                error_log('[consultasmia] recalculo agendado: ' . $e->getMessage());
+            }
+        };
+        // Roda depois da resposta (PHP-FPM); sem FPM roda no fim da requisição.
+        register_shutdown_function(static function () use ($rodar): void {
+            if (function_exists('fastcgi_finish_request')) {
+                @fastcgi_finish_request();
+            }
+            $rodar();
+        });
+    } catch (Throwable $e) {
+        error_log('[consultasmia] agendar recalculo: ' . $e->getMessage());
     }
 }
 
@@ -339,6 +434,10 @@ function mse_vini_formatar_tempo(int $segundos): ?string
 function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?string $email, array $aulas): void
 {
     require_once __DIR__ . '/Assuntos.php';
+    // Cria/atualiza a tabela e as colunas (tempo_video...) ANTES da transação: DDL encerraria a transação.
+    if (!$pdo->inTransaction() && !mse_garantir_viniconsultas($pdo)) {
+        throw new RuntimeException('consultasmia indisponível');
+    }
     $feitas = array_values(array_filter($aulas, static fn($c) => $c['status'] === 'concluido'));
     $detalhes = [];
     if ($feitas) {
