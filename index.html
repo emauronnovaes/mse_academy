@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261009r">
+<link rel="stylesheet" href="style.css?v=20261013a">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -100,34 +100,57 @@
 
 <!-- Modal de adicionar vídeo — upload direto pro S3 + cria o curso -->
 <div class="admin-modal-overlay" id="videoModalOverlay" hidden>
-  <div class="admin-modal admin-modal-wide" role="dialog" aria-modal="true" aria-labelledby="videoModalTitle">
+  <div class="admin-modal admin-modal-wide vm-form" role="dialog" aria-modal="true" aria-labelledby="adminVideoModalTitle">
     <button type="button" class="admin-modal-close" id="adminVideoModalClose" aria-label="Fechar">
       <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
     </button>
     <h3 id="adminVideoModalTitle">Adicionar vídeo</h3>
-    <p id="videoModalHint">O arquivo vai direto pro S3 (bucket privado).</p>
+    <p id="videoModalHint">Preencha as informações abaixo. O vídeo vai para aprovação antes de ficar disponível.</p>
 
-    <label class="admin-field-label">Tipo</label>
-    <select id="videoModalType">
-      <option value="curso">Curso (catálogo)</option>
-      <option value="onboarding">Integração (trilha obrigatória)</option>
-    </select>
-    <p class="admin-field-hint" id="videoModalOndeAparece"></p>
-
-    <div id="adminVideoModalAreaWrap">
-      <label class="admin-field-label">Assuntos</label>
-      <div class="vm-obrigatorio" id="adminVideoModalAreas"><span class="admin-field-hint">Carregando assuntos...</span></div>
-      <p class="admin-field-hint">Marque um ou mais assuntos: o vídeo aparece em todos eles. O primeiro que você marcar é o principal.</p>
+    <!-- Só admin: tipo (catálogo ou trilha de Integração). -->
+    <div id="videoModalTipoWrap">
+      <label class="admin-field-label">Tipo</label>
+      <select id="videoModalType">
+        <option value="curso">Curso (catálogo)</option>
+        <option value="onboarding">Integração (trilha obrigatória)</option>
+      </select>
+      <p class="admin-field-hint" id="videoModalOndeAparece"></p>
     </div>
 
-    <label class="admin-field-label">Título</label>
-    <input type="text" id="videoModalTitulo" placeholder="Ex: Como solicitar adiantamento">
+    <label class="admin-field-label" for="videoModalTitulo">Título</label>
+    <input type="text" id="videoModalTitulo" placeholder="Ex: Como criar um pedido pela RMI">
 
-    <label class="admin-field-label">Descrição</label>
+    <label class="admin-field-label" for="videoModalDescricao">Descrição</label>
     <input type="text" id="videoModalDescricao" placeholder="Uma frase curta sobre o vídeo">
 
-    <label class="admin-field-label">Duração (minutos)</label>
-    <input type="number" id="videoModalDuracao" min="1" max="120" value="5">
+    <div id="adminVideoModalAreaWrap">
+      <label class="admin-field-label" for="videoModalTema">Tema</label>
+      <select id="videoModalTema"><option value="">Carregando temas...</option></select>
+      <input type="text" id="videoModalTemaOutro" maxlength="120" placeholder="Qual tema você sugere? Ex: Pedidos" hidden>
+      <p class="admin-field-hint vm-dica"><strong>Sobre o que é o vídeo?</strong> Escolha o assunto principal. Não encontrou? Selecione <strong>Outro</strong> e sugira um tema.</p>
+    </div>
+
+    <label class="admin-field-label">Departamentos relacionados <button type="button" class="dg-link" id="videoModalGerenciarDeptos" hidden>Gerenciar lista</button></label>
+    <div class="vm-chips" id="videoModalObrigatorio"><span class="admin-field-hint">Carregando departamentos...</span></div>
+    <p class="admin-field-hint vm-dica"><strong>Para quem esse vídeo é mais útil?</strong> Ele aparece em destaque para esses departamentos. Todos continuam podendo assistir.</p>
+
+    <div id="videoModalObrigWrap">
+      <label class="admin-field-label">É obrigatório?</label>
+      <div class="vm-radios" id="videoModalObrigRadios">
+        <label><input type="radio" name="videoModalObrig" value="recomendado"> Não, é apenas recomendado</label>
+        <label><input type="radio" name="videoModalObrig" value="departamentos"> Sim, para os departamentos relacionados</label>
+        <label><input type="radio" name="videoModalObrig" value="todos"> Sim, para todos os colaboradores</label>
+      </div>
+      <p class="admin-field-hint">Vídeos obrigatórios entram na lista de presença das auditorias.</p>
+    </div>
+
+    <div id="videoModalPalavrasWrap">
+      <label class="admin-field-label" for="videoModalPalavraInput">Palavras-chave <span class="vm-label-extra">(mínimo 3)</span></label>
+      <div class="vm-tags" id="videoModalPalavras">
+        <input type="text" id="videoModalPalavraInput" maxlength="40" placeholder="Digite e aperte Enter...">
+      </div>
+      <p class="admin-field-hint">Palavras que as pessoas usariam para <strong>buscar</strong> este vídeo.</p>
+    </div>
 
     <!-- Só envio de arquivo: link do YouTube, playlist e grupo de sorteio
          saíram do formulário. Os campos ficam escondidos (vazios) pra não
@@ -139,43 +162,38 @@
     <div id="videoModalYoutubeWrap" hidden></div>
 
     <div id="videoModalArquivoWrap">
-      <label class="admin-field-label">Arquivo de vídeo (.mp4, .webm ou .mov)</label>
+      <label class="admin-field-label" for="videoModalArquivo">Arquivo de vídeo (.mp4, .webm ou .mov)</label>
       <input type="file" id="videoModalArquivo" accept=".mp4,.webm,.mov">
     </div>
 
-    <!-- Prévia: o vídeo aparece aqui assim que o link ou o arquivo é
-         escolhido. Dela saem a duração (e o título, no YouTube) e o tempo
-         exato de cada pergunta "durante o vídeo". -->
+    <!-- Prévia: o vídeo aparece aqui assim que o arquivo é escolhido. Dela
+         saem a duração e o tempo exato de cada pergunta "durante o vídeo". -->
     <div class="vm-previa" id="videoModalPrevia" hidden>
       <div class="vm-previa-player" id="videoModalPreviaPlayer"></div>
       <p class="admin-field-hint" id="videoModalPreviaInfo">Carregando o vídeo...</p>
+    </div>
+
+    <!-- Só admin: a duração sai sozinha da prévia; o admin pode ajustar. -->
+    <div id="videoModalDuracaoWrap">
+      <label class="admin-field-label" for="videoModalDuracao">Duração (minutos)</label>
+      <input type="number" id="videoModalDuracao" min="1" max="120" value="5">
     </div>
 
     <div id="videoModalPlaylistWrap" hidden><input type="hidden" id="videoModalPlaylistUrl" value=""></div>
     <div id="videoModalSorteioWrap" hidden><input type="hidden" id="videoModalSorteio" value=""></div>
 
     <!-- Os dados de auditoria (tipo, instrutor, conteúdo programático e
-         assuntos) não são mais digitados aqui: o servidor preenche sozinho
-         ao cadastrar. Dá pra ajustar depois em Treinamentos > Editar. -->
-    <p class="admin-field-hint">Os dados para auditoria (tipo, instrutor, conteúdo e assuntos) são preenchidos automaticamente a partir de quem envia, do título e da descrição.</p>
+         assuntos) não são digitados aqui: o servidor preenche sozinho. -->
+    <p class="admin-field-hint">Os dados para auditoria (tipo, instrutor, conteúdo e assuntos) são preenchidos automaticamente.</p>
 
-    <label class="admin-field-label">Obrigatório para quais departamentos? <button type="button" class="dg-link" id="videoModalGerenciarDeptos" hidden>Gerenciar lista</button></label>
-    <div class="vm-obrigatorio" id="videoModalObrigatorio"><span class="admin-field-hint">Carregando departamentos...</span></div>
-    <p class="admin-field-hint">Marque os departamentos (os mesmos do Portal, como Programação) para os quais o vídeo é <strong>obrigatório</strong>. Nenhum marcado = obrigatório para todos. Quem é de fora continua podendo assistir.</p>
-
-    <label class="admin-check">
+    <label class="admin-check vm-aviso">
       <input type="checkbox" id="videoModalAviso" checked>
       Aviso "Você ainda está aí?" durante o vídeo
     </label>
-    <p class="admin-field-hint">Desmarcado, o vídeo não pausa pra perguntar se a pessoa continua assistindo.</p>
 
-    <div class="admin-quiz-fields" id="videoModalPerguntasWrap">
+    <div class="admin-quiz-fields vm-perguntas" id="videoModalPerguntasWrap">
       <label class="admin-field-label">Perguntas (opcional — quantas quiser)</label>
-      <p class="admin-field-hint">
-        <strong>Durante o vídeo:</strong> ele pausa no minuto e segundo marcados e só continua com a resposta certa.
-        <strong>No fim:</strong> aparece quando o vídeo termina.
-        Dica: pause a prévia no ponto certo e clique em <em>Usar tempo do vídeo</em>.
-      </p>
+      <p class="admin-field-hint">Durante o vídeo ou no fim. Para uma pergunta durante o vídeo, pause a prévia no ponto certo e clique em <em>Usar tempo do vídeo</em>.</p>
       <div id="videoModalPerguntas"></div>
       <button type="button" class="pq-add-pergunta" id="videoModalAddPergunta">+ Adicionar pergunta</button>
     </div>
@@ -195,6 +213,17 @@
     <h3 id="watchersModalTitle">Quem assistiu</h3>
     <p id="watchersModalSubtitle">Clique num vídeo pra ver os nomes de quem já assistiu.</p>
     <div id="watchersModalBody"></div>
+  </div>
+</div>
+
+<!-- Ao entrar: as aulas que a pessoa ainda precisa assistir (obrigatórias
+     em vermelho, recomendadas em laranja). Uma vez por visita. -->
+<div class="recusa-overlay" id="suasAulasOverlay" hidden>
+  <div class="recusa-card suas-aulas-card" role="dialog" aria-modal="true" aria-labelledby="suasAulasTitulo">
+    <h3 id="suasAulasTitulo">Suas aulas</h3>
+    <p class="suas-aulas-sub">Aulas indicadas para você que ainda faltam assistir. Clique numa para começar.</p>
+    <div id="suasAulasLista"></div>
+    <button type="button" class="admin-modal-submit" id="suasAulasFechar">Entendi</button>
   </div>
 </div>
 
@@ -682,7 +711,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261009r"></script>
+<script src="script.js?v=20261013a"></script>
 
 </body>
 </html>

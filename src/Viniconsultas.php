@@ -155,13 +155,16 @@ function mse_vini_aulas_do_departamento(PDO $pdo, ?int $userId, ?string $deptoFi
             $chaves[mse_departamento_chave((string) $n)] = true;
         }
     }
-    if (!$chaves) {
-        return [];
-    }
-    $marc = implode(',', array_fill(0, count($chaves), '?'));
+    // Recomendadas NÃO contam (só aparecem para a pessoa). "Obrigatório para todos" conta para todo mundo.
+    $temClassif = mse_tem_coluna($pdo, 'courses', 'obrigatoriedade');
+    $marc = $chaves ? implode(',', array_fill(0, count($chaves), '?')) : "''";
     $st = $pdo->prepare(
-        "SELECT DISTINCT c.id FROM course_departamentos d JOIN courses c ON c.id = d.course_id
-         WHERE d.departamento_norm IN ({$marc}) AND c.is_published = 1 AND c.type <> 'onboarding'
+        "SELECT c.id FROM courses c
+         WHERE c.is_published = 1 AND c.type <> 'onboarding' AND (
+               (EXISTS (SELECT 1 FROM course_departamentos d WHERE d.course_id = c.id AND d.departamento_norm IN ({$marc}))"
+        . ($temClassif ? " AND (c.obrigatoriedade IS NULL OR c.obrigatoriedade = 'departamentos'))
+               OR c.obrigatoriedade = 'todos'" : ')') . "
+         )
          ORDER BY c.order_index ASC, c.id ASC"
     );
     $st->execute(array_keys($chaves));

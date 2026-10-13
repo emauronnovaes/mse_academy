@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../../src/Auth.php';
 require_once __DIR__ . '/../../../src/Treinamentos.php';
 require_once __DIR__ . '/../../../src/Assuntos.php';
 require_once __DIR__ . '/../../../src/Aprovacao.php';
+require_once __DIR__ . '/../../../src/Classificacao.php';
 
 mse_cors();
 // Admin, ou o dono do vídeo (quem o enviou) — só o dele. Conferido abaixo,
@@ -82,10 +83,17 @@ if (array_key_exists('type', $input)) {
     $areaIds = [];
     if ($tipo === 'curso') {
         $areaIds = mse_ler_assuntos($pdo, $input);
-        if (!$areaIds) {
+        // Sem assunto só pode se ainda há um tema sugerido esperando aprovação.
+        $temaPendente = false;
+        if (!$areaIds && mse_tem_coluna($pdo, 'courses', 'tema_status')) {
+            $st = $pdo->prepare('SELECT tema_status FROM courses WHERE id = ?');
+            $st->execute([$courseId]);
+            $temaPendente = $st->fetchColumn() === 'pendente';
+        }
+        if (!$areaIds && !$temaPendente) {
             mse_error('Escolha pelo menos um assunto do curso.', 422);
         }
-        $areaId = $areaIds[0];
+        $areaId = $areaIds[0] ?? null;
     }
     $gravarAssuntos = true;
     $st = $pdo->prepare('SELECT type FROM courses WHERE id = ?');
@@ -108,6 +116,26 @@ if (array_key_exists('type', $input)) {
 foreach (mse_ler_campos_auditoria($pdo, $input) + mse_ler_aviso_presenca($pdo, $input) as $coluna => $valor) {
     $campos[] = $coluna . ' = ?';
     $valores[] = $valor;
+}
+
+// Palavras-chave e recomendado/obrigatório (só os que vierem no corpo).
+$palavras = mse_ler_palavras_chave($input, false);
+$obrig = mse_ler_obrigatoriedade($input, false);
+if ($palavras !== null || $obrig !== null) {
+    if (!mse_garantir_colunas_classificacao($pdo)) {
+        mse_error('Falta rodar a migração 040 no banco (migrations/040_classificacao_de_videos.sql).', 409);
+    }
+    if (array_key_exists('palavras_chave', $input)) {
+        if ($palavras === null || count(explode(', ', $palavras)) < 3) {
+            mse_error('Escreva pelo menos 3 palavras-chave.', 422);
+        }
+        $campos[] = 'palavras_chave = ?';
+        $valores[] = $palavras;
+    }
+    if ($obrig !== null) {
+        $campos[] = 'obrigatoriedade = ?';
+        $valores[] = $obrig;
+    }
 }
 
 if (!$campos) {

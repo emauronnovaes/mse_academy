@@ -76,6 +76,7 @@ if ($id <= 0) {
 $auditoria = mse_tem_coluna($pdo, 'courses', 'instrutor');
 $temAviso = mse_tem_coluna($pdo, 'courses', 'aviso_presenca');
 $temSorteio = mse_tem_coluna($pdo, 'courses', 'grupo_sorteio');
+$temClassif = mse_tem_coluna($pdo, 'courses', 'tema_status');
 $stmt = $pdo->prepare(
     'SELECT c.id, c.title, c.description, c.type, c.video_source, c.youtube_id, c.video_key, c.duration_minutes,
             c.aprovacao_status, c.enviado_em, c.decidido_em, c.motivo_recusa, a.name AS area_name, a.slug AS area_slug,
@@ -83,6 +84,8 @@ $stmt = $pdo->prepare(
                             : 'NULL AS tipo_treinamento, NULL AS normas, NULL AS instrutor, NULL AS conteudo_programatico, NULL AS assuntos') . ',
             ' . ($temAviso ? 'c.aviso_presenca' : '1 AS aviso_presenca') . ',
             ' . ($temSorteio ? 'c.grupo_sorteio, c.obrigatorio' : 'NULL AS grupo_sorteio, 1 AS obrigatorio') . ',
+            ' . ($temClassif ? 'c.palavras_chave, c.obrigatoriedade, c.tema_sugerido, c.tema_status'
+                             : 'NULL AS palavras_chave, NULL AS obrigatoriedade, NULL AS tema_sugerido, NULL AS tema_status') . ',
             u.name AS autor_nome, u.email AS autor_email, u.cargo AS autor_cargo,
             d.name AS decidido_por_nome
      FROM courses c
@@ -166,5 +169,10 @@ $resposta['video'] = [
     'obrigatorio' => (bool) $c['obrigatorio'],
     'perguntas' => $perguntas,
     'departamentos' => $departamentos,
+    // Classificação (Adicionar vídeo): palavras-chave, recomendado/obrigatório e tema sugerido.
+    'palavras_chave' => $c['palavras_chave'] !== null && $c['palavras_chave'] !== '' ? explode(', ', (string) $c['palavras_chave']) : [],
+    'obrigatoriedade' => $c['obrigatoriedade'],
+    'tema_sugerido' => $c['tema_sugerido'],
+    'tema_status' => $c['tema_status'],
 ];
 mse_json($resposta);

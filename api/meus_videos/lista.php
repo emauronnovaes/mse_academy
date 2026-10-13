@@ -29,12 +29,15 @@ if (!mse_tem_coluna($pdo, 'courses', 'enviado_por')) {
 $audit = mse_tem_coluna($pdo, 'courses', 'instrutor');
 $temAviso = mse_tem_coluna($pdo, 'courses', 'aviso_presenca');
 $temMomento = mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg');
+$temClassif = mse_tem_coluna($pdo, 'courses', 'tema_status');
 $stmt = $pdo->prepare(
     'SELECT c.id, c.title, c.description, c.type, c.video_source, c.video_key, c.duration_minutes, c.is_published,
             c.aprovacao_status, c.enviado_em, c.decidido_em, c.motivo_recusa, a.slug AS area_slug, a.name AS area_name,
             ' . ($audit ? 'c.tipo_treinamento, c.normas, c.instrutor, c.conteudo_programatico, c.assuntos'
                         : 'NULL AS tipo_treinamento, NULL AS normas, NULL AS instrutor, NULL AS conteudo_programatico, NULL AS assuntos') . ',
             ' . ($temAviso ? 'c.aviso_presenca' : '1 AS aviso_presenca') . ',
+            ' . ($temClassif ? 'c.palavras_chave, c.obrigatoriedade, c.tema_sugerido, c.tema_status'
+                             : 'NULL AS palavras_chave, NULL AS obrigatoriedade, NULL AS tema_sugerido, NULL AS tema_status') . ',
             (SELECT COUNT(*) FROM quiz_questions q WHERE q.course_id = c.id) AS total_perguntas
      FROM courses c
      LEFT JOIN areas a ON a.id = c.area_id
@@ -70,6 +73,10 @@ foreach ($stmt->fetchAll() as $c) {
         'conteudo_programatico' => $c['conteudo_programatico'],
         'assuntos' => $c['assuntos'],
         'total_perguntas' => (int) $c['total_perguntas'],
+        'palavras_chave' => $c['palavras_chave'] !== null && $c['palavras_chave'] !== '' ? explode(', ', (string) $c['palavras_chave']) : [],
+        'obrigatoriedade' => $c['obrigatoriedade'],
+        'tema_sugerido' => $c['tema_sugerido'],
+        'tema_status' => $c['tema_status'],
     ];
 }
 

@@ -2053,11 +2053,62 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <h4>${escaparHtml(a.name)}</h4>
         <p>${escaparHtml(a.descricao || '')}</p>
         ${a.total_cursos === 0 ? '<span class="area-sem-video">sem vídeo — só você vê</span>' : ''}
+        ${niveisDoAssunto(a.slug)}
       </button>
     `).join('');
 
     renderProgressPanel(); // recoloca a tarjinha de progresso nos cartões novos
   }
+
+  // Quantas aulas do assunto são obrigatórias / recomendadas para a pessoa.
+  function niveisDoAssunto(slug){
+    const doAssunto = courses.filter(c => c.cats.includes(slug));
+    const obrig = doAssunto.filter(c => c.nivel === 'obrigatoria').length;
+    const recom = doAssunto.filter(c => c.nivel === 'recomendada').length;
+    if(!obrig && !recom) return '';
+    return '<div class="area-niveis">'
+      + (obrig ? `<span class="area-nivel area-nivel-obrig">${obrig} ${obrig === 1 ? 'obrigatória' : 'obrigatórias'}</span>` : '')
+      + (recom ? `<span class="area-nivel area-nivel-recom">${recom} ${recom === 1 ? 'recomendada' : 'recomendadas'}</span>` : '')
+      + '</div>';
+  }
+
+  // Ao entrar: as aulas que a pessoa ainda precisa assistir, obrigatórias
+  // (vermelho) e recomendadas (laranja). Uma vez por visita (aba aberta).
+  function mostrarSuasAulas(){
+    const overlay = document.getElementById('suasAulasOverlay');
+    if(!overlay) return;
+    try{ if(sessionStorage.getItem('mse_suas_aulas_vista') === '1') return; }catch(e){}
+    // Espera o aviso de vídeo recusado fechar, se ele estiver aberto.
+    const recusa = document.getElementById('recusaOverlay');
+    if(recusa && !recusa.hidden){
+      setTimeout(mostrarSuasAulas, 600);
+      return;
+    }
+    const feitas = new Set(catalogProgress.completed);
+    const falta = courses.filter(c => c.nivel && !feitas.has(c.id));
+    if(!falta.length) return;
+    const obrig = falta.filter(c => c.nivel === 'obrigatoria');
+    const recom = falta.filter(c => c.nivel === 'recomendada');
+    const bloco = (titulo, classe, lista) => !lista.length ? '' : `
+      <p class="suas-aulas-grupo ${classe}">${titulo} (${lista.length})</p>
+      <ul class="suas-aulas-itens">${lista.map(c => `
+        <li><button type="button" class="suas-aulas-item ${classe}" data-id="${c.id}">
+          <strong>${escaparHtml(c.title)}</strong><span>${escaparHtml(c.label)}</span>
+        </button></li>`).join('')}
+      </ul>`;
+    document.getElementById('suasAulasLista').innerHTML =
+      bloco('Obrigatórias', 'is-obrig', obrig) + bloco('Recomendadas', 'is-recom', recom);
+    overlay.hidden = false;
+    try{ sessionStorage.setItem('mse_suas_aulas_vista', '1'); }catch(e){}
+    const fechar = () => { overlay.hidden = true; };
+    document.getElementById('suasAulasFechar').onclick = fechar;
+    overlay.querySelectorAll('.suas-aulas-item').forEach(b => b.addEventListener('click', () => {
+      const c = courses.find(x => x.id === Number(b.dataset.id));
+      fechar();
+      if(c) openVideoModal(c);
+    }));
+  }
+  window.mseMostrarSuasAulas = mostrarSuasAulas;
 
   function escaparHtml(s){
     return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({
@@ -2111,6 +2162,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       time: formatarDuracao(c.duration_seconds, c.duration_minutes),
       duracaoSegundos: c.duration_seconds,
       youtubeId: c.youtube_id,
+      // Para esta pessoa: 'obrigatoria', 'recomendada' ou null (vem do servidor).
+      nivel: c.nivel || null,
+      palavras: c.palavras_chave || [],
       questions: [],
     }));
 
@@ -2616,8 +2670,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   }
 
   function openSearchResults(query){
-    const q = query.toLowerCase();
-    const results = courses.filter(c => (c.title + ' ' + c.desc + ' ' + c.label).toLowerCase().includes(q));
+    const sem = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const termos = sem(query).split(/\s+/).filter(Boolean);
+    const results = courses.filter(c => {
+      const texto = sem([c.title, c.desc, c.label, (c.palavras || []).join(' ')].join(' '));
+      return termos.every(t => texto.includes(t));
+    });
     openCourseScreen({
       eyebrow: 'Resultados da busca',
       title: `"${query}"`,
@@ -3295,36 +3353,148 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // ---------- Modal de adicionar vídeo ----------
   // As áreas vêm do banco, não de uma lista fixa aqui — assim qualquer
   // área cadastrada aparece sozinha, sem precisar mexer no JavaScript.
+  // Departamentos relacionados: chips ("Todos" = nenhum marcado). Os
+  // primeiros aparecem direto; o resto abre em "+ ver todos".
+  const VM_CHIPS_VISIVEIS = 7;
   async function fillAreaSelect(){
-    const select = document.getElementById('adminVideoModalAreas');
-    if(!select) return;
-    // Departamentos em que o vídeo pode ser obrigatório: sempre recarrega,
-    // pra refletir departamentos criados depois.
+    const tema = document.getElementById('videoModalTema');
     const caixas = document.getElementById('videoModalObrigatorio');
+    if(!tema || !caixas) return;
     try{
       // Departamentos do Portal (os mesmos da ficha de funcionário).
       const lista = await apiFetch('api/departamentos/list.php');
-      const marcadas = new Set(Array.from(caixas.querySelectorAll('input:checked')).map(i => i.value));
-      caixas.innerHTML = (lista.departamentos || []).map(nome => `
-        <label class="areas-aula-item"><input type="checkbox" value="${esc(nome)}" ${marcadas.has(nome) ? 'checked' : ''}> <span>${esc(nome)}</span></label>
-      `).join('') || '<span class="admin-field-hint">Nenhum departamento encontrado no Portal.</span>';
+      const marcadas = new Set(vmAreasMarcadas());
+      const nomes = lista.departamentos || [];
+      caixas.classList.remove('vm-chips-abertos');
+      caixas.innerHTML = `<label class="vm-chip vm-chip-todos"><input type="checkbox" value="" ${marcadas.size ? '' : 'checked'}><span>Todos</span></label>`
+        + nomes.map((nome, i) => `<label class="vm-chip${i >= VM_CHIPS_VISIVEIS ? ' vm-chip-extra' : ''}"><input type="checkbox" value="${esc(nome)}" ${marcadas.has(nome) ? 'checked' : ''}><span>${esc(nome)}</span></label>`).join('')
+        + (nomes.length > VM_CHIPS_VISIVEIS ? '<button type="button" class="vm-chip vm-chip-mais" data-ver-todos="1">+ ver todos</button>' : '');
+      if(!nomes.length){
+        caixas.insertAdjacentHTML('beforeend', '<span class="admin-field-hint">Nenhum departamento encontrado no Portal.</span>');
+      }
       if(lista.fonte !== 'portal'){
         caixas.insertAdjacentHTML('beforeend', '<span class="admin-field-hint vm-obrig-aviso">Não consegui ler a lista completa do Portal agora'
           + (lista.aviso ? ' (' + esc(lista.aviso) + ')' : '') + ': aparecem só os departamentos já conhecidos.</span>');
       }
+      vmAtualizarChips();
     }catch(e){
       caixas.innerHTML = `<span class="admin-field-hint">Não consegui carregar os departamentos: ${esc(e.message)}</span>`;
     }
-    // Assuntos (os cartões da seção Cursos): um vídeo pode ficar em vários.
+    // Tema = assunto principal (os cartões da seção Cursos). "Outro" sugere um novo.
     try{
       const data = await apiFetch('api/areas/list.php?todas=1'); // todos, até os sem vídeo publicado
-      const marcados = new Set(Array.from(select.querySelectorAll('input:checked')).map(i => i.value));
-      select.innerHTML = (data.areas || []).map(a => `
-        <label class="areas-aula-item"><input type="checkbox" value="${esc(a.slug)}" ${marcados.has(a.slug) ? 'checked' : ''}> <span>${esc(a.name)}</span></label>`).join('')
-        || '<span class="admin-field-hint">Nenhum assunto cadastrado.</span>';
+      const atual = tema.value;
+      tema.innerHTML = '<option value="">Escolha o tema...</option>'
+        + (data.areas || []).map(a => `<option value="${esc(a.slug)}">${esc(a.name)}</option>`).join('')
+        + '<option value="__outro">Outro (sugerir um tema)</option>';
+      if(atual && Array.from(tema.options).some(o => o.value === atual)) tema.value = atual;
     }catch(e){
-      select.innerHTML = '<span class="admin-field-hint">Não consegui carregar os assuntos: ' + esc(e.message) + '</span>';
+      tema.innerHTML = '<option value="">Não consegui carregar os temas</option><option value="__outro">Outro (sugerir um tema)</option>';
     }
+    vmAtualizarTemaOutro();
+  }
+
+  function vmAtualizarChips(){
+    document.querySelectorAll('#videoModalObrigatorio label.vm-chip').forEach(l => {
+      const i = l.querySelector('input');
+      l.classList.toggle('ativo', !!(i && i.checked));
+    });
+  }
+  // "Todos" e departamentos se excluem: marcar um departamento desmarca "Todos" e vice-versa.
+  function vmAoMarcarChip(ev){
+    const caixas = document.getElementById('videoModalObrigatorio');
+    if(ev.target.closest('[data-ver-todos]')){
+      caixas.classList.add('vm-chips-abertos');
+      return;
+    }
+    const inp = ev.target;
+    if(!inp.matches || !inp.matches('input[type=checkbox]')) return;
+    const todos = caixas.querySelector('.vm-chip-todos input');
+    if(inp === todos){
+      if(todos.checked) caixas.querySelectorAll('input').forEach(i => { if(i !== todos) i.checked = false; });
+      else if(!vmAreasMarcadas().length) todos.checked = true;
+    } else if(todos){
+      todos.checked = !vmAreasMarcadas().length;
+    }
+    vmAtualizarChips();
+  }
+  function vmLimparClassificacao(){
+    const caixas = document.getElementById('videoModalObrigatorio');
+    caixas.classList.remove('vm-chips-abertos');
+    caixas.querySelectorAll('input').forEach(i => { i.checked = i.value === ''; });
+    vmAtualizarChips();
+    document.querySelectorAll('input[name="videoModalObrig"]').forEach(r => { r.checked = false; });
+    document.getElementById('videoModalTema').value = '';
+    document.getElementById('videoModalTemaOutro').value = '';
+    vmAtualizarTemaOutro();
+    vmPalavras = [];
+    document.getElementById('videoModalPalavraInput').value = '';
+    vmRenderPalavras();
+  }
+
+  function vmAtualizarTemaOutro(){
+    const outro = document.getElementById('videoModalTema').value === '__outro';
+    const campo = document.getElementById('videoModalTemaOutro');
+    campo.hidden = !outro;
+    if(outro && document.getElementById('videoModalOverlay') && !document.getElementById('videoModalOverlay').hidden) campo.focus();
+  }
+
+  // Palavras-chave: cada uma vira uma etiqueta; mínimo 3 (ajudam a achar o vídeo na busca).
+  let vmPalavras = [];
+  function vmNormalizar(t){
+    return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  }
+  function vmRenderPalavras(){
+    const caixa = document.getElementById('videoModalPalavras');
+    const entrada = document.getElementById('videoModalPalavraInput');
+    caixa.querySelectorAll('.vm-tag').forEach(t => t.remove());
+    vmPalavras.forEach((p, i) => {
+      const t = document.createElement('span');
+      t.className = 'vm-tag';
+      t.innerHTML = `${esc(p)} <button type="button" data-tirar="${i}" aria-label="Tirar ${esc(p)}">×</button>`;
+      caixa.insertBefore(t, entrada);
+    });
+  }
+  function vmAddPalavra(texto){
+    const p = String(texto || '').replace(/,/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+    if(!p || vmPalavras.length >= 20) return;
+    if(vmPalavras.some(x => vmNormalizar(x) === vmNormalizar(p))) return;
+    vmPalavras.push(p);
+    vmRenderPalavras();
+  }
+  // O que ficou digitado sem apertar Enter também vale.
+  function vmPalavraPendente(){
+    const entrada = document.getElementById('videoModalPalavraInput');
+    if(entrada.value.trim()){
+      entrada.value.split(',').forEach(vmAddPalavra);
+      entrada.value = '';
+    }
+  }
+  function vmLigarClassificacao(){
+    const caixas = document.getElementById('videoModalObrigatorio');
+    if(!caixas) return;
+    caixas.addEventListener('change', vmAoMarcarChip);
+    caixas.addEventListener('click', ev => { if(ev.target.closest('[data-ver-todos]')) vmAoMarcarChip(ev); });
+    document.getElementById('videoModalTema').addEventListener('change', vmAtualizarTemaOutro);
+    const entrada = document.getElementById('videoModalPalavraInput');
+    entrada.addEventListener('keydown', ev => {
+      if(ev.key === 'Enter' || ev.key === ','){
+        ev.preventDefault();
+        vmPalavraPendente();
+      } else if(ev.key === 'Backspace' && !entrada.value && vmPalavras.length){
+        vmPalavras.pop();
+        vmRenderPalavras();
+      }
+    });
+    entrada.addEventListener('blur', vmPalavraPendente);
+    document.getElementById('videoModalPalavras').addEventListener('click', ev => {
+      const b = ev.target.closest('[data-tirar]');
+      if(b){
+        vmPalavras.splice(Number(b.dataset.tirar), 1);
+        vmRenderPalavras();
+      }
+      entrada.focus();
+    });
   }
 
   // O tipo vem marcado como "Curso (catálogo)" por ser a primeira opção,
@@ -3343,19 +3513,18 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   function atualizarVisibilidadeArea(){
     atualizarOndeAparece();
     const type = document.getElementById('videoModalType').value;
-    const areaWrap = document.getElementById('adminVideoModalAreaWrap');
+    const catalogo = type !== 'onboarding';
+    ['adminVideoModalAreaWrap', 'videoModalObrigWrap', 'videoModalPalavrasWrap'].forEach(id => {
+      document.getElementById(id).hidden = !catalogo;
+    });
+    // Tipo e duração: só admin (a duração sai sozinha da prévia do vídeo).
+    document.getElementById('videoModalTipoWrap').hidden = vmParaAprovacao;
+    document.getElementById('videoModalDuracaoWrap').hidden = vmParaAprovacao;
     const hint = document.getElementById('videoModalHint');
-    if(type === 'onboarding'){
-      areaWrap.style.display = 'none';
-      hint.textContent = 'Vídeo de integração — aparece igual pra todo mundo, não importa o departamento da pessoa.';
-    } else {
-      areaWrap.style.display = '';
-      hint.textContent = 'O curso já fica disponível nos assuntos escolhidos assim que salvar.';
-    }
-    if(vmParaAprovacao){
-      hint.textContent = 'Seu vídeo vai para aprovação: um administrador assiste e libera. '
-        + (type === 'onboarding' ? 'Depois disso aparece na integração de todo mundo.' : 'Depois disso aparece nos assuntos escolhidos.');
-    }
+    hint.textContent = vmParaAprovacao
+      ? 'Preencha as informações abaixo. O vídeo vai para aprovação antes de ficar disponível.'
+      : (catalogo ? 'Preencha as informações abaixo. O vídeo fica disponível assim que salvar.'
+                  : 'Vídeo de integração: aparece igual para todo mundo, na trilha de Integração.');
   }
 
   function atualizarVisibilidadeOrigemVideo(){
@@ -3690,7 +3859,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // Grava as perguntas na aula recém-criada (o cadastro só aceita uma; o
   // editor de perguntas aceita todas, com o minuto de cada).
   function vmAreasMarcadas(){
-    return Array.from(document.querySelectorAll('#videoModalObrigatorio input:checked')).map(i => i.value);
+    return Array.from(document.querySelectorAll('#videoModalObrigatorio input:checked')).map(i => i.value).filter(Boolean);
   }
 
   // Departamentos para os quais o vídeo é obrigatório (tela Treinamentos >
@@ -3744,8 +3913,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       bGer.hidden = vmParaAprovacao; // só admin mexe na lista
       bGer.onclick = () => abrirGerenciarDeptos(() => fillAreaSelect());
     }
-    document.getElementById('adminVideoModalTitle').textContent = vmParaAprovacao ? 'Enviar vídeo para aprovação' : 'Adicionar vídeo';
+    document.getElementById('adminVideoModalTitle').textContent = 'Adicionar vídeo';
     document.getElementById('videoModalSubmit').textContent = vmTextoBotao();
+    if(vmParaAprovacao) document.getElementById('videoModalType').value = 'curso';
     fillAreaSelect();
     vmLimparPerguntas();
     document.getElementById('videoModalOverlay').hidden = false;
@@ -3761,7 +3931,13 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   async function submitAddVideo(){
     const type = document.getElementById('videoModalType').value;
-    const areaSlugs = type === 'onboarding' ? [] : Array.from(document.querySelectorAll('#adminVideoModalAreas input:checked')).map(i => i.value);
+    const catalogo = type !== 'onboarding';
+    const temaEscolhido = document.getElementById('videoModalTema').value;
+    const temaSugerido = temaEscolhido === '__outro' ? document.getElementById('videoModalTemaOutro').value.trim() : '';
+    const areaSlugs = catalogo && temaEscolhido && temaEscolhido !== '__outro' ? [temaEscolhido] : [];
+    const obrigMarcado = document.querySelector('input[name="videoModalObrig"]:checked');
+    const obrigatoriedade = obrigMarcado ? obrigMarcado.value : '';
+    vmPalavraPendente();
     const titulo = document.getElementById('videoModalTitulo').value.trim();
     const descricao = document.getElementById('videoModalDescricao').value.trim();
     const duracao = parseInt(document.getElementById('videoModalDuracao').value, 10) || 5;
@@ -3797,10 +3973,18 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     // Conferido aqui, antes de enfileirar: se a área faltar, o erro só
     // apareceria ao criar o curso — depois do vídeo inteiro já ter
     // subido, jogando fora os minutos de envio.
-    if(type !== 'onboarding' && !areaSlugs.length){
+    let faltando = '';
+    if(catalogo){
+      if(temaEscolhido === '__outro' && !temaSugerido) faltando = 'Escreva o tema que você sugere (ou escolha um da lista).';
+      else if(!areaSlugs.length && !temaSugerido) faltando = 'Escolha o tema do vídeo.';
+      else if(!obrigatoriedade) faltando = 'Em "É obrigatório?", escolha se o vídeo é recomendado ou obrigatório.';
+      else if(obrigatoriedade === 'departamentos' && !vmAreasMarcadas().length) faltando = 'Para ser obrigatório para os departamentos relacionados, marque pelo menos um departamento.';
+      else if(vmPalavras.length < 3) faltando = `Escreva pelo menos 3 palavras-chave (faltam ${3 - vmPalavras.length}). Digite cada uma e aperte Enter.`;
+    }
+    if(faltando){
       feedback.hidden = false;
       feedback.className = 'admin-modal-feedback erro';
-      feedback.textContent = 'Marque pelo menos um assunto para o curso.';
+      feedback.textContent = faltando;
       return;
     }
     let youtubeId = null;
@@ -3849,6 +4033,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         description: descricao,
         duration_minutes: duracao,
       };
+      if(catalogo){
+        body.obrigatoriedade = obrigatoriedade;
+        body.palavras_chave = vmPalavras.slice();
+        if(temaSugerido) body.tema_sugerido = temaSugerido;
+      }
 
       if(origem === 'youtube'){
         body.video_source = 'youtube';
@@ -3878,7 +4067,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         vmLimparPerguntas();
         vmLimparPrevia();
         limparCamposAuditoriaDoModal();
-        document.querySelectorAll('#videoModalObrigatorio input').forEach(i => { i.checked = false; });
+        vmLimparClassificacao();
       } else {
         const criado = await apiFetch('api/admin/courses/create.php', {
           method: 'POST',
@@ -3909,7 +4098,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         vmLimparPerguntas();
         vmLimparPrevia();
         limparCamposAuditoriaDoModal();
-        document.querySelectorAll('#videoModalObrigatorio input').forEach(i => { i.checked = false; });
+        vmLimparClassificacao();
         if(!pendente){
           recarregarTelaConteudo();
           carregarTreinamentos();
@@ -5710,8 +5899,14 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     detalhe.innerHTML = d.video ? aprovDetalheHtml(d.video)
       : '<div class="aprov-vazio">Tudo em dia: nenhum vídeo esperando aprovação.</div>';
-    const btnAprovar = detalhe.querySelector('.aprov-aprovar');
-    if(btnAprovar) btnAprovar.addEventListener('click', () => aprovDecidir('aprovar'));
+    detalhe.querySelectorAll('.aprov-aprovar').forEach(b => b.addEventListener('click', () => aprovDecidir('aprovar', b.dataset.tema || '')));
+    const selTema = detalhe.querySelector('#aprovTemaAssunto');
+    if(selTema){
+      apiFetch('api/areas/list.php?todas=1').then(r => {
+        selTema.innerHTML = '<option value="">Escolha o assunto...</option>'
+          + (r.areas || []).map(a => `<option value="${esc(a.slug)}">${esc(a.name)}</option>`).join('');
+      }).catch(e => { selTema.innerHTML = `<option value="">Não consegui carregar: ${esc(e.message)}</option>`; });
+    }
     const btnRecusar = detalhe.querySelector('.aprov-recusar');
     if(btnRecusar) btnRecusar.addEventListener('click', () => aprovDecidir('recusar'));
     // Editar antes de decidir; ao fechar o diálogo, a tela recarrega com o que mudou.
@@ -5755,13 +5950,25 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <div class="vm-obrigatorio" id="eeAreas">${areas.map(a => `
           <label class="areas-aula-item"><input type="checkbox" value="${esc(a.slug)}" ${(v.assuntos_do_video || []).some(x => x.slug === a.slug) || (!(v.assuntos_do_video || []).length && a.slug === v.area_slug) ? 'checked' : ''}> <span>${esc(a.name)}</span></label>`).join('')}</div>
         <p class="admin-field-hint">O vídeo aparece em todos os assuntos marcados; o primeiro é o principal.</p>
+        ${v.tema_status === 'pendente' && v.tema_sugerido ? `<p class="admin-field-hint">Tema sugerido: <strong>${esc(v.tema_sugerido)}</strong> (esperando aprovação). Enquanto isso, o vídeo pode ficar sem assunto marcado.</p>` : ''}
+      </div>
+      <div id="eeClassifWrap">
+        <label class="admin-field-label" for="eeObrig">É obrigatório?</label>
+        <select id="eeObrig">
+          ${v.obrigatoriedade ? '' : '<option value="" selected>Como está (obrigatório para os departamentos marcados)</option>'}
+          <option value="recomendado" ${v.obrigatoriedade === 'recomendado' ? 'selected' : ''}>Não, é apenas recomendado</option>
+          <option value="departamentos" ${v.obrigatoriedade === 'departamentos' ? 'selected' : ''}>Sim, para os departamentos relacionados</option>
+          <option value="todos" ${v.obrigatoriedade === 'todos' ? 'selected' : ''}>Sim, para todos os colaboradores</option>
+        </select>
+        <label class="admin-field-label" for="eePalavras">Palavras-chave <span class="vm-label-extra">(mínimo 3, separadas por vírgula)</span></label>
+        <input type="text" id="eePalavras" maxlength="1000" value="${esc((v.palavras_chave || []).join(', '))}" placeholder="Ex: RMI, requisição, pedido">
       </div>
       <label class="admin-field-label" for="eeDuracao">Duração (minutos)</label>
       <input type="number" id="eeDuracao" min="0" max="600" value="${esc(v.duracao_min || 0)}">
-      <label class="admin-field-label">Obrigatório para quais departamentos?</label>
+      <label class="admin-field-label">Departamentos relacionados</label>
       <div class="vm-obrigatorio" id="eeDeptos">${deptos.map(d => `
         <label class="areas-aula-item"><input type="checkbox" value="${esc(d.nome)}" ${d.marcado ? 'checked' : ''}> <span>${esc(d.nome)}</span></label>`).join('') || '<span class="admin-field-hint">Nenhum departamento.</span>'}</div>
-      <p class="admin-field-hint">Nenhum marcado = obrigatório para todos.</p>
+      <p class="admin-field-hint">O vídeo aparece em destaque para esses departamentos. Nenhum marcado = todos.</p>
       <label class="admin-check"><input type="checkbox" id="eeAviso" ${v.aviso_presenca ? 'checked' : ''}> Aviso "Você ainda está aí?" durante o vídeo</label>
       <details class="admin-auditoria-fields" ${v.instrutor || v.conteudo_programatico || v.assuntos ? 'open' : ''}>
         <summary>Dados para auditoria</summary>
@@ -5781,7 +5988,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       </details>
       <button type="button" class="admin-modal-submit" id="eeSalvar">Salvar alterações</button>
       <div class="admin-modal-feedback" id="eeFeedback" hidden></div>`;
-    const atualizaArea = () => { document.getElementById('eeAreaWrap').hidden = document.getElementById('eeTipo').value === 'onboarding'; };
+    const atualizaArea = () => {
+      const integracao = document.getElementById('eeTipo').value === 'onboarding';
+      document.getElementById('eeAreaWrap').hidden = integracao;
+      document.getElementById('eeClassifWrap').hidden = integracao;
+    };
     document.getElementById('eeTipo').addEventListener('change', atualizaArea);
     atualizaArea();
     const salvar = document.getElementById('eeSalvar');
@@ -5803,7 +6014,21 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         conteudo_programatico: document.getElementById('eeConteudo').value.trim(),
         assuntos: document.getElementById('eeAssuntos').value.trim(),
       };
-      if(tipo === 'curso') dados.area_slugs = Array.from(corpo.querySelectorAll('#eeAreas input:checked')).map(i => i.value);
+      if(tipo === 'curso'){
+        dados.area_slugs = Array.from(corpo.querySelectorAll('#eeAreas input:checked')).map(i => i.value);
+        const obrig = document.getElementById('eeObrig').value;
+        const palavras = document.getElementById('eePalavras').value.split(',').map(x => x.trim()).filter(Boolean);
+        const deptosMarcados = corpo.querySelectorAll('#eeDeptos input:checked').length;
+        let erro = '';
+        if(obrig === 'departamentos' && !deptosMarcados) erro = 'Para ser obrigatório para os departamentos relacionados, marque pelo menos um departamento.';
+        else if((palavras.length || (v.palavras_chave || []).length) && palavras.length < 3) erro = 'Escreva pelo menos 3 palavras-chave, separadas por vírgula.';
+        if(erro){
+          fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = erro;
+          return;
+        }
+        if(obrig) dados.obrigatoriedade = obrig;
+        if(palavras.length) dados.palavras_chave = palavras;
+      }
       salvar.disabled = true;
       try{
         await apiFetch('api/admin/courses/update.php', { method: 'POST', body: JSON.stringify(dados) });
@@ -5844,7 +6069,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       ['Enviado por', [autor.nome, autor.cargo].filter(Boolean).join(' · ') + (autor.email ? '\n' + autor.email : '')],
       ['Enviado em', aprovData(v.enviado_em)],
       ['Onde aparece', v.tipo === 'onboarding' ? 'Integração (trilha obrigatória)' : 'Curso · ' + ((v.assuntos_do_video || []).map(x => x.name).join(', ') || v.area || 'sem assunto')],
-      ['Obrigatório para', v.departamentos.length ? v.departamentos.join(', ') : 'Todos os departamentos'],
+      ['Tema sugerido', v.tema_sugerido ? `${v.tema_sugerido} (${{ pendente: 'esperando decisão', aprovado: 'aprovado', recusado: 'recusado' }[v.tema_status] || v.tema_status})` : ''],
+      ['Departamentos relacionados', v.departamentos.length ? v.departamentos.join(', ') : 'Todos os departamentos'],
+      ['É obrigatório?', { recomendado: 'Não, é apenas recomendado', departamentos: 'Sim, para os departamentos relacionados', todos: 'Sim, para todos os colaboradores' }[v.obrigatoriedade] || ''],
+      ['Palavras-chave', (v.palavras_chave || []).join(', ')],
       ['Origem', { youtube: 'YouTube', s3: 'Arquivo enviado', playlist: 'Playlist do YouTube' }[v.origem] || v.origem],
       ['Duração informada', v.duracao_min ? v.duracao_min + ' min' : ''],
       ['"Você ainda está aí?"', v.aviso_presenca ? 'Sim' : 'Não'],
@@ -5886,13 +6114,26 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             </div>`}
         <div class="admin-modal-feedback" id="aprovFeedback" hidden></div>
       </div>` : '';
+    const temaPendente = v.tema_status === 'pendente' && !!v.tema_sugerido;
+    const semAssunto = !(v.assuntos_do_video || []).length && !v.area_slug;
+    const blocoTema = temaPendente ? `
+        <div class="aprov-tema">
+          <p><strong>Tema sugerido: "${esc(v.tema_sugerido)}"</strong>. Ele ainda não existe nos assuntos: aprovado, vira um assunto novo e o vídeo entra nele.</p>
+          ${semAssunto ? `<label class="trn-rotulo" for="aprovTemaAssunto">Se recusar o tema, em qual assunto o vídeo fica?</label>
+          <select id="aprovTemaAssunto"><option value="">Carregando assuntos...</option></select>` : ''}
+        </div>` : '';
     const acoes = v.status === 'pendente' ? `
       <div class="aprov-acoes">
+        ${blocoTema}
         <label class="trn-rotulo" for="aprovMotivo">Motivo, se for recusar (opcional)</label>
         <textarea id="aprovMotivo" maxlength="500" placeholder="Ex.: o vídeo está sem áudio a partir dos 3 minutos"></textarea>
         <div class="aprov-botoes">
+          ${temaPendente ? `
+          <button type="button" class="trn-btn aprov-aprovar" data-tema="aprovar">Aprovar vídeo e tema</button>
+          <button type="button" class="trn-btn aprov-aprovar aprov-aprovar-so" data-tema="recusar">Aprovar vídeo, recusar tema</button>
+          <button type="button" class="trn-btn aprov-recusar">Recusar os dois</button>` : `
           <button type="button" class="trn-btn aprov-aprovar">Aprovar e publicar</button>
-          <button type="button" class="trn-btn aprov-recusar">Recusar</button>
+          <button type="button" class="trn-btn aprov-recusar">Recusar</button>`}
         </div>
         <div class="admin-modal-feedback" id="aprovFeedback" hidden></div>
       </div>` : '';
@@ -5910,10 +6151,20 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       ${acoes}${reconsiderar}`;
   }
 
-  async function aprovDecidir(acao){
+  async function aprovDecidir(acao, tema){
     const v = aprovEstado.video;
     if(!v) return;
     const motivo = (document.getElementById('aprovMotivo') || {}).value || '';
+    const selTema = document.getElementById('aprovTemaAssunto');
+    const areaSlug = tema === 'recusar' && selTema ? selTema.value : '';
+    if(tema === 'recusar' && selTema && !areaSlug){
+      const fb = document.getElementById('aprovFeedback');
+      fb.hidden = false;
+      fb.className = 'admin-modal-feedback erro';
+      fb.textContent = 'Recusando o tema, escolha em qual assunto o vídeo vai ficar.';
+      selTema.focus();
+      return;
+    }
     if(acao === 'recusar'){
       const apagaArquivo = v.origem === 's3';
       const ok = confirm(`Recusar "${v.titulo}"?` + (apagaArquivo
@@ -5926,13 +6177,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const feedback = document.getElementById('aprovFeedback');
     try{
       const resp = await apiFetch('api/admin/aprovacao/decidir.php', {
-        method: 'POST', body: JSON.stringify({ course_id: v.id, acao, motivo: motivo.trim() }),
+        method: 'POST', body: JSON.stringify(Object.assign({ course_id: v.id, acao, motivo: motivo.trim() },
+          tema ? { tema } : {}, areaSlug ? { area_slug: areaSlug } : {})),
       });
+      if(resp.tema === 'aprovado' && window.mseRecarregarAreas) window.mseRecarregarAreas(); // o assunto novo já aparece
       if(acao === 'aprovar') recarregarTelaConteudo(); // já aparece na trilha/catálogo
       const aviso = document.getElementById('aprovAvisoEmail');
       aviso.className = 'aprov-aviso is-ok';
       aviso.textContent = acao === 'aprovar'
         ? `"${v.titulo}" foi aprovado e já está publicado${v.status === 'recusado' ? ' (estava no histórico de recusados)' : ''}.`
+          + (resp.tema === 'aprovado' ? ` O tema "${v.tema_sugerido}" virou um assunto novo.` : resp.tema === 'recusado' ? ` O tema "${v.tema_sugerido}" foi recusado.` : '')
         : `"${v.titulo}" foi recusado.` + (resp.arquivo_excluido
           ? ' O arquivo foi apagado da AWS e o registro fica no histórico de recusados.'
           : (resp.aviso_arquivo ? ' Atenção: ' + resp.aviso_arquivo : ' Ele fica no histórico de recusados, caso você queira aprovar depois.'));
@@ -7034,6 +7288,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(btnVideoSubmit) btnVideoSubmit.addEventListener('click', submitAddVideo);
     const videoTypeSelect = document.getElementById('videoModalType');
     if(videoTypeSelect) videoTypeSelect.addEventListener('change', atualizarVisibilidadeArea);
+    vmLigarClassificacao();
 
     const videoOrigemSelect = document.getElementById('videoModalOrigem');
     if(videoOrigemSelect) videoOrigemSelect.addEventListener('change', () => { atualizarVisibilidadeOrigemVideo(); vmAtualizarPrevia(); });
@@ -7109,6 +7364,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const btnEnviarVideo = document.getElementById('btnEnviarVideo');
     if(!isAdmin && getRealSessionToken()) mostrarAvisosDeRecusa();
     if(!isAdmin && getRealSessionToken()) atualizarBotaoMeusVideos();
+    if(getRealSessionToken() && window.mseMostrarSuasAulas) setTimeout(window.mseMostrarSuasAulas, 400);
     if(btnEnviarVideo && !isAdmin && getRealSessionToken()){
       // Mesma barra do admin, só com este botão (vermelho).
       document.getElementById('adminToolbar').hidden = false;

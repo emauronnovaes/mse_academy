@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../../src/Auth.php';
 require_once __DIR__ . '/../../../src/Treinamentos.php';
 require_once __DIR__ . '/../../../src/Aprovacao.php';
 require_once __DIR__ . '/../../../src/Assuntos.php';
+require_once __DIR__ . '/../../../src/Classificacao.php';
 
 mse_cors();
 // Qualquer pessoa logada pode cadastrar. Admin publica na hora; os demais
@@ -47,9 +48,15 @@ if (!in_array($type, ['curso', 'onboarding'], true)) {
 // Só o catálogo (type='curso') precisa de uma área pra recomendação
 // funcionar.
 $pediuAssunto = $areaSlug !== '' || (isset($input['area_slugs']) && is_array($input['area_slugs']) && count($input['area_slugs']) > 0);
-if ($type === 'curso' && !$pediuAssunto) {
-    mse_error('Informe area_slug (ex: "financeiro", "ti", "obras").', 422);
+// "Outro" no Tema: assunto novo sugerido. Admin cria na hora; os demais
+// esperam a aprovação (o admin aprova ou recusa o tema separado do vídeo).
+$temaSugerido = mb_substr(trim(preg_replace('/\s+/', ' ', (string) ($input['tema_sugerido'] ?? ''))), 0, 120);
+if ($type === 'curso' && !$pediuAssunto && $temaSugerido === '') {
+    mse_error('Escolha o tema do vídeo (ou selecione Outro e sugira um).', 422);
 }
+// Catálogo: palavras-chave (mínimo 3) e recomendado/obrigatório são obrigatórios.
+$palavrasChave = mse_ler_palavras_chave($input, $type === 'curso');
+$obrigatoriedade = $type === 'curso' ? mse_ler_obrigatoriedade($input, true) : null;
 if ($title === '') {
     mse_error('Informe o título do vídeo.', 422);
 }
@@ -95,6 +102,16 @@ if ($paraAprovacao && !mse_garantir_colunas_aprovacao($pdo)) {
 // Assuntos do vídeo (os cartões da seção Cursos): vários possíveis; o
 // primeiro vira o principal (courses.area_id).
 $areaIds = mse_ler_assuntos($pdo, $input);
+$classifica = $palavrasChave !== null || $obrigatoriedade !== null || $temaSugerido !== '';
+if ($classifica && !mse_garantir_colunas_classificacao($pdo)) {
+    mse_error('Este servidor ainda não aceita palavras-chave e obrigatoriedade. Falta rodar a migração 040 no banco (migrations/040_classificacao_de_videos.sql).', 409);
+}
+// Tema novo sugerido por admin: vira assunto na hora (é o principal).
+if ($temaSugerido !== '' && !$paraAprovacao && $type === 'curso') {
+    $novo = mse_criar_ou_achar_assunto($pdo, $temaSugerido);
+    $areaIds = array_values(array_unique(array_merge([$novo], $areaIds)));
+    $temaSugerido = '';
+}
 $areaId = $areaIds[0] ?? null;
 
 // Pergunta do quiz é opcional na criação — dá pra criar o vídeo primeiro
@@ -209,6 +226,11 @@ try {
         $pdo->prepare(
             "UPDATE courses SET aprovacao_status = 'pendente', enviado_por = ?, enviado_em = NOW() WHERE id = ?"
         )->execute([(int) $usuario['id'], $courseId]);
+    }
+
+    if ($classifica) {
+        $pdo->prepare('UPDATE courses SET palavras_chave = ?, obrigatoriedade = ?, tema_sugerido = ?, tema_status = ? WHERE id = ?')
+            ->execute([$palavrasChave, $obrigatoriedade, $temaSugerido ?: null, $temaSugerido !== '' ? 'pendente' : null, $courseId]);
     }
 
     if ($camposAuditoria) {
