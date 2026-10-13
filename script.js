@@ -914,9 +914,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Modo revisão — pode avançar a barra à vontade.</div>
           <div class="vid-player-wrap tem-controles">
             <div id="onb-yt-${mod.id}"></div>
-            <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
-              <i class="fa-solid fa-display" aria-hidden="true"></i>
-            </button>
           </div>
         `
         : `
@@ -992,10 +989,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       ? `
         <div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Modo revisão — pode avançar a barra à vontade.</div>
         <div class="vid-player-wrap tem-controles">
-          <video id="onb-video-${mod.id}" src="${videoSrc}" controls controlslist="nofullscreen" playsinline></video>
-          <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
-            <i class="fa-solid fa-display" aria-hidden="true"></i>
-          </button>
+          <video id="onb-video-${mod.id}" src="${videoSrc}" controls playsinline></video>
         </div>
       `
       : `
@@ -1758,9 +1752,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(!el || el.classList.contains('vid-player-wrap')) return;
     const wrap = el.closest('.vid-player-wrap');
     if(!wrap) return;
-    document.exitFullscreen()
-      .then(() => wrap.requestFullscreen())
-      .catch(() => {}); // navegador recusou a troca: fica fora da tela cheia
+    // Troca o elemento em tela cheia direto (sem sair antes): se o navegador
+    // recusar, o vídeo continua em tela cheia, só sem o aviso por cima.
+    wrap.requestFullscreen().catch(() => {});
   });
 
   function onbSetWatchPct(mod, pct){
@@ -2790,16 +2784,13 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       const trava = criarTravaDeAvanco(jaConcluiu);
 
       if(detalhe.video_url){
-        // controlslist="nofullscreen": a tela cheia do próprio <video> não
-        // deixa nada da página por cima, nem o "Você ainda está aí?". No
-        // lugar entra o botão da Academy, que expande a moldura inteira.
+        // Tela cheia: o botão do próprio player (embaixo). Ao entrar em tela
+        // cheia, a Academy passa a moldura inteira para tela cheia (veja o
+        // "fullscreenchange" mais acima), pra o "Você ainda está aí?" continuar aparecendo.
         iniciarSessaoPresenca(course.id);
         wrap.classList.add('tem-controles');
         wrap.innerHTML = `
-          <video src="${detalhe.video_url}" controls controlslist="nofullscreen" playsinline style="width:100%;border-radius:12px"></video>
-          <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
-            <i class="fa-solid fa-display" aria-hidden="true"></i>
-          </button>
+          <video src="${detalhe.video_url}" controls playsinline style="width:100%;border-radius:12px"></video>
         `;
         ligarBotaoTelaCheia(wrap);
         const v = wrap.querySelector('video');
@@ -2855,11 +2846,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       // Depois de concluído também: a tela cheia do próprio YouTube não
       // deixa nada da Academy por cima, nem o "Você ainda está aí?".
       if(jaConcluiu) wrap.classList.add('tem-controles');
-      wrap.insertAdjacentHTML('beforeend', `
+      wrap.insertAdjacentHTML('beforeend', jaConcluiu ? '' : `
         <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
           <i class="fa-solid fa-display" aria-hidden="true"></i>
         </button>
-      ` + (jaConcluiu ? '' : marcacaoControlesDeRevisao('catalog')));
+      ` + marcacaoControlesDeRevisao('catalog'));
       ligarBotaoTelaCheia(wrap);
 
       iniciarSessaoPresenca(course.id);
