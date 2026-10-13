@@ -28,29 +28,18 @@
 */
 
 CREATE TABLE IF NOT EXISTS consultasmia (
-  id                       INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  chave                    VARCHAR(64)  NOT NULL,
-  nome                     VARCHAR(200) NOT NULL,
-  cpf                      VARCHAR(11)  NULL,
-  email                    VARCHAR(150) NULL,
-  cargo                    VARCHAR(200) NULL,
-  departamento             VARCHAR(150) NULL,
-  data_admissao            DATE         NOT NULL,
-  user_id                  INT UNSIGNED NULL,
-  entrou_na_academy        TINYINT(1)   NOT NULL DEFAULT 0,
-  primeiro_login           DATETIME     NULL,
-  ultimo_login             DATETIME     NULL,
-  total_logins             INT          NOT NULL DEFAULT 0,
-  situacao_integracao      VARCHAR(20)  NOT NULL,
-  integracao_concluida     TINYINT(1)   NOT NULL DEFAULT 0,
-  integracao_concluida_em  DATETIME     NULL,
-  aulas_obrigatorias       INT          NOT NULL DEFAULT 0,
-  aulas_concluidas         INT          NOT NULL DEFAULT 0,
-  aulas_concluidas_nomes   TEXT         NULL,
+  id                             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  nome                           VARCHAR(200) NOT NULL,
+  cpf                            VARCHAR(11)  NULL,
+  email                          VARCHAR(150) NULL,
+  aulas_obrigatorias_concluidas  INT          NOT NULL DEFAULT 0,
+  aula                           VARCHAR(200) NULL,
+  assunto                        VARCHAR(500) NULL,
+  descricao                      TEXT         NULL,
+  palavras_chave                 VARCHAR(1000) NULL,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_viniconsultas_chave (chave),
-  KEY idx_viniconsultas_user (user_id),
-  KEY idx_viniconsultas_cpf (cpf)
+  KEY idx_consultasmia_cpf (cpf),
+  KEY idx_consultasmia_nome (nome)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS consultasmia_2 (

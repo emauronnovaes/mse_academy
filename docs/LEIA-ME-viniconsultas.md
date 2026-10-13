@@ -5,7 +5,7 @@ Quem consulta só **lê** (`SELECT`); quem grava é a própria Academy.
 
 | Tabela | O que é |
 |---|---|
-| `consultasmia` | Uma linha por pessoa contratada recentemente (resumo) |
+| `consultasmia` | Uma linha por **aula obrigatória concluída** de cada pessoa contratada recentemente |
 | `consultasmia_2` | O log: cada login, entrada e saída de vídeo e abertura do baú, com data e hora |
 
 Os dados de acesso ao banco **não** estão aqui: peça ao TI um usuário **somente leitura**
@@ -18,34 +18,32 @@ GRANT SELECT ON mse_academy.consultasmia_2 TO 'usuario_consulta'@'%';
 
 ---
 
-## consultasmia (resumo por pessoa)
+## consultasmia (uma linha por aula concluída)
 
 | Coluna | Significado |
 |---|---|
-| `nome`, `cpf` (11 dígitos), `email`, `cargo`, `departamento` | Dados da ficha do Portal |
-| `data_admissao` | Data de admissão (API de integração do RH) |
-| `entrou_na_academy` | 1 = já fez login na Academy; 0 = nunca entrou |
-| `primeiro_login`, `ultimo_login`, `total_logins` | Logins na Academy |
-| `situacao_integracao` | `sem_acesso`, `nao_iniciou`, `em_andamento`, `concluiu` ou `dispensado` |
-| `integracao_concluida` | 1 = concluiu todos os cursos da **integração** (separada das aulas obrigatórias) |
-| `integracao_concluida_em` | Data e hora em que concluiu |
-| `aulas_obrigatorias` | Quantas aulas são **obrigatórias** para a pessoa: as marcadas como obrigatórias para o **departamento** dela e as obrigatórias para todos. Aulas só **recomendadas** e cursos de integração **não** entram. 0 = nenhuma exigida |
-| `aulas_concluidas` | **1** = concluiu TODAS as aulas obrigatórias do departamento; **0** = falta alguma (ou não há nenhuma exigida) |
-| `aulas_concluidas_nomes` | Os **nomes** das aulas obrigatórias do departamento que a pessoa já concluiu, separados por ` \| ` (a integração não entra). Vazio = nenhuma ainda |
+| `nome`, `cpf` (11 dígitos), `email` | A pessoa (dados da ficha do Portal) |
+| `aulas_obrigatorias_concluidas` | Quantas aulas **obrigatórias** a pessoa já concluiu (repete em todas as linhas dela) |
+| `aula` | Nome da aula obrigatória concluída daquela linha |
+| `assunto` | Assunto(s) da aula, separados por vírgula |
+| `descricao` | Descrição da aula |
+| `palavras_chave` | Palavras-chave da aula, separadas por vírgula |
+
+- Aulas obrigatórias são as marcadas como obrigatórias para o **departamento** da pessoa e as obrigatórias para todos.
+  Aulas só **recomendadas** e cursos de **integração** não entram.
+- Quem ainda não concluiu nenhuma aparece em **1 linha**, com `aula` vazia e `aulas_obrigatorias_concluidas = 0`.
+- Atualiza sozinha quando a pessoa conclui uma aula. Contratados novos entram na próxima atualização
+  (botão **Atualizar banco** ou a tarefa agendada do servidor).
 
 Exemplos:
 
 ```sql
--- Contratados que NÃO concluíram a integração
-SELECT nome, cpf, email, data_admissao, aulas_concluidas, aulas_obrigatorias, ultimo_login
-FROM consultasmia WHERE integracao_concluida = 0 AND situacao_integracao <> 'dispensado';
+-- Todas as aulas obrigatórias concluídas por uma pessoa
+SELECT aula, assunto, descricao, palavras_chave FROM consultasmia WHERE cpf = '00000000000';
 
--- O que cada um já fez e o que falta
-SELECT nome, aulas_obrigatorias, aulas_concluidas FROM consultasmia WHERE aulas_obrigatorias > 0 AND aulas_concluidas = 0;
-
--- Concluíram: com a data e a prova do baú
-SELECT nome, integracao_concluida_em
-FROM consultasmia WHERE integracao_concluida = 1;
+-- Quantas cada pessoa concluiu (1 linha por pessoa)
+SELECT nome, cpf, email, MAX(aulas_obrigatorias_concluidas) AS concluidas
+FROM consultasmia GROUP BY nome, cpf, email ORDER BY nome;
 ```
 
 ---

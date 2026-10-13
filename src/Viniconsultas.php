@@ -8,7 +8,9 @@ require_once __DIR__ . '/Admitidos.php';
  * consultasmia: tabela de consulta (só leitura) dos contratados recentes e
  * da prova de que concluíram, ou não, a integração na MSE Academy.
  *
- *   consultasmia          um registro por pessoa (resumo)
+ *   consultasmia    uma linha por aula obrigatória concluída de cada pessoa
+ *                   (nome, cpf, email, quantas concluiu, aula, assunto,
+ *                   descrição, palavras-chave)
  *   consultasmia_2  o log: login, video_entrada, video_saida, bau_aberto
  *
  * Migração 032. Se não rodou, as tabelas são criadas aqui sozinhas.
@@ -34,6 +36,17 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
                 $pdo->exec("RENAME TABLE {$velho} TO {$novo}");
             }
         }
+        // Formato antigo (1 linha por pessoa, com situacao_integracao): renomeia para
+        // consultasmia_antiga — nada é apagado — e o formato novo é criado abaixo.
+        $col = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consultasmia' AND COLUMN_NAME = 'situacao_integracao'");
+        $col->execute();
+        if ($col->fetchColumn() !== false) {
+            $destino = 'consultasmia_antiga';
+            for ($n = 2; $existe($destino); $n++) {
+                $destino = 'consultasmia_antiga_' . $n;
+            }
+            $pdo->exec("RENAME TABLE consultasmia TO {$destino}");
+        }
         $sql = file_get_contents(__DIR__ . '/../migrations/032_viniconsultas.sql');
         $sql = preg_replace('#/\*.*?\*/#s', '', (string) $sql);
         foreach (array_filter(array_map('trim', explode(';', (string) $sql))) as $comando) {
@@ -48,17 +61,6 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
         if (!$tem('consultasmia_2', 'curso_id')) {
             $pdo->exec('ALTER TABLE consultasmia_2 ADD COLUMN curso_id INT UNSIGNED NOT NULL DEFAULT 0, ADD COLUMN curso VARCHAR(200) NULL');
             $pdo->exec('ALTER TABLE consultasmia_2 DROP INDEX uq_viniconsultas_eventos, ADD UNIQUE KEY uq_viniconsultas_eventos (user_id, tipo, evento_em, curso_id)');
-        }
-        // Nomes das aulas obrigatórias (do departamento) já concluídas.
-        if (!$tem('consultasmia', 'aulas_concluidas_nomes')) {
-            $pdo->exec('ALTER TABLE consultasmia ADD COLUMN aulas_concluidas_nomes TEXT NULL');
-        }
-        // verificado_em foi retirado da tabela. Enquanto a coluna ainda existir (ela só some quando
-        // a migração 035 é rodada), passa a aceitar vazio, para a gravação não falhar sem ela.
-        $st = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consultasmia' AND COLUMN_NAME = 'verificado_em' AND IS_NULLABLE = 'NO'");
-        $st->execute();
-        if ($st->fetchColumn() !== false) {
-            $pdo->exec('ALTER TABLE consultasmia MODIFY verificado_em DATETIME NULL');
         }
         return $ok = true;
     } catch (Throwable $e) {
@@ -196,6 +198,7 @@ function mse_vini_cursos_por_ids(PDO $pdo, ?int $userId, array $ids): array
     );
     $st->execute(array_merge($temLog ? [(int) $userId, (int) $userId, (int) $userId, (int) $userId, (int) $userId] : [(int) $userId, (int) $userId], array_values($ids)));
     return array_map(static fn($l) => [
+        'id' => (int) $l['id'],
         'curso' => $l['title'],
         'status' => $l['status'] ?: 'nao_iniciado',
         'percentual_assistido' => $l['watched_pct'] !== null ? (int) $l['watched_pct'] : 0,
@@ -263,61 +266,27 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
          FROM presenca_log p JOIN courses c ON c.id = p.course_id
          WHERE p.user_id = ? AND p.evento IN ('checkin', 'checkout')"
     ) : null;
-    $resumoEventos = $pdo->prepare(
-        "SELECT tipo, COUNT(*) AS n, MIN(evento_em) AS primeiro, MAX(evento_em) AS ultimo
-         FROM consultasmia_2 WHERE user_id = ? GROUP BY tipo"
-    );
-    $upsert = $pdo->prepare(
-        'INSERT INTO consultasmia
-           (chave, nome, cpf, email, cargo, departamento, data_admissao, user_id, entrou_na_academy, primeiro_login, ultimo_login,
-            total_logins, situacao_integracao, integracao_concluida, integracao_concluida_em,
-            aulas_obrigatorias, aulas_concluidas, aulas_concluidas_nomes)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-         ON DUPLICATE KEY UPDATE
-           nome = VALUES(nome), cpf = VALUES(cpf), email = VALUES(email), cargo = VALUES(cargo), departamento = VALUES(departamento),
-           user_id = VALUES(user_id), entrou_na_academy = VALUES(entrou_na_academy), primeiro_login = VALUES(primeiro_login),
-           ultimo_login = VALUES(ultimo_login), total_logins = VALUES(total_logins),
-           situacao_integracao = VALUES(situacao_integracao),
-           integracao_concluida = VALUES(integracao_concluida), integracao_concluida_em = VALUES(integracao_concluida_em),
-           aulas_obrigatorias = VALUES(aulas_obrigatorias), aulas_concluidas = VALUES(aulas_concluidas),
-           aulas_concluidas_nomes = VALUES(aulas_concluidas_nomes)'
-    );
-
     $gravadas = 0;
     foreach ($pessoas as $p) {
         $userId = !empty($p['user_id']) ? (int) $p['user_id'] : null;
         $cpf = preg_replace('/\D/', '', (string) ($p['cpf'] ?? ''));
+        $cpf = strlen($cpf) === 11 ? $cpf : null;
 
-        $ev = ['login' => null, 'video_entrada' => null, 'video_saida' => null, 'bau_aberto' => null];
+        // O log (consultasmia_2) continua sendo completado com o histórico.
         if ($userId) {
-            $args = [strlen($cpf) === 11 ? $cpf : null, $p['email'] ?? null, $userId];
+            $args = [$cpf, $p['email'] ?? null, $userId];
             if ($corte) {
                 $args[] = $corte;
             }
             $historico->execute($args);
             if ($copiaVideos) {
-                $copiaVideos->execute([strlen($cpf) === 11 ? $cpf : null, $p['email'] ?? null, $userId]);
-            }
-            $resumoEventos->execute([$userId]);
-            foreach ($resumoEventos->fetchAll() as $l) {
-                $ev[$l['tipo']] = $l;
+                $copiaVideos->execute([$cpf, $p['email'] ?? null, $userId]);
             }
         }
 
-        // Aulas obrigatórias = só as marcadas para o departamento da pessoa (integração fica de fora).
-        // aulas_concluidas: 1 = concluiu TODAS; 0 = falta alguma (ou não há nenhuma exigida).
+        // Aulas obrigatórias = as do departamento da pessoa e as obrigatórias para todos (integração fica de fora).
         $aulas = mse_vini_aulas_do_departamento($pdo, $userId, isset($p['departamento']) ? (string) $p['departamento'] : null);
-        $nomesFeitas = array_map(static fn($c) => $c['curso'], array_filter($aulas, static fn($c) => $c['status'] === 'concluido'));
-        $todasFeitas = $aulas && !array_filter($aulas, static fn($c) => $c['status'] !== 'concluido');
-        $upsert->execute([
-            mse_integracao_chave($cpf ?: null, (string) $p['nome'], (string) $p['data_admissao']),
-            $p['nome'], strlen($cpf) === 11 ? $cpf : null, $p['email'] ?? null, $p['funcao'] ?? null, $p['departamento'] ?? null,
-            $p['data_admissao'], $userId, $userId && $ev['login'] ? 1 : 0,
-            $ev['login']['primeiro'] ?? null, $ev['login']['ultimo'] ?? null, (int) ($ev['login']['n'] ?? 0),
-            !empty($p['dispensado']) ? 'dispensado' : $p['situacao'],
-            $p['situacao'] === 'concluiu' ? 1 : 0, $p['concluiu_em'] ?? null,
-            count($aulas), $todasFeitas ? 1 : 0, $nomesFeitas ? implode(' | ', $nomesFeitas) : null,
-        ]);
+        mse_vini_gravar_linhas_pessoa($pdo, (string) $p['nome'], $cpf, $p['email'] ?? null, $aulas);
         $gravadas++;
     }
     return $gravadas;
@@ -333,27 +302,87 @@ function mse_vini_atualizar_aulas_do_usuario(int $userId): void
 {
     try {
         $pdo = mse_db();
-        if ($userId <= 0 || !mse_tem_tabela($pdo, 'consultasmia') || !mse_tem_coluna($pdo, 'consultasmia', 'aulas_concluidas_nomes')) {
+        if ($userId <= 0 || !mse_tem_tabela($pdo, 'consultasmia') || !mse_tem_coluna($pdo, 'consultasmia', 'aulas_obrigatorias_concluidas')) {
             return;
         }
-        $st = $pdo->prepare('SELECT id, departamento FROM consultasmia WHERE user_id = ?');
+        $st = $pdo->prepare('SELECT cpf, email FROM users WHERE id = ?');
         $st->execute([$userId]);
-        $linhas = $st->fetchAll();
-        if (!$linhas) {
+        $u = $st->fetch();
+        if (!$u) {
             return;
         }
-        $upd = $pdo->prepare('UPDATE consultasmia SET aulas_obrigatorias = ?, aulas_concluidas = ?, aulas_concluidas_nomes = ? WHERE id = ?');
-        foreach ($linhas as $l) {
-            $aulas = mse_vini_aulas_do_departamento($pdo, $userId, $l['departamento'] !== null ? (string) $l['departamento'] : null);
-            $feitas = array_values(array_filter($aulas, static fn($c) => $c['status'] === 'concluido'));
-            $upd->execute([
-                count($aulas),
-                $aulas && count($feitas) === count($aulas) ? 1 : 0,
-                $feitas ? implode(' | ', array_column($feitas, 'curso')) : null,
-                (int) $l['id'],
-            ]);
+        $cpf = preg_replace('/\D/', '', (string) $u['cpf']);
+        $cpf = strlen($cpf) === 11 ? $cpf : null;
+        // Só quem já está na tabela (contratados recentes), achado pelo CPF ou e-mail.
+        $st = $pdo->prepare($cpf ? 'SELECT nome, email FROM consultasmia WHERE cpf = ? LIMIT 1' : 'SELECT nome, email FROM consultasmia WHERE email = ? LIMIT 1');
+        $st->execute([$cpf ?: $u['email']]);
+        $linha = $st->fetch();
+        if (!$linha) {
+            return;
         }
+        $aulas = mse_vini_aulas_do_departamento($pdo, $userId, null);
+        mse_vini_gravar_linhas_pessoa($pdo, (string) $linha['nome'], $cpf, $linha['email'] ?: $u['email'], $aulas);
     } catch (Throwable $e) {
         error_log('[consultasmia] atualizar aulas do usuário: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Regrava as linhas da pessoa em consultasmia: uma por aula obrigatória
+ * concluída (com assunto, descrição e palavras-chave da aula). Sem nenhuma
+ * concluída, fica 1 linha com a aula vazia.
+ *
+ * @param array $aulas as aulas obrigatórias da pessoa (mse_vini_aulas_do_departamento)
+ */
+function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?string $email, array $aulas): void
+{
+    require_once __DIR__ . '/Assuntos.php';
+    $feitas = array_values(array_filter($aulas, static fn($c) => $c['status'] === 'concluido'));
+    $detalhes = [];
+    if ($feitas) {
+        $ids = array_map(static fn($c) => (int) $c['id'], $feitas);
+        $marc = implode(',', array_fill(0, count($ids), '?'));
+        $temPalavras = mse_tem_coluna($pdo, 'courses', 'palavras_chave');
+        $st = $pdo->prepare('SELECT c.id, c.title, c.description, a.name AS area_name, '
+            . ($temPalavras ? 'c.palavras_chave' : 'NULL AS palavras_chave')
+            . " FROM courses c LEFT JOIN areas a ON a.id = c.area_id WHERE c.id IN ({$marc})");
+        $st->execute($ids);
+        foreach ($st->fetchAll() as $c) {
+            $assuntos = array_column(mse_assuntos_do_curso($pdo, (int) $c['id']), 'name');
+            $detalhes[(int) $c['id']] = [
+                'aula' => $c['title'],
+                'assunto' => $assuntos ? implode(', ', $assuntos) : $c['area_name'],
+                'descricao' => $c['description'] !== '' ? $c['description'] : null,
+                'palavras_chave' => $c['palavras_chave'] ?: null,
+            ];
+        }
+    }
+    $jaEmTransacao = $pdo->inTransaction();
+    if (!$jaEmTransacao) {
+        $pdo->beginTransaction();
+    }
+    try {
+        if ($cpf) {
+            $pdo->prepare('DELETE FROM consultasmia WHERE cpf = ?')->execute([$cpf]);
+        } else {
+            $pdo->prepare('DELETE FROM consultasmia WHERE cpf IS NULL AND nome = ?')->execute([$nome]);
+        }
+        $ins = $pdo->prepare(
+            'INSERT INTO consultasmia (nome, cpf, email, aulas_obrigatorias_concluidas, aula, assunto, descricao, palavras_chave)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        $linhas = $feitas ? array_map(static fn($c) => $detalhes[(int) $c['id']] ?? ['aula' => $c['curso'], 'assunto' => null, 'descricao' => null, 'palavras_chave' => null], $feitas)
+                          : [['aula' => null, 'assunto' => null, 'descricao' => null, 'palavras_chave' => null]];
+        foreach ($linhas as $l) {
+            $ins->execute([$nome, $cpf, $email, count($feitas), $l['aula'], $l['assunto'], $l['descricao'], $l['palavras_chave']]);
+        }
+        if (!$jaEmTransacao) {
+            $pdo->commit();
+        }
+    } catch (Throwable $e) {
+        if (!$jaEmTransacao && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
     }
 }
