@@ -7239,7 +7239,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(isAdmin){
       const toolbar = document.getElementById('adminToolbar');
       if(toolbar) toolbar.hidden = false;
-      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnGerenciarAulas', 'btnRelatorios', 'btnDepartamentos', 'btnAprovacoes'].forEach(id => {
+      ['btnAdicionarPessoas', 'btnAdicionarVideo', 'btnGerenciarAulas', 'btnRelatorios', 'btnDepartamentos', 'btnAprovacoes', 'btnEnvioColab'].forEach(id => {
         const btn = document.getElementById(id);
         if(btn) btn.hidden = false;
       });
@@ -7364,10 +7364,38 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(!isAdmin && getRealSessionToken()) atualizarBotaoMeusVideos();
     if(getRealSessionToken() && window.mseMostrarSuasAulas) setTimeout(window.mseMostrarSuasAulas, 400);
     if(btnEnviarVideo && !isAdmin && getRealSessionToken()){
-      // Mesma barra do admin, só com este botão (vermelho).
-      document.getElementById('adminToolbar').hidden = false;
-      btnEnviarVideo.hidden = false;
+      // Mesma barra do admin, só com este botão (vermelho). O admin pode
+      // desabilitar o envio: aí o botão nem aparece (o servidor também recusa).
       btnEnviarVideo.addEventListener('click', openVideoModal);
+      apiFetch('api/config/envio_video.php').then(r => r.liberado !== false).catch(() => true).then(liberado => {
+        if(!liberado) return;
+        document.getElementById('adminToolbar').hidden = false;
+        btnEnviarVideo.hidden = false;
+      });
+    }
+    // Admin: liga/desliga o envio de vídeos por quem não é admin.
+    const btnEnvioColab = document.getElementById('btnEnvioColab');
+    if(btnEnvioColab && isAdmin){
+      const pintar = (liberado) => {
+        btnEnvioColab.classList.toggle('is-off', !liberado);
+        document.getElementById('btnEnvioColabTexto').textContent = 'Envio por colaboradores: ' + (liberado ? 'liberado' : 'desabilitado');
+        btnEnvioColab.dataset.liberado = liberado ? '1' : '0';
+      };
+      apiFetch('api/config/envio_video.php').then(r => pintar(r.liberado !== false)).catch(() => pintar(true));
+      btnEnvioColab.addEventListener('click', async () => {
+        const liberar = btnEnvioColab.dataset.liberado !== '1';
+        const ok = liberar ? true : confirm('Desabilitar o envio de vídeos por quem não é admin? O botão "Adicionar vídeo" some para eles. O que já foi enviado continua como está.');
+        if(!ok) return;
+        btnEnvioColab.disabled = true;
+        try{
+          const r = await apiFetch('api/config/envio_video.php', { method: 'POST', body: JSON.stringify({ liberado: liberar }) });
+          pintar(r.liberado !== false);
+        }catch(e){
+          alert('Não foi possível alterar: ' + e.message);
+        }finally{
+          btnEnvioColab.disabled = false;
+        }
+      });
     }
     const btnAulasClose = document.getElementById('aulasModalClose');
     if(btnAulasClose) btnAulasClose.addEventListener('click', closeAulasModal);

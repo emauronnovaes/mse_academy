@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../../src/Treinamentos.php';
 require_once __DIR__ . '/../../../src/Aprovacao.php';
 require_once __DIR__ . '/../../../src/Assuntos.php';
 require_once __DIR__ . '/../../../src/Classificacao.php';
+require_once __DIR__ . '/../../../src/Configuracoes.php';
 
 mse_cors();
 // Qualquer pessoa logada pode cadastrar. Admin publica na hora; os demais
@@ -93,6 +94,9 @@ if ($durationMinutes < 0 || $durationMinutes > 600) {
 }
 
 $pdo = mse_db();
+
+// O admin pode desabilitar o envio de vídeos de quem não é admin.
+mse_exigir_envio_video_liberado($pdo, $usuario);
 
 // Antes da transação: criar coluna (ALTER) encerraria a transação aberta.
 if ($paraAprovacao && !mse_garantir_colunas_aprovacao($pdo)) {

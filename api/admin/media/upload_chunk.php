@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../../src/Response.php';
 require_once __DIR__ . '/../../../src/Auth.php';
 require_once __DIR__ . '/../../../src/AwsS3.php';
 require_once __DIR__ . '/../../../src/Aprovacao.php';
+require_once __DIR__ . '/../../../src/Configuracoes.php';
 
 mse_cors();
 // Quem não é admin também envia (vídeo para aprovação), mas só na pasta
@@ -32,6 +33,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
  */
 
 $acao = (string) ($_GET['acao'] ?? '');
+
+// Envio desabilitado pelo admin: quem não é admin nem começa o upload (evita enviar o vídeo inteiro à toa).
+if ($soSugestoes && $acao === 'iniciar') {
+    mse_exigir_envio_video_liberado(mse_db(), $usuario);
+}
 
 $validarChave = static function (string $key): string {
     $key = ltrim(trim($key), '/');

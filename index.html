@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261013e">
+<link rel="stylesheet" href="style.css?v=20261013f">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -73,6 +73,10 @@
     <button type="button" id="btnAprovacoes" class="btn-add-people btn-aprovacoes" hidden>
       <i class="fa-solid fa-check" aria-hidden="true"></i> Aprovações
       <span class="aprov-badge" id="aprovBadge" hidden>0</span>
+    </button>
+    <!-- Liga/desliga o "Adicionar vídeo" de quem não é admin -->
+    <button type="button" id="btnEnvioColab" class="btn-add-people btn-envio-colab" hidden title="Quando desabilitado, quem não é admin não vê o Adicionar vídeo">
+      <i class="fa-solid fa-circle-play" aria-hidden="true"></i> <span id="btnEnvioColabTexto">Envio por colaboradores</span>
     </button>
     <button type="button" id="btnMinimizarAdmin" class="btn-minimizar-admin" title="Minimizar" aria-label="Minimizar barra de admin">
       <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
@@ -711,7 +715,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261013e"></script>
+<script src="script.js?v=20261013f"></script>
 
 </body>
 </html>

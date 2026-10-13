@@ -2272,3 +2272,8 @@
   .card-nivel{ align-self:flex-start; width:fit-content; display:inline-flex; align-items:center; gap:5px; margin-bottom:8px; padding:3px 10px; border-radius:999px; font-size:11.5px; font-weight:700; color:#fff; }
   .card-nivel-obrig{ background:var(--red); }
   .card-nivel-recom{ background:#E8810C; }
+
+  /* Admin: liga/desliga o envio de vídeos por colaboradores */
+  .btn-envio-colab{ border-color:rgba(60,170,90,0.7); }
+  .btn-envio-colab.is-off{ border-color:rgba(240,185,11,0.8); opacity:0.9; }
+  .btn-envio-colab.is-off i{ color:var(--yellow); }
