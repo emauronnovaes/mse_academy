@@ -12,8 +12,11 @@ require_once __DIR__ . '/Admitidos.php';
  *                   (nome, cpf, email, quantas concluiu, aula, assunto,
  *                   descrição, palavras-chave)
  *
- * O log de eventos (login, vídeo, baú) que existia em consultasmia_2 foi
- * desligado: nada mais grava nem lê consultasmia_2.
+ *   consultasmia_2  resumo por pessoa (1 linha por contratado): dados da ficha,
+ *                   logins, situação da integração e as aulas obrigatórias
+ *
+ * O log de eventos (login, vídeo, baú) que já existiu em consultasmia_2 foi
+ * desligado.
  *
  * Migração 032. Se não rodou, a tabela é criada aqui sozinha.
  */
@@ -48,6 +51,16 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
                 $destino = 'consultasmia_antiga_' . $n;
             }
             $pdo->exec("RENAME TABLE consultasmia TO {$destino}");
+        }
+        // consultasmia_2 antiga era o log de eventos (tem a coluna "tipo"): preserva, renomeando.
+        $log = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consultasmia_2' AND COLUMN_NAME = 'tipo'");
+        $log->execute();
+        if ($log->fetchColumn() !== false) {
+            $destino = 'consultasmia_2_log_antigo';
+            for ($n = 2; $existe($destino); $n++) {
+                $destino = 'consultasmia_2_log_antigo_' . $n;
+            }
+            $pdo->exec("RENAME TABLE consultasmia_2 TO {$destino}");
         }
         $sql = file_get_contents(__DIR__ . '/../migrations/032_viniconsultas.sql');
         $sql = preg_replace('#/\*.*?\*/#s', '', (string) $sql);
@@ -208,6 +221,24 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
     if (!mse_garantir_viniconsultas($pdo)) {
         return 0;
     }
+    // Resumo por pessoa (consultasmia_2). Logins vêm das sessões (auth_tokens).
+    $sessoes = $pdo->prepare('SELECT COUNT(*) AS n, MIN(created_at) AS primeiro, MAX(created_at) AS ultimo FROM auth_tokens WHERE user_id = ?');
+    $upsertResumo = $pdo->prepare(
+        'INSERT INTO consultasmia_2
+           (chave, nome, cpf, email, cargo, departamento, data_admissao, user_id, entrou_na_academy, primeiro_login, ultimo_login,
+            total_logins, situacao_integracao, integracao_concluida, integracao_concluida_em,
+            aulas_obrigatorias, aulas_concluidas, aulas_concluidas_nomes)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         ON DUPLICATE KEY UPDATE
+           nome = VALUES(nome), cpf = VALUES(cpf), email = VALUES(email), cargo = VALUES(cargo), departamento = VALUES(departamento),
+           user_id = VALUES(user_id), entrou_na_academy = VALUES(entrou_na_academy), primeiro_login = VALUES(primeiro_login),
+           ultimo_login = VALUES(ultimo_login), total_logins = VALUES(total_logins),
+           situacao_integracao = VALUES(situacao_integracao),
+           integracao_concluida = VALUES(integracao_concluida), integracao_concluida_em = VALUES(integracao_concluida_em),
+           aulas_obrigatorias = VALUES(aulas_obrigatorias), aulas_concluidas = VALUES(aulas_concluidas),
+           aulas_concluidas_nomes = VALUES(aulas_concluidas_nomes)'
+    );
+
     $gravadas = 0;
     foreach ($pessoas as $p) {
         $userId = !empty($p['user_id']) ? (int) $p['user_id'] : null;
@@ -217,6 +248,21 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
         // Aulas obrigatórias = as do departamento da pessoa e as obrigatórias para todos (integração fica de fora).
         $aulas = mse_vini_aulas_do_departamento($pdo, $userId, isset($p['departamento']) ? (string) $p['departamento'] : null);
         mse_vini_gravar_linhas_pessoa($pdo, (string) $p['nome'], $cpf, $p['email'] ?? null, $aulas);
+
+        $login = ['n' => 0, 'primeiro' => null, 'ultimo' => null];
+        if ($userId) {
+            $sessoes->execute([$userId]);
+            $login = $sessoes->fetch() ?: $login;
+        }
+        $feitasNomes = array_map(static fn($c) => $c['curso'], array_filter($aulas, static fn($c) => $c['status'] === 'concluido'));
+        $upsertResumo->execute([
+            mse_integracao_chave($cpf, (string) $p['nome'], (string) $p['data_admissao']),
+            $p['nome'], $cpf, $p['email'] ?? null, $p['funcao'] ?? null, $p['departamento'] ?? null,
+            $p['data_admissao'], $userId, (int) $login['n'] > 0 ? 1 : 0, $login['primeiro'], $login['ultimo'], (int) $login['n'],
+            !empty($p['dispensado']) ? 'dispensado' : $p['situacao'],
+            $p['situacao'] === 'concluiu' ? 1 : 0, $p['concluiu_em'] ?? null,
+            count($aulas), $aulas && count($feitasNomes) === count($aulas) ? 1 : 0, $feitasNomes ? implode(' | ', $feitasNomes) : null,
+        ]);
         $gravadas++;
     }
     return $gravadas;
@@ -252,6 +298,14 @@ function mse_vini_atualizar_aulas_do_usuario(int $userId): void
         }
         $aulas = mse_vini_aulas_do_departamento($pdo, $userId, null);
         mse_vini_gravar_linhas_pessoa($pdo, (string) $linha['nome'], $cpf, $linha['email'] ?: $u['email'], $aulas);
+        // Resumo por pessoa (consultasmia_2): só as colunas das aulas.
+        if (mse_tem_coluna($pdo, 'consultasmia_2', 'aulas_concluidas_nomes')) {
+            $feitas = array_values(array_filter($aulas, static fn($c) => $c['status'] === 'concluido'));
+            $pdo->prepare('UPDATE consultasmia_2 SET aulas_obrigatorias = ?, aulas_concluidas = ?, aulas_concluidas_nomes = ? WHERE user_id = ?')->execute([
+                count($aulas), $aulas && count($feitas) === count($aulas) ? 1 : 0,
+                $feitas ? implode(' | ', array_column($feitas, 'curso')) : null, $userId,
+            ]);
+        }
     } catch (Throwable $e) {
         error_log('[consultasmia] atualizar aulas do usuário: ' . $e->getMessage());
     }
