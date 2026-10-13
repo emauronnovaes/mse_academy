@@ -49,7 +49,7 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
             $pdo->exec('ALTER TABLE consultasmia_2 ADD COLUMN curso_id INT UNSIGNED NOT NULL DEFAULT 0, ADD COLUMN curso VARCHAR(200) NULL');
             $pdo->exec('ALTER TABLE consultasmia_2 DROP INDEX uq_viniconsultas_eventos, ADD UNIQUE KEY uq_viniconsultas_eventos (user_id, tipo, evento_em, curso_id)');
         }
-        foreach (['total_entradas_video' => 'INT NOT NULL DEFAULT 0', 'ultima_entrada_video' => 'DATETIME NULL', 'ultima_saida_video' => 'DATETIME NULL', 'cursos_concluidos' => 'TEXT NULL', 'cursos_pendentes' => 'TEXT NULL',
+        foreach (['ultima_entrada_video' => 'DATETIME NULL', 'ultima_saida_video' => 'DATETIME NULL', 'cursos_concluidos' => 'TEXT NULL', 'cursos_pendentes' => 'TEXT NULL',
             'integracao_aulas' => 'INT NOT NULL DEFAULT 0', 'integracao_aulas_concluidas' => 'INT NOT NULL DEFAULT 0',
             'integracao_cursos_concluidos' => 'TEXT NULL', 'integracao_cursos_pendentes' => 'TEXT NULL'] as $col => $def) {
             if (!$tem('consultasmia', $col)) {
@@ -270,15 +270,15 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
     $upsert = $pdo->prepare(
         'INSERT INTO consultasmia
            (chave, nome, cpf, email, cargo, departamento, data_admissao, user_id, entrou_na_academy, primeiro_login, ultimo_login,
-            total_logins, total_entradas_video, ultima_entrada_video, ultima_saida_video, situacao_integracao, integracao_concluida, integracao_concluida_em,
+            total_logins, ultima_entrada_video, ultima_saida_video, situacao_integracao, integracao_concluida, integracao_concluida_em,
             aulas_obrigatorias, aulas_concluidas, cursos_concluidos, cursos_pendentes, cursos_obrigatorios,
             integracao_aulas, integracao_aulas_concluidas, integracao_cursos_concluidos, integracao_cursos_pendentes)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON DUPLICATE KEY UPDATE
            nome = VALUES(nome), cpf = VALUES(cpf), email = VALUES(email), cargo = VALUES(cargo), departamento = VALUES(departamento),
            user_id = VALUES(user_id), entrou_na_academy = VALUES(entrou_na_academy), primeiro_login = VALUES(primeiro_login),
            ultimo_login = VALUES(ultimo_login), total_logins = VALUES(total_logins),
-           total_entradas_video = VALUES(total_entradas_video), ultima_entrada_video = VALUES(ultima_entrada_video),
+           ultima_entrada_video = VALUES(ultima_entrada_video),
            ultima_saida_video = VALUES(ultima_saida_video), situacao_integracao = VALUES(situacao_integracao),
            integracao_concluida = VALUES(integracao_concluida), integracao_concluida_em = VALUES(integracao_concluida_em),
            aulas_obrigatorias = VALUES(aulas_obrigatorias), aulas_concluidas = VALUES(aulas_concluidas),
@@ -333,7 +333,7 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
             $p['nome'], strlen($cpf) === 11 ? $cpf : null, $p['email'] ?? null, $p['funcao'] ?? null, $p['departamento'] ?? null,
             $p['data_admissao'], $userId, $userId && $ev['login'] ? 1 : 0,
             $ev['login']['primeiro'] ?? null, $ev['login']['ultimo'] ?? null, (int) ($ev['login']['n'] ?? 0),
-            (int) ($ev['video_entrada']['n'] ?? 0), $ev['video_entrada']['ultimo'] ?? null, $ev['video_saida']['ultimo'] ?? null,
+            $ev['video_entrada']['ultimo'] ?? null, $ev['video_saida']['ultimo'] ?? null,
             !empty($p['dispensado']) ? 'dispensado' : $p['situacao'],
             $p['situacao'] === 'concluiu' ? 1 : 0, $p['concluiu_em'] ?? null,
             count($aulas), $aulaQtd, $aulaFeitas, $aulaFaltam,
