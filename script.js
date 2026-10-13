@@ -2231,44 +2231,37 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     );
   }
 
+  // Quantas aulas concluídas em Cursos (catálogo) para chegar ao Diamante.
+  const META_AULAS_DIAMANTE = 15;
+
+  // Bronze -> Prata -> Ouro -> Diamante. Cada nível exige o anterior.
+  //   Prata    concluiu a integração;
+  //   Ouro     tem aula concluída em 3 assuntos diferentes;
+  //   Diamante integração concluída + 15 aulas concluídas em Cursos.
   const LEVELS = [
     {
-      name: 'Tripulante Novato',
+      name: 'Bronze',
       check: () => true, // estado inicial — todo mundo começa aqui
       progress: () => onbProgress.completed.length / (ONBOARDING.length || 1),
+      proximo: 'Conclua a integração para chegar à Prata.',
     },
     {
-      name: 'Navegador',
+      name: 'Prata',
       check: () => onbProgress.completed.length >= ONBOARDING.length,
       progress: () => Math.min(getDistinctAreasCompleted().size, 3) / 3,
+      proximo: () => `Conclua aulas em 3 assuntos diferentes para chegar ao Ouro (${Math.min(getDistinctAreasCompleted().size, 3)} de 3).`,
     },
     {
-      name: 'Explorador',
+      name: 'Ouro',
       check: () => getDistinctAreasCompleted().size >= 3,
-      progress: () => {
-        const slugs = [...new Set(courses.flatMap(c => c.cats))];
-        const ratios = slugs.map(slug => {
-          const areaCourses = courses.filter(c => c.cats.includes(slug));
-          if(areaCourses.length === 0) return 0;
-          const done = areaCourses.filter(c => catalogProgress.completed.includes(c.id)).length;
-          return done / areaCourses.length;
-        });
-        return ratios.length ? Math.max(...ratios) : 0;
-      },
+      progress: () => Math.min(catalogProgress.completed.length, META_AULAS_DIAMANTE) / META_AULAS_DIAMANTE,
+      proximo: () => `Conclua ${META_AULAS_DIAMANTE} aulas em Cursos para chegar ao Diamante (${Math.min(catalogProgress.completed.length, META_AULAS_DIAMANTE)} de ${META_AULAS_DIAMANTE}).`,
     },
     {
-      name: 'Piloto de Rota',
-      check: () => [...new Set(courses.flatMap(c => c.cats))].some(isAreaFullyDone),
-      progress: () => courses.length ? catalogProgress.completed.length / courses.length : 0,
-    },
-    {
-      name: 'Comandante de Bordo',
-      check: () => {
-        const allCatalogDone = courses.every(c => catalogProgress.completed.includes(c.id));
-        const onboardingDone = onbProgress.completed.length >= ONBOARDING.length;
-        return allCatalogDone && onboardingDone;
-      },
+      name: 'Diamante',
+      check: () => onbProgress.completed.length >= ONBOARDING.length && catalogProgress.completed.length >= META_AULAS_DIAMANTE,
       progress: () => 1,
+      proximo: 'Você chegou ao nível máximo.',
     },
   ];
 
@@ -2466,8 +2459,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     document.getElementById('progressLevelBadge').textContent = levelIdx + 1;
     document.getElementById('progressLevelName').textContent = level.name;
+    const proximo = typeof level.proximo === 'function' ? level.proximo() : level.proximo;
     document.getElementById('progressLevelSub').textContent =
-      `${points} pontos de experiência · ${getTotalCompleted()} tarefa(s) concluída(s)`;
+      `${points} pontos de experiência · ${getTotalCompleted()} tarefa(s) concluída(s)` + (proximo ? ' · ' + proximo : '');
 
     document.getElementById('progressBarFill').style.width = pct + '%';
     lightningPct = pct;
