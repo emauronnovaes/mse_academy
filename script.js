@@ -2553,7 +2553,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     // favoritar de verdade dentro — <button> dentro de <button> não é
     // válido em HTML e quebra o comportamento de clique do navegador.
     const card = document.createElement('div');
-    card.className = 'course-card';
+    // Obrigatória (vermelho) ou recomendada (laranja) para esta pessoa.
+    card.className = 'course-card' + (c.nivel === 'obrigatoria' ? ' is-obrig' : c.nivel === 'recomendada' ? ' is-recom' : '');
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
     card.setAttribute('aria-label', `Assistir: ${c.title}`);
@@ -2567,6 +2568,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <span class="card-level" aria-hidden="true"><i class="fa-solid fa-circle-play"></i></span>
       </div>
       <div class="card-body">
+        ${c.nivel === 'obrigatoria' ? '<span class="card-nivel card-nivel-obrig"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> Obrigatória para você</span>'
+          : c.nivel === 'recomendada' ? '<span class="card-nivel card-nivel-recom">Recomendada para você</span>' : ''}
         <h3>${c.title}</h3>
         <p>${c.desc}</p>
         <div class="card-foot">
