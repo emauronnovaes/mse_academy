@@ -41,19 +41,3 @@ CREATE TABLE IF NOT EXISTS consultasmia (
   KEY idx_consultasmia_cpf (cpf),
   KEY idx_consultasmia_nome (nome)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS consultasmia_2 (
-  id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id    INT UNSIGNED NOT NULL,
-  cpf        VARCHAR(11)  NULL,
-  email      VARCHAR(150) NULL,
-  tipo       VARCHAR(20)  NOT NULL,
-  evento_em  DATETIME     NOT NULL,
-  curso_id   INT UNSIGNED NOT NULL DEFAULT 0,
-  curso      VARCHAR(200) NULL,
-  detalhe    LONGTEXT     NULL,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_viniconsultas_eventos (user_id, tipo, evento_em, curso_id),
-  KEY idx_viniconsultas_eventos_tipo (tipo, evento_em),
-  KEY idx_viniconsultas_eventos_cpf (cpf)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

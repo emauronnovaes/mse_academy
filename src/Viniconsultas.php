@@ -11,12 +11,14 @@ require_once __DIR__ . '/Admitidos.php';
  *   consultasmia    uma linha por aula obrigatória concluída de cada pessoa
  *                   (nome, cpf, email, quantas concluiu, aula, assunto,
  *                   descrição, palavras-chave)
- *   consultasmia_2  o log: login, video_entrada, video_saida, bau_aberto
  *
- * Migração 032. Se não rodou, as tabelas são criadas aqui sozinhas.
+ * O log de eventos (login, vídeo, baú) que existia em consultasmia_2 foi
+ * desligado: nada mais grava nem lê consultasmia_2.
+ *
+ * Migração 032. Se não rodou, a tabela é criada aqui sozinha.
  */
 
-/** Cria as duas tabelas se faltarem (cópia da migração 032). false = não deu. */
+/** Cria a tabela se faltar (cópia da migração 032). false = não deu. */
 function mse_garantir_viniconsultas(PDO $pdo): bool
 {
     static $ok = null;
@@ -31,7 +33,7 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
             $q->execute([$t]);
             return $q->fetchColumn() !== false;
         };
-        foreach (['viniconsultas' => 'consultasmia', 'viniconsultas_eventos' => 'consultasmia_2'] as $velho => $novo) {
+        foreach (['viniconsultas' => 'consultasmia'] as $velho => $novo) {
             if ($existe($velho) && !$existe($novo)) {
                 $pdo->exec("RENAME TABLE {$velho} TO {$novo}");
             }
@@ -52,16 +54,6 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
         foreach (array_filter(array_map('trim', explode(';', (string) $sql))) as $comando) {
             $pdo->exec($comando);
         }
-        // Quem já rodou a primeira versão da migração (sem o log por vídeo) ganha as colunas novas.
-        $tem = static function (string $tabela, string $coluna) use ($pdo): bool {
-            $st = $pdo->prepare('SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?');
-            $st->execute([$tabela, $coluna]);
-            return $st->fetchColumn() !== false;
-        };
-        if (!$tem('consultasmia_2', 'curso_id')) {
-            $pdo->exec('ALTER TABLE consultasmia_2 ADD COLUMN curso_id INT UNSIGNED NOT NULL DEFAULT 0, ADD COLUMN curso VARCHAR(200) NULL');
-            $pdo->exec('ALTER TABLE consultasmia_2 DROP INDEX uq_viniconsultas_eventos, ADD UNIQUE KEY uq_viniconsultas_eventos (user_id, tipo, evento_em, curso_id)');
-        }
         return $ok = true;
     } catch (Throwable $e) {
         error_log('[consultasmia] Não consegui criar as tabelas (rode a migração 032): ' . $e->getMessage());
@@ -70,39 +62,12 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
 }
 
 /**
- * Grava um acontecimento no log (login, logout, saida, bau_aberto) com a data
- * e a hora do banco (horário de Brasília). Nunca lança erro: o log não pode
- * derrubar login, logout nem a abertura do baú.
- *
- * @param array|null $detalhe vira JSON na coluna "detalhe"
+ * (Desligado.) Gravava login, entrada/saída de vídeo e abertura do baú no log
+ * consultasmia_2. Mantida porque login, progresso e baú ainda a chamam; não
+ * grava nada.
  */
 function mse_vini_registrar_evento(int $userId, string $tipo, ?array $detalhe = null, int $cursoId = 0, ?string $curso = null, ?string $quando = null): void
 {
-    try {
-        if ($userId <= 0) {
-            return;
-        }
-        $pdo = mse_db();
-        if (!mse_garantir_viniconsultas($pdo)) {
-            return;
-        }
-        $st = $pdo->prepare('SELECT email, cpf FROM users WHERE id = ?');
-        $st->execute([$userId]);
-        $u = $st->fetch() ?: ['email' => null, 'cpf' => null];
-        $cpf = preg_replace('/\D/', '', (string) $u['cpf']);
-        // $quando: a hora exata do registro original (check-in/out de vídeo), para
-        // o espelho e a cópia do histórico serem o MESMO registro (sem duplicar).
-        $pdo->prepare(
-            'INSERT IGNORE INTO consultasmia_2 (user_id, cpf, email, tipo, evento_em, curso_id, curso, detalhe)
-             VALUES (?, ?, ?, ?, ' . ($quando !== null ? '?' : 'NOW()') . ', ?, ?, ?)'
-        )->execute(array_merge(
-            [$userId, strlen($cpf) === 11 ? $cpf : null, $u['email'] ?: null, $tipo],
-            $quando !== null ? [$quando] : [],
-            [$cursoId, $curso, $detalhe ? json_encode($detalhe, JSON_UNESCAPED_UNICODE) : null]
-        ));
-    } catch (Throwable $e) {
-        error_log('[consultasmia] evento ' . $tipo . ': ' . $e->getMessage());
-    }
 }
 
 /**
@@ -236,10 +201,6 @@ function mse_vini_prova_integracao(PDO $pdo, int $userId): array
  * sincronização: cada item já traz nome, CPF, e-mail, admissão, user_id e a
  * situação da integração).
  *
- * Também completa o log com o histórico de logins que já existia
- * (auth_tokens), só para o período anterior ao início do log em tempo real,
- * para nenhum login ser contado duas vezes.
- *
  * @return int quantas linhas gravou
  */
 function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm): int
@@ -247,42 +208,11 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
     if (!mse_garantir_viniconsultas($pdo)) {
         return 0;
     }
-    // Logins de antes do log existir: só os anteriores ao primeiro login registrado em tempo real.
-    $corte = $pdo->query(
-        "SELECT MIN(evento_em) FROM consultasmia_2 WHERE tipo = 'login' AND (detalhe IS NULL OR detalhe NOT LIKE '%historico%')"
-    )->fetchColumn();
-    $historico = $pdo->prepare(
-        "INSERT IGNORE INTO consultasmia_2 (user_id, cpf, email, tipo, evento_em, detalhe)
-         SELECT t.user_id, ?, ?, 'login', t.created_at, '{\"origem\":\"historico\"}'
-         FROM auth_tokens t WHERE t.user_id = ?" . ($corte ? ' AND t.created_at < ?' : '')
-    );
-    // Entradas e saídas de cada vídeo (presenca_log): copiadas para o log, com a
-    // mesma hora do registro original, então repetir a cópia nunca duplica.
-    $temLog = mse_tem_tabela($pdo, 'presenca_log');
-    $copiaVideos = $temLog ? $pdo->prepare(
-        "INSERT IGNORE INTO consultasmia_2 (user_id, cpf, email, tipo, evento_em, curso_id, curso, detalhe)
-         SELECT p.user_id, ?, ?, IF(p.evento = 'checkin', 'video_entrada', 'video_saida'), p.criado_em, p.course_id, c.title,
-                CONCAT('{\"origem\":\"video\",\"percentual_assistido\":', IFNULL(CAST(p.watched_pct AS CHAR), 'null'), '}')
-         FROM presenca_log p JOIN courses c ON c.id = p.course_id
-         WHERE p.user_id = ? AND p.evento IN ('checkin', 'checkout')"
-    ) : null;
     $gravadas = 0;
     foreach ($pessoas as $p) {
         $userId = !empty($p['user_id']) ? (int) $p['user_id'] : null;
         $cpf = preg_replace('/\D/', '', (string) ($p['cpf'] ?? ''));
         $cpf = strlen($cpf) === 11 ? $cpf : null;
-
-        // O log (consultasmia_2) continua sendo completado com o histórico.
-        if ($userId) {
-            $args = [$cpf, $p['email'] ?? null, $userId];
-            if ($corte) {
-                $args[] = $corte;
-            }
-            $historico->execute($args);
-            if ($copiaVideos) {
-                $copiaVideos->execute([$cpf, $p['email'] ?? null, $userId]);
-            }
-        }
 
         // Aulas obrigatórias = as do departamento da pessoa e as obrigatórias para todos (integração fica de fora).
         $aulas = mse_vini_aulas_do_departamento($pdo, $userId, isset($p['departamento']) ? (string) $p['departamento'] : null);
