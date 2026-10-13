@@ -1373,10 +1373,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       .sort((a, b) => a.momento_seg - b.momento_seg);
     const resolvidas = new Set();
     let aberta = null;
+    let timer = null; // declarado antes da saída abaixo: parar() usa, e sem atividade ele rodava antes de existir (erro que travava o fechar do vídeo)
     const controle = { pendentes: () => atividades.length - resolvidas.size, parar };
     if(!atividades.length) return controle;
 
-    const timer = setInterval(() => {
+    timer = setInterval(() => {
       if(!wrap.isConnected){ parar(); return; } // player saiu da tela
       if(aberta){
         // Esperando a resposta: se o vídeo voltar a tocar por outro caminho
@@ -3036,11 +3037,20 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // O botão de fechar e o Esc só pedem pro navegador voltar — quem esconde
   // de fato o vídeo é sempre o listener de popstate (mantém tudo em sincronia
   // com a setinha de "voltar" do navegador, que faz a mesma coisa).
-  videoModalCloseBtn.addEventListener('click', () => history.back());
+  // Se o histórico estiver fora de sincronia (vídeo aberto mais de uma vez,
+  // por cima de uma busca...), o "voltar" não fecha: depois de um instante,
+  // fecha direto, pra o X e o Esc nunca ficarem sem resposta.
+  function pedirFecharVideo(){
+    if(videoModalEl.hidden) return;
+    const empilhado = !!(history.state && history.state.mseOverlay === 'video');
+    if(empilhado) history.back();
+    setTimeout(() => { if(!videoModalEl.hidden) closeVideoModal(); }, empilhado ? 250 : 0);
+  }
+  videoModalCloseBtn.addEventListener('click', pedirFecharVideo);
   document.addEventListener('keydown', (e) => {
     if(videoModalEl.hidden) return;
     if(e.key === 'Escape'){
-      history.back();
+      pedirFecharVideo();
       return;
     }
     if(e.key === 'Tab'){
