@@ -26,7 +26,6 @@ GRANT SELECT ON mse_academy.consultasmia_2 TO 'usuario_consulta'@'%';
 | `data_admissao` | Data de admissão (API de integração do RH) |
 | `entrou_na_academy` | 1 = já fez login na Academy; 0 = nunca entrou |
 | `primeiro_login`, `ultimo_login`, `total_logins` | Logins na Academy |
-| `ultima_entrada_video`, `ultima_saida_video` | Entradas (check-in) e saídas (check-out) de vídeo — ver abaixo |
 | `situacao_integracao` | `sem_acesso`, `nao_iniciou`, `em_andamento`, `concluiu` ou `dispensado` |
 | `integracao_concluida` | 1 = concluiu todos os cursos da **integração** (separada das aulas obrigatórias) |
 | `integracao_concluida_em` | Data e hora em que concluiu |

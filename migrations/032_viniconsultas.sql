@@ -41,8 +41,6 @@ CREATE TABLE IF NOT EXISTS consultasmia (
   primeiro_login           DATETIME     NULL,
   ultimo_login             DATETIME     NULL,
   total_logins             INT          NOT NULL DEFAULT 0,
-  ultima_entrada_video     DATETIME     NULL,
-  ultima_saida_video       DATETIME     NULL,
   situacao_integracao      VARCHAR(20)  NOT NULL,
   integracao_concluida     TINYINT(1)   NOT NULL DEFAULT 0,
   integracao_concluida_em  DATETIME     NULL,
