@@ -2232,35 +2232,41 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     );
   }
 
-  // Quantas aulas concluídas em Cursos (catálogo) para chegar ao Diamante.
-  const META_AULAS_DIAMANTE = 15;
+  // Vídeos vistos (concluídos), contando os de Integração e os de Cursos.
+  const META_PRATA = 10;
+  const META_OURO = 15;
+  const META_DIAMANTE = 20;
+  function getVideosVistos(){
+    return onbProgress.completed.length + catalogProgress.completed.length;
+  }
+  function textoProximoNivel(nome, meta){
+    return `Veja ${meta} vídeos (Integração e Cursos) para chegar ${nome === 'Ouro' ? 'ao' : 'à'} ${nome} (${Math.min(getVideosVistos(), meta)} de ${meta}).`;
+  }
 
-  // Bronze -> Prata -> Ouro -> Diamante. Cada nível exige o anterior.
-  //   Prata    concluiu a integração;
-  //   Ouro     tem aula concluída em 3 assuntos diferentes;
-  //   Diamante integração concluída + 15 aulas concluídas em Cursos.
+  // Bronze -> Prata (10 vídeos) -> Ouro (15) -> Diamante (20).
+  // Contam todos os vídeos concluídos: os da trilha de Integração e os de Cursos.
   const LEVELS = [
     {
       name: 'Bronze',
       check: () => true, // estado inicial — todo mundo começa aqui
-      progress: () => onbProgress.completed.length / (ONBOARDING.length || 1),
-      proximo: 'Conclua a integração para chegar à Prata.',
+      progress: () => Math.min(getVideosVistos(), META_PRATA) / META_PRATA,
+      proximo: () => textoProximoNivel('Prata', META_PRATA),
     },
     {
       name: 'Prata',
-      check: () => onbProgress.completed.length >= ONBOARDING.length,
-      progress: () => Math.min(getDistinctAreasCompleted().size, 3) / 3,
-      proximo: () => `Conclua aulas em 3 assuntos diferentes para chegar ao Ouro (${Math.min(getDistinctAreasCompleted().size, 3)} de 3).`,
+      check: () => getVideosVistos() >= META_PRATA,
+      progress: () => Math.min(getVideosVistos(), META_OURO) / META_OURO,
+      proximo: () => textoProximoNivel('Ouro', META_OURO),
     },
     {
       name: 'Ouro',
-      check: () => getDistinctAreasCompleted().size >= 3,
-      progress: () => Math.min(catalogProgress.completed.length, META_AULAS_DIAMANTE) / META_AULAS_DIAMANTE,
-      proximo: () => `Conclua ${META_AULAS_DIAMANTE} aulas em Cursos para chegar ao Diamante (${Math.min(catalogProgress.completed.length, META_AULAS_DIAMANTE)} de ${META_AULAS_DIAMANTE}).`,
+      check: () => getVideosVistos() >= META_OURO,
+      progress: () => Math.min(getVideosVistos(), META_DIAMANTE) / META_DIAMANTE,
+      proximo: () => textoProximoNivel('Diamante', META_DIAMANTE),
     },
     {
       name: 'Diamante',
-      check: () => onbProgress.completed.length >= ONBOARDING.length && catalogProgress.completed.length >= META_AULAS_DIAMANTE,
+      check: () => getVideosVistos() >= META_DIAMANTE,
       progress: () => 1,
       proximo: 'Você chegou ao nível máximo.',
     },
