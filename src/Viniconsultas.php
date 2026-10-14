@@ -73,6 +73,12 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
         if ($col->fetchColumn() === false) {
             $pdo->exec('ALTER TABLE consultasmia ADD COLUMN tempo_video VARCHAR(12) NULL AFTER palavras_chave');
         }
+        // Hora em que a pessoa começou e terminou cada vídeo (migração 045).
+        $col = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consultasmia' AND COLUMN_NAME = 'inicio_video'");
+        $col->execute();
+        if ($col->fetchColumn() === false) {
+            $pdo->exec('ALTER TABLE consultasmia ADD COLUMN inicio_video DATETIME NULL AFTER tempo_video, ADD COLUMN fim_video DATETIME NULL AFTER inicio_video');
+        }
         return $ok = true;
     } catch (Throwable $e) {
         error_log('[consultasmia] Não consegui criar as tabelas (rode a migração 032): ' . $e->getMessage());
@@ -165,8 +171,9 @@ function mse_vini_cursos_por_ids(PDO $pdo, ?int $userId, array $ids): array
     }
     $marc = implode(',', array_fill(0, count($ids), '?'));
     $temLog = mse_tem_tabela($pdo, 'presenca_log');
+    $temCheckin = mse_tem_coluna($pdo, 'user_course_progress', 'checkin_em');
     $st = $pdo->prepare(
-        "SELECT c.id, c.title, p.status, p.watched_pct, p.completed_at,
+        "SELECT c.id, c.title, p.status, p.watched_pct, p.completed_at, " . ($temCheckin ? 'p.checkin_em' : 'NULL AS checkin_em') . ",
                 (SELECT COUNT(DISTINCT t.question_id) FROM quiz_attempts t JOIN quiz_questions qq ON qq.id = t.question_id
                   WHERE qq.course_id = c.id AND t.user_id = ? AND t.is_correct = 1) AS acertos,
                 (SELECT COUNT(*) FROM quiz_questions qq2 WHERE qq2.course_id = c.id) AS perguntas,
@@ -187,6 +194,7 @@ function mse_vini_cursos_por_ids(PDO $pdo, ?int $userId, array $ids): array
         'status' => $l['status'] ?: 'nao_iniciado',
         'percentual_assistido' => $l['watched_pct'] !== null ? (int) $l['watched_pct'] : 0,
         'concluido_em' => $l['completed_at'],
+        'checkin_em' => $l['checkin_em'],
         // Entrada (check-in) e saída (check-out) deste vídeo.
         'entradas' => (int) $l['entradas'],
         'primeira_entrada' => $l['primeira_entrada'],
@@ -458,6 +466,8 @@ function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?st
                 'descricao' => $c['description'] !== '' ? $c['description'] : null,
                 'palavras_chave' => $c['palavras_chave'] ?: null,
                 'tempo_video' => mse_vini_formatar_tempo($c['duration_seconds'] !== null ? (int) $c['duration_seconds'] : (int) $c['duration_minutes'] * 60),
+                'inicio_video' => null,
+                'fim_video' => null,
             ];
         }
     }
@@ -472,14 +482,20 @@ function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?st
             $pdo->prepare('DELETE FROM consultasmia WHERE cpf IS NULL AND nome = ?')->execute([$nome]);
         }
         $ins = $pdo->prepare(
-            'INSERT INTO consultasmia (nome, cpf, email, aulas_obrigatorias_concluidas, aula, assunto, descricao, palavras_chave, tempo_video)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO consultasmia (nome, cpf, email, aulas_obrigatorias_concluidas, aula, assunto, descricao, palavras_chave, tempo_video, inicio_video, fim_video)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
-        $linhas = $feitas ? array_map(static fn($c) => $detalhes[(int) $c['id']] ?? ['aula' => $c['curso'], 'assunto' => null, 'descricao' => null, 'palavras_chave' => null, 'tempo_video' => null], $feitas)
-                          : [['aula' => null, 'assunto' => null, 'descricao' => null, 'palavras_chave' => null, 'tempo_video' => null]];
+        // Início = primeira vez que abriu o vídeo; fim = quando concluiu.
+        $linhas = $feitas ? array_map(static function ($c) use ($detalhes) {
+            $d = $detalhes[(int) $c['id']] ?? ['aula' => $c['curso'], 'assunto' => null, 'descricao' => null, 'palavras_chave' => null, 'tempo_video' => null];
+            $d['inicio_video'] = $c['primeira_entrada'] ?: ($c['checkin_em'] ?? null);
+            $d['fim_video'] = $c['concluido_em'] ?? null;
+            return $d;
+        }, $feitas)
+                          : [['aula' => null, 'assunto' => null, 'descricao' => null, 'palavras_chave' => null, 'tempo_video' => null, 'inicio_video' => null, 'fim_video' => null]];
         foreach ($linhas as $l) {
             // Cada linha é UMA aula concluída: 1 por linha (0 na linha sem aula).
-            $ins->execute([$nome, $cpf, $email, $l['aula'] !== null ? 1 : 0, $l['aula'], $l['assunto'], $l['descricao'], $l['palavras_chave'], $l['tempo_video']]);
+            $ins->execute([$nome, $cpf, $email, $l['aula'] !== null ? 1 : 0, $l['aula'], $l['assunto'], $l['descricao'], $l['palavras_chave'], $l['tempo_video'], $l['inicio_video'], $l['fim_video']]);
         }
         if (!$jaEmTransacao) {
             $pdo->commit();
