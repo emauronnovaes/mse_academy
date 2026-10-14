@@ -75,14 +75,21 @@ function mse_aulas_da_trilha(PDO $pdo, int $userId): array
     $temSorteio = isset($colunas['grupo_sorteio'])
         && $pdo->query("SHOW TABLES LIKE 'user_sorteio_aula'")->fetch() !== false;
     $temObrigatorio = isset($colunas['obrigatorio']);
-    // Vídeo marcado "só para obra": só entra na trilha de quem é de obra e
-    // NÃO está alocado na sede (users.eh_obra, gravado pela ficha no login).
+    // Vídeo marcado "só para obra": só entra na trilha de quem ENTRA PELO CPF
+    // (não por e-mail), é de obra e NÃO está alocado na sede. users.eh_obra
+    // vem da ficha; users.login_por_cpf, do login (para quem ainda não tem
+    // essa marca, vale o e-mail interno de quem não tem e-mail).
     $temObra = isset($colunas['somente_obra']);
     $ehObra = false;
     if ($temObra && mse_tem_coluna($pdo, 'users', 'eh_obra')) {
-        $st = $pdo->prepare('SELECT eh_obra FROM users WHERE id = ?');
+        $temLoginCpf = mse_tem_coluna($pdo, 'users', 'login_por_cpf');
+        $st = $pdo->prepare(
+            'SELECT eh_obra, ' . ($temLoginCpf ? "COALESCE(login_por_cpf, email LIKE '%@sem-email.mse.local')" : "email LIKE '%@sem-email.mse.local'")
+            . ' AS por_cpf FROM users WHERE id = ?'
+        );
         $st->execute([$userId]);
-        $ehObra = (int) $st->fetchColumn() === 1;
+        $u = $st->fetch() ?: ['eh_obra' => 0, 'por_cpf' => 0];
+        $ehObra = (int) $u['eh_obra'] === 1 && (int) $u['por_cpf'] === 1;
     }
 
     $stmt = $pdo->query(

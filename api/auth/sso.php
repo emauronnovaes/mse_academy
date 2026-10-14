@@ -144,6 +144,8 @@ $userId = (int) $pdo->lastInsertId();
 mse_gravar_setor_portal($pdo, $userId, $ficha['obras_departamento'] ?? null);
 // É de obra (e não alocado na sede)? Decide quais vídeos de integração ela vê.
 mse_gravar_obra_portal($pdo, $userId, $ficha ?? null);
+// Entrou pelo CPF (o identificador do login não é um e-mail)?
+mse_gravar_login_por_cpf($pdo, $userId, filter_var($identifier, FILTER_VALIDATE_EMAIL) === false);
 $isFirstLogin = $stmt->rowCount() === 1;
 
 $access = mse_track_access($userId);

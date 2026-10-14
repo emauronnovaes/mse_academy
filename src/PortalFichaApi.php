@@ -522,6 +522,27 @@ function mse_gravar_obra_portal(PDO $pdo, int $userId, $ficha): void
 }
 
 /**
+ * Guarda em users.login_por_cpf (1/0) se a pessoa entrou no Portal pelo CPF
+ * (sem e-mail) neste login. Cria a coluna se faltar (migração 047).
+ */
+function mse_gravar_login_por_cpf(PDO $pdo, int $userId, bool $porCpf): void
+{
+    if ($userId <= 0) {
+        return;
+    }
+    try {
+        $st = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'login_por_cpf'");
+        $st->execute();
+        if ($st->fetchColumn() === false) {
+            $pdo->exec('ALTER TABLE users ADD COLUMN login_por_cpf TINYINT(1) NULL');
+        }
+        $pdo->prepare('UPDATE users SET login_por_cpf = ? WHERE id = ?')->execute([$porCpf ? 1 : 0, $userId]);
+    } catch (Throwable $e) {
+        error_log('[login_por_cpf] ' . $e->getMessage());
+    }
+}
+
+/**
  * Guarda o departamento como vem do Portal (migração 023). Sem a coluna,
  * ou sem departamento na ficha, não faz nada.
  */

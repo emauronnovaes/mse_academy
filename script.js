@@ -3547,7 +3547,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       ? 'Preencha as informações abaixo. O vídeo vai para aprovação antes de ficar disponível.'
       : (catalogo ? 'Preencha as informações abaixo. O vídeo fica disponível assim que salvar.'
                   : (document.getElementById('videoModalSoObra').checked
-                      ? 'Vídeo de integração só para quem é de obra (quem é alocado na sede não vê).'
+                      ? 'Vídeo de integração só para quem é de obra e entra pelo CPF (quem entra por e-mail ou é alocado na sede não vê).'
                       : 'Vídeo de integração: aparece igual para todo mundo, na trilha de Integração.'));
   }
 
@@ -5970,7 +5970,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <option value="curso" ${v.tipo === 'curso' ? 'selected' : ''}>Curso (catálogo)</option>
         <option value="onboarding" ${v.tipo === 'onboarding' ? 'selected' : ''}>Integração (trilha obrigatória)</option>
       </select>
-      <label class="admin-check" id="eeSoObraWrap"><input type="checkbox" id="eeSoObra" ${v.somente_obra ? 'checked' : ''}> Só para quem é de obra (não aparece para alocados na sede)</label>
+      <label class="admin-check" id="eeSoObraWrap"><input type="checkbox" id="eeSoObra" ${v.somente_obra ? 'checked' : ''}> Só para quem é de obra e entra pelo CPF (não aparece para quem entra por e-mail nem para alocados na sede)</label>
       <div id="eeAreaWrap">
         <label class="admin-field-label">Assuntos</label>
         <div class="vm-obrigatorio" id="eeAreas">${areas.map(a => `
@@ -6105,7 +6105,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       ['Duração informada', v.duracao_min ? v.duracao_min + ' min' : ''],
       ['"Você ainda está aí?"', v.aviso_presenca ? 'Sim' : 'Não'],
       ['Aula opcional', v.obrigatorio ? '' : 'Sim'],
-      ['Só para obra', v.somente_obra ? 'Sim (não aparece para alocados na sede)' : ''],
+      ['Só para obra', v.somente_obra ? 'Sim: quem é de obra e entra pelo CPF (não aparece para e-mail nem alocados na sede)' : ''],
       ['Grupo de sorteio', v.grupo_sorteio],
       ['Tipo de treinamento', v.tipo_treinamento],
       ['Instrutor', v.instrutor],
