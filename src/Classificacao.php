@@ -27,6 +27,8 @@ const MSE_COLUNAS_CLASSIFICACAO = [
     'obrigatoriedade' => 'VARCHAR(20) NULL',
     'tema_sugerido' => 'VARCHAR(120) NULL',
     'tema_status' => 'VARCHAR(10) NULL',
+    // Vídeo de integração só para quem é de obra (não alocado na sede).
+    'somente_obra' => 'TINYINT(1) NOT NULL DEFAULT 0',
 ];
 
 const MSE_OBRIGATORIEDADES = ['recomendado', 'departamentos', 'todos'];

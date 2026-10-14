@@ -3445,6 +3445,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     vmAtualizarChips();
     document.querySelectorAll('input[name="videoModalObrig"]').forEach(r => { r.checked = false; });
     document.getElementById('videoModalTema').value = '';
+    document.getElementById('videoModalSoObra').checked = false;
     document.getElementById('videoModalTemaOutro').value = '';
     vmAtualizarTemaOutro();
     vmPalavras = [];
@@ -3539,12 +3540,15 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     });
     // Tipo e duração: só admin (a duração sai sozinha da prévia do vídeo).
     document.getElementById('videoModalTipoWrap').hidden = vmParaAprovacao;
+    document.getElementById('videoModalSoObraWrap').hidden = catalogo;
     document.getElementById('videoModalDuracaoWrap').hidden = vmParaAprovacao;
     const hint = document.getElementById('videoModalHint');
     hint.textContent = vmParaAprovacao
       ? 'Preencha as informações abaixo. O vídeo vai para aprovação antes de ficar disponível.'
       : (catalogo ? 'Preencha as informações abaixo. O vídeo fica disponível assim que salvar.'
-                  : 'Vídeo de integração: aparece igual para todo mundo, na trilha de Integração.');
+                  : (document.getElementById('videoModalSoObra').checked
+                      ? 'Vídeo de integração só para quem é de obra (quem é alocado na sede não vê).'
+                      : 'Vídeo de integração: aparece igual para todo mundo, na trilha de Integração.'));
   }
 
   function atualizarVisibilidadeOrigemVideo(){
@@ -4053,6 +4057,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         description: descricao,
         duration_minutes: duracao,
       };
+      if(!catalogo && document.getElementById('videoModalSoObra').checked) body.somente_obra = true;
       if(catalogo){
         body.obrigatoriedade = obrigatoriedade;
         body.palavras_chave = vmPalavras.slice();
@@ -5965,6 +5970,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <option value="curso" ${v.tipo === 'curso' ? 'selected' : ''}>Curso (catálogo)</option>
         <option value="onboarding" ${v.tipo === 'onboarding' ? 'selected' : ''}>Integração (trilha obrigatória)</option>
       </select>
+      <label class="admin-check" id="eeSoObraWrap"><input type="checkbox" id="eeSoObra" ${v.somente_obra ? 'checked' : ''}> Só para quem é de obra (não aparece para alocados na sede)</label>
       <div id="eeAreaWrap">
         <label class="admin-field-label">Assuntos</label>
         <div class="vm-obrigatorio" id="eeAreas">${areas.map(a => `
@@ -6012,6 +6018,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       const integracao = document.getElementById('eeTipo').value === 'onboarding';
       document.getElementById('eeAreaWrap').hidden = integracao;
       document.getElementById('eeClassifWrap').hidden = integracao;
+      document.getElementById('eeSoObraWrap').hidden = !integracao;
     };
     document.getElementById('eeTipo').addEventListener('change', atualizaArea);
     atualizaArea();
@@ -6034,6 +6041,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         conteudo_programatico: document.getElementById('eeConteudo').value.trim(),
         assuntos: document.getElementById('eeAssuntos').value.trim(),
       };
+      if(tipo === 'onboarding' && window.mseEhAdmin) dados.somente_obra = document.getElementById('eeSoObra').checked;
       if(tipo === 'curso'){
         dados.area_slugs = Array.from(corpo.querySelectorAll('#eeAreas input:checked')).map(i => i.value);
         const obrig = document.getElementById('eeObrig').value;
@@ -6097,6 +6105,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       ['Duração informada', v.duracao_min ? v.duracao_min + ' min' : ''],
       ['"Você ainda está aí?"', v.aviso_presenca ? 'Sim' : 'Não'],
       ['Aula opcional', v.obrigatorio ? '' : 'Sim'],
+      ['Só para obra', v.somente_obra ? 'Sim (não aparece para alocados na sede)' : ''],
       ['Grupo de sorteio', v.grupo_sorteio],
       ['Tipo de treinamento', v.tipo_treinamento],
       ['Instrutor', v.instrutor],
@@ -7308,6 +7317,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(btnVideoSubmit) btnVideoSubmit.addEventListener('click', submitAddVideo);
     const videoTypeSelect = document.getElementById('videoModalType');
     if(videoTypeSelect) videoTypeSelect.addEventListener('change', atualizarVisibilidadeArea);
+    const vmSoObra = document.getElementById('videoModalSoObra');
+    if(vmSoObra) vmSoObra.addEventListener('change', atualizarVisibilidadeArea);
     vmLigarClassificacao();
 
     const videoOrigemSelect = document.getElementById('videoModalOrigem');

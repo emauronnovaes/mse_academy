@@ -121,6 +121,13 @@ foreach (mse_ler_campos_auditoria($pdo, $input) + mse_ler_aviso_presenca($pdo, $
 // Palavras-chave e recomendado/obrigatório (só os que vierem no corpo).
 $palavras = mse_ler_palavras_chave($input, false);
 $obrig = mse_ler_obrigatoriedade($input, false);
+if (array_key_exists('somente_obra', $input)) {
+    if (!mse_garantir_colunas_classificacao($pdo)) {
+        mse_error('Falta rodar a migração 040 no banco (migrations/040_classificacao_de_videos.sql).', 409);
+    }
+    $campos[] = 'somente_obra = ?';
+    $valores[] = !empty($input['somente_obra']) ? 1 : 0;
+}
 if ($palavras !== null || $obrig !== null) {
     if (!mse_garantir_colunas_classificacao($pdo)) {
         mse_error('Falta rodar a migração 040 no banco (migrations/040_classificacao_de_videos.sql).', 409);

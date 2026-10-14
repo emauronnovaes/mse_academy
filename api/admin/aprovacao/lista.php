@@ -86,6 +86,7 @@ $stmt = $pdo->prepare(
             ' . ($temSorteio ? 'c.grupo_sorteio, c.obrigatorio' : 'NULL AS grupo_sorteio, 1 AS obrigatorio') . ',
             ' . ($temClassif ? 'c.palavras_chave, c.obrigatoriedade, c.tema_sugerido, c.tema_status'
                              : 'NULL AS palavras_chave, NULL AS obrigatoriedade, NULL AS tema_sugerido, NULL AS tema_status') . ',
+            ' . (mse_tem_coluna($pdo, 'courses', 'somente_obra') ? 'c.somente_obra' : '0 AS somente_obra') . ',
             u.name AS autor_nome, u.email AS autor_email, u.cargo AS autor_cargo,
             d.name AS decidido_por_nome
      FROM courses c
@@ -174,5 +175,6 @@ $resposta['video'] = [
     'obrigatoriedade' => $c['obrigatoriedade'],
     'tema_sugerido' => $c['tema_sugerido'],
     'tema_status' => $c['tema_status'],
+    'somente_obra' => (bool) $c['somente_obra'],
 ];
 mse_json($resposta);

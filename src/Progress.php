@@ -75,13 +75,23 @@ function mse_aulas_da_trilha(PDO $pdo, int $userId): array
     $temSorteio = isset($colunas['grupo_sorteio'])
         && $pdo->query("SHOW TABLES LIKE 'user_sorteio_aula'")->fetch() !== false;
     $temObrigatorio = isset($colunas['obrigatorio']);
+    // Vídeo marcado "só para obra": só entra na trilha de quem é de obra e
+    // NÃO está alocado na sede (users.eh_obra, gravado pela ficha no login).
+    $temObra = isset($colunas['somente_obra']);
+    $ehObra = false;
+    if ($temObra && mse_tem_coluna($pdo, 'users', 'eh_obra')) {
+        $st = $pdo->prepare('SELECT eh_obra FROM users WHERE id = ?');
+        $st->execute([$userId]);
+        $ehObra = (int) $st->fetchColumn() === 1;
+    }
 
     $stmt = $pdo->query(
         "SELECT id, order_index,
                 " . ($temSorteio ? 'grupo_sorteio' : 'NULL AS grupo_sorteio') . ",
                 " . ($temObrigatorio ? 'obrigatorio' : '1 AS obrigatorio') . "
          FROM courses
-         WHERE type = 'onboarding' AND is_published = 1
+         WHERE type = 'onboarding' AND is_published = 1"
+         . ($temObra && !$ehObra ? ' AND somente_obra = 0' : '') . "
          ORDER BY order_index ASC, id ASC"
     );
     $todas = $stmt->fetchAll();

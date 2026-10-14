@@ -142,6 +142,8 @@ $stmt->execute([$nome, $primeiroNome, $email, $cpf, $cargo, $areaId]);
 $userId = (int) $pdo->lastInsertId();
 // Departamento como vem do Portal, mesmo sem um departamento igual na Academy.
 mse_gravar_setor_portal($pdo, $userId, $ficha['obras_departamento'] ?? null);
+// É de obra (e não alocado na sede)? Decide quais vídeos de integração ela vê.
+mse_gravar_obra_portal($pdo, $userId, $ficha ?? null);
 $isFirstLogin = $stmt->rowCount() === 1;
 
 $access = mse_track_access($userId);

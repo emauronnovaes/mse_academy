@@ -118,6 +118,7 @@ foreach ($lote as $u) {
     }
 
     mse_gravar_setor_portal($pdo, (int) $u['id'], $ficha['obras_departamento'] ?? null);
+    mse_gravar_obra_portal($pdo, (int) $u['id'], $ficha);
     $novoSetor = trim((string) ($ficha['obras_departamento'] ?? ''));
     $mudouSetor = $novoSetor !== '' && $novoSetor !== trim((string) $u['setor_portal']);
 

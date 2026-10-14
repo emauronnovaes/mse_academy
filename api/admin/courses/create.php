@@ -106,7 +106,8 @@ if ($paraAprovacao && !mse_garantir_colunas_aprovacao($pdo)) {
 // Assuntos do vídeo (os cartões da seção Cursos): vários possíveis; o
 // primeiro vira o principal (courses.area_id).
 $areaIds = mse_ler_assuntos($pdo, $input);
-$classifica = $palavrasChave !== null || $obrigatoriedade !== null || $temaSugerido !== '';
+$somenteObra = $type === 'onboarding' && !empty($input['somente_obra']);
+$classifica = $palavrasChave !== null || $obrigatoriedade !== null || $temaSugerido !== '' || $somenteObra;
 if ($classifica && !mse_garantir_colunas_classificacao($pdo)) {
     mse_error('Este servidor ainda não aceita palavras-chave e obrigatoriedade. Falta rodar a migração 040 no banco (migrations/040_classificacao_de_videos.sql).', 409);
 }
@@ -233,8 +234,8 @@ try {
     }
 
     if ($classifica) {
-        $pdo->prepare('UPDATE courses SET palavras_chave = ?, obrigatoriedade = ?, tema_sugerido = ?, tema_status = ? WHERE id = ?')
-            ->execute([$palavrasChave, $obrigatoriedade, $temaSugerido ?: null, $temaSugerido !== '' ? 'pendente' : null, $courseId]);
+        $pdo->prepare('UPDATE courses SET palavras_chave = ?, obrigatoriedade = ?, tema_sugerido = ?, tema_status = ?, somente_obra = ? WHERE id = ?')
+            ->execute([$palavrasChave, $obrigatoriedade, $temaSugerido ?: null, $temaSugerido !== '' ? 'pendente' : null, $somenteObra ? 1 : 0, $courseId]);
     }
 
     if ($camposAuditoria) {

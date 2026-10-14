@@ -94,6 +94,8 @@ $stmt->execute([$nome, $primeiroNome, $email, $cpf, $cargo, $areaId]);
 $userId = (int) $pdo->lastInsertId();
 // Departamento como vem do Portal (ficha do RH ou a própria sessão).
 mse_gravar_setor_portal($pdo, $userId, ($ficha['obras_departamento'] ?? null) ?: ($sessao['setor'] ?? null));
+// É de obra (e não alocado na sede)? Decide quais vídeos de integração ela vê.
+mse_gravar_obra_portal($pdo, $userId, $ficha ?? null);
 $isFirstLogin = $stmt->rowCount() === 1;
 
 $access = mse_track_access($userId);

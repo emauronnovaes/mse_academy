@@ -475,6 +475,53 @@ function mse_portal_ficha_consultar_varios(array $termos): array
 }
 
 /**
+ * A pessoa é DE OBRA? Pela ficha do Portal: tem obra (nome_obra, ou o
+ * departamento/obra é nome de obra) e NÃO está alocada na sede (mse_sede
+ * diferente de "SIM"). Quem é de uma obra mas está alocado na sede
+ * (ex.: mse_sede = SIM, nome_obra = CNPEM-FASEADA) não conta como obra.
+ */
+function mse_ficha_eh_obra(array $ficha): bool
+{
+    $sede = mb_strtolower(trim((string) ($ficha['mse_sede'] ?? '')), 'UTF-8');
+    if (in_array($sede, ['sim', 's', '1', 'true', 'yes'], true)) {
+        return false;
+    }
+    $obra = trim((string) ($ficha['nome_obra'] ?? ''));
+    if ($obra !== '' && !in_array(mb_strtolower($obra, 'UTF-8'), ['sede', 'mse sede', 'escritorio', 'escritório', '-', 'n/a'], true)) {
+        return true;
+    }
+    $depto = trim((string) ($ficha['obras_departamento'] ?? ''));
+    if ($depto !== '') {
+        if (!function_exists('mse_departamento_eh_obra')) {
+            require_once __DIR__ . '/Departamentos.php';
+        }
+        return mse_departamento_eh_obra($depto);
+    }
+    return false;
+}
+
+/**
+ * Guarda em users.eh_obra (1/0) se a pessoa é de obra, pela ficha. Sem ficha
+ * não muda nada (fica como estava). Cria a coluna se faltar (migração 046).
+ */
+function mse_gravar_obra_portal(PDO $pdo, int $userId, $ficha): void
+{
+    if ($userId <= 0 || !is_array($ficha) || !$ficha) {
+        return;
+    }
+    try {
+        $st = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'eh_obra'");
+        $st->execute();
+        if ($st->fetchColumn() === false) {
+            $pdo->exec('ALTER TABLE users ADD COLUMN eh_obra TINYINT(1) NULL');
+        }
+        $pdo->prepare('UPDATE users SET eh_obra = ? WHERE id = ?')->execute([mse_ficha_eh_obra($ficha) ? 1 : 0, $userId]);
+    } catch (Throwable $e) {
+        error_log('[eh_obra] ' . $e->getMessage());
+    }
+}
+
+/**
  * Guarda o departamento como vem do Portal (migração 023). Sem a coluna,
  * ou sem departamento na ficha, não faz nada.
  */
