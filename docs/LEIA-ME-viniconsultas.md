@@ -22,7 +22,9 @@ GRANT SELECT ON mse_academy.consultasmia TO 'usuario_consulta'@'%';
 |---|---|
 | `nome`, `cpf` (11 dígitos), `email` | A pessoa (dados da ficha do Portal) |
 | `aulas_obrigatorias_concluidas` | **1** em cada linha de aula concluída (cada linha é uma aula); **0** na linha de quem ainda não concluiu nenhuma |
-| `aula` | Nome da aula obrigatória concluída daquela linha |
+| `aula` | Nome da aula daquela linha |
+| `tipo_aula` | `obrigatoria` (só aparecem as **concluídas**) ou `recomendada` (aparecem **todas** as recomendadas da pessoa, feitas ou não) |
+| `concluida` | **1** = a pessoa concluiu a aula; **0** = ainda não (só acontece nas recomendadas) |
 | `assunto` | Assunto(s) da aula, separados por vírgula |
 | `descricao` | Descrição da aula |
 | `palavras_chave` | Palavras-chave da aula, separadas por vírgula |
@@ -31,7 +33,10 @@ GRANT SELECT ON mse_academy.consultasmia TO 'usuario_consulta'@'%';
 | `tempo_video` | Duração do vídeo da aula, em `mm:ss` (ou `h:mm:ss` a partir de 1 hora). Vazio se a duração não for conhecida |
 
 - Aulas obrigatórias são as marcadas como obrigatórias para o **departamento** da pessoa e as obrigatórias para todos.
-  Aulas só **recomendadas** e cursos de **integração** não entram.
+  Só as **concluídas** viram linha (`tipo_aula = 'obrigatoria'`, `concluida = 1`).
+- Aulas **recomendadas** (para o departamento da pessoa, ou para todos quando nenhum foi marcado) aparecem **todas**,
+  feitas ou não (`tipo_aula = 'recomendada'`, `concluida` 1 ou 0). Não entram na contagem de obrigatórias.
+- Cursos de **integração** não entram.
 - Quem ainda não concluiu nenhuma aparece em **1 linha**, com `aula` vazia e `aulas_obrigatorias_concluidas = 0`.
 - Atualiza sozinha quando a pessoa conclui uma aula. Contratados novos entram na próxima atualização
   (botão **Atualizar banco** ou a tarefa agendada do servidor).

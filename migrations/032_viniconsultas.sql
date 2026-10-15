@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS consultasmia (
   email                          VARCHAR(150) NULL,
   aulas_obrigatorias_concluidas  INT          NOT NULL DEFAULT 0,
   aula                           VARCHAR(200) NULL,
+  tipo_aula                      VARCHAR(12)  NULL,
+  concluida                      TINYINT(1)   NULL,
   assunto                        VARCHAR(500) NULL,
   descricao                      TEXT         NULL,
   palavras_chave                 VARCHAR(1000) NULL,

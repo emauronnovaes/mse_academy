@@ -73,6 +73,14 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
         if ($col->fetchColumn() === false) {
             $pdo->exec('ALTER TABLE consultasmia ADD COLUMN tempo_video VARCHAR(12) NULL AFTER palavras_chave');
         }
+        // Tipo da aula (obrigatória ou recomendada) e se a pessoa concluiu (migração 048).
+        $col = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consultasmia' AND COLUMN_NAME = 'tipo_aula'");
+        $col->execute();
+        if ($col->fetchColumn() === false) {
+            $pdo->exec('ALTER TABLE consultasmia ADD COLUMN tipo_aula VARCHAR(12) NULL AFTER aula, ADD COLUMN concluida TINYINT(1) NULL AFTER tipo_aula');
+            // Linhas antigas eram todas aulas obrigatórias concluídas.
+            $pdo->exec("UPDATE consultasmia SET tipo_aula = 'obrigatoria', concluida = 1 WHERE aula IS NOT NULL");
+        }
         // Hora em que a pessoa começou e terminou cada vídeo (migração 045).
         $col = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consultasmia' AND COLUMN_NAME = 'inicio_video'");
         $col->execute();
@@ -125,10 +133,13 @@ function mse_vini_cursos_obrigatorios(PDO $pdo, ?int $userId): array
  *
  * @return array<int, array<string, mixed>>
  */
-function mse_vini_aulas_do_departamento(PDO $pdo, ?int $userId, ?string $deptoFicha): array
+function mse_vini_aulas_do_departamento(PDO $pdo, ?int $userId, ?string $deptoFicha, string $nivel = 'obrigatorias'): array
 {
     require_once __DIR__ . '/Departamentos.php';
-    if (!mse_tem_tabela($pdo, 'course_departamentos')) {
+    $recomendadas = $nivel === 'recomendadas';
+    $temTabelaDeptos = mse_tem_tabela($pdo, 'course_departamentos');
+    // Obrigatórias dependem dos departamentos marcados; recomendadas sem departamento valem para todos.
+    if (!$temTabelaDeptos && !$recomendadas) {
         return [];
     }
     $nomes = [$deptoFicha];
@@ -147,9 +158,26 @@ function mse_vini_aulas_do_departamento(PDO $pdo, ?int $userId, ?string $deptoFi
             $chaves[mse_departamento_chave((string) $n)] = true;
         }
     }
-    // Recomendadas NÃO contam (só aparecem para a pessoa). "Obrigatório para todos" conta para todo mundo.
     $temClassif = mse_tem_coluna($pdo, 'courses', 'obrigatoriedade');
     $marc = $chaves ? implode(',', array_fill(0, count($chaves), '?')) : "''";
+    if ($recomendadas) {
+        // Recomendadas: marcadas "apenas recomendado", para os departamentos relacionados (ou para todos, se nenhum foi marcado).
+        if (!$temClassif) {
+            return [];
+        }
+        $existeDeptos = $temTabelaDeptos
+            ? "(NOT EXISTS (SELECT 1 FROM course_departamentos d0 WHERE d0.course_id = c.id)
+                OR EXISTS (SELECT 1 FROM course_departamentos d WHERE d.course_id = c.id AND d.departamento_norm IN ({$marc})))"
+            : '1 = 1';
+        $st = $pdo->prepare(
+            "SELECT c.id FROM courses c
+             WHERE c.is_published = 1 AND c.type <> 'onboarding' AND c.obrigatoriedade = 'recomendado' AND {$existeDeptos}
+             ORDER BY c.order_index ASC, c.id ASC"
+        );
+        $st->execute($temTabelaDeptos ? array_keys($chaves) : []);
+        return mse_vini_cursos_por_ids($pdo, $userId, array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN)));
+    }
+    // Obrigatórias: as do departamento e as "obrigatório para todos". Recomendadas ficam de fora daqui.
     $st = $pdo->prepare(
         "SELECT c.id FROM courses c
          WHERE c.is_published = 1 AND c.type <> 'onboarding' AND (
@@ -261,7 +289,8 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
 
         // Aulas obrigatórias = as do departamento da pessoa e as obrigatórias para todos (integração fica de fora).
         $aulas = mse_vini_aulas_do_departamento($pdo, $userId, isset($p['departamento']) ? (string) $p['departamento'] : null);
-        mse_vini_gravar_linhas_pessoa($pdo, (string) $p['nome'], $cpf, $p['email'] ?? null, $aulas);
+        $recomendadas = mse_vini_aulas_do_departamento($pdo, $userId, isset($p['departamento']) ? (string) $p['departamento'] : null, 'recomendadas');
+        mse_vini_gravar_linhas_pessoa($pdo, (string) $p['nome'], $cpf, $p['email'] ?? null, $aulas, $recomendadas);
 
         $login = ['n' => 0, 'primeiro' => null, 'ultimo' => null];
         if ($userId) {
@@ -331,7 +360,8 @@ function mse_vini_recalcular_pessoa(PDO $pdo, ?int $userId, string $nome, ?strin
         $depto = $d !== false && trim((string) $d) !== '' ? (string) $d : null;
     }
     $aulas = mse_vini_aulas_do_departamento($pdo, $userId, $depto);
-    mse_vini_gravar_linhas_pessoa($pdo, $nome, $cpf, $email, $aulas);
+    $recomendadas = mse_vini_aulas_do_departamento($pdo, $userId, $depto, 'recomendadas');
+    mse_vini_gravar_linhas_pessoa($pdo, $nome, $cpf, $email, $aulas, $recomendadas);
     if ($depto !== null || ($userId && mse_tem_tabela($pdo, 'consultasmia_2'))) {
         $feitas = array_values(array_filter($aulas, static fn($c) => $c['status'] === 'concluido'));
         $where = $cpf ? 'cpf = ?' : 'email = ?';
@@ -439,7 +469,7 @@ function mse_vini_formatar_tempo(int $segundos): ?string
  *
  * @param array $aulas as aulas obrigatórias da pessoa (mse_vini_aulas_do_departamento)
  */
-function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?string $email, array $aulas): void
+function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?string $email, array $aulas, array $recomendadas = []): void
 {
     require_once __DIR__ . '/Assuntos.php';
     // Cria/atualiza a tabela e as colunas (tempo_video...) ANTES da transação: DDL encerraria a transação.
@@ -448,8 +478,8 @@ function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?st
     }
     $feitas = array_values(array_filter($aulas, static fn($c) => $c['status'] === 'concluido'));
     $detalhes = [];
-    if ($feitas) {
-        $ids = array_map(static fn($c) => (int) $c['id'], $feitas);
+    if ($feitas || $recomendadas) {
+        $ids = array_map(static fn($c) => (int) $c['id'], array_merge($feitas, $recomendadas));
         $marc = implode(',', array_fill(0, count($ids), '?'));
         $temPalavras = mse_tem_coluna($pdo, 'courses', 'palavras_chave');
         $temSeg = mse_tem_coluna($pdo, 'courses', 'duration_seconds');
@@ -482,20 +512,30 @@ function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?st
             $pdo->prepare('DELETE FROM consultasmia WHERE cpf IS NULL AND nome = ?')->execute([$nome]);
         }
         $ins = $pdo->prepare(
-            'INSERT INTO consultasmia (nome, cpf, email, aulas_obrigatorias_concluidas, aula, assunto, descricao, palavras_chave, tempo_video, inicio_video, fim_video)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO consultasmia (nome, cpf, email, aulas_obrigatorias_concluidas, aula, tipo_aula, concluida, assunto, descricao, palavras_chave, tempo_video, inicio_video, fim_video)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         // Início = primeira vez que abriu o vídeo; fim = quando concluiu.
-        $linhas = $feitas ? array_map(static function ($c) use ($detalhes) {
+        $montar = static function (array $c, string $tipo) use ($detalhes): array {
             $d = $detalhes[(int) $c['id']] ?? ['aula' => $c['curso'], 'assunto' => null, 'descricao' => null, 'palavras_chave' => null, 'tempo_video' => null];
+            $feito = ($c['status'] ?? '') === 'concluido';
+            $d['tipo'] = $tipo;
+            $d['concluida'] = $feito ? 1 : 0;
             $d['inicio_video'] = $c['primeira_entrada'] ?: ($c['checkin_em'] ?? null);
-            $d['fim_video'] = $c['concluido_em'] ?? null;
+            $d['fim_video'] = $feito ? ($c['concluido_em'] ?? null) : null;
             return $d;
-        }, $feitas)
-                          : [['aula' => null, 'assunto' => null, 'descricao' => null, 'palavras_chave' => null, 'tempo_video' => null, 'inicio_video' => null, 'fim_video' => null]];
+        };
+        // Obrigatórias: só as concluídas (uma linha por aula). Recomendadas: todas, feitas ou não.
+        $linhas = array_merge(
+            array_map(static fn($c) => $montar($c, 'obrigatoria'), $feitas),
+            array_map(static fn($c) => $montar($c, 'recomendada'), $recomendadas)
+        );
+        if (!$linhas) {
+            $linhas = [['aula' => null, 'tipo' => null, 'concluida' => null, 'assunto' => null, 'descricao' => null, 'palavras_chave' => null, 'tempo_video' => null, 'inicio_video' => null, 'fim_video' => null]];
+        }
         foreach ($linhas as $l) {
-            // Cada linha é UMA aula concluída: 1 por linha (0 na linha sem aula).
-            $ins->execute([$nome, $cpf, $email, $l['aula'] !== null ? 1 : 0, $l['aula'], $l['assunto'], $l['descricao'], $l['palavras_chave'], $l['tempo_video'], $l['inicio_video'], $l['fim_video']]);
+            // 1 nas linhas de aula OBRIGATÓRIA concluída; 0 nas recomendadas e na linha sem aula.
+            $ins->execute([$nome, $cpf, $email, $l['tipo'] === 'obrigatoria' ? 1 : 0, $l['aula'], $l['tipo'], $l['concluida'], $l['assunto'], $l['descricao'], $l['palavras_chave'], $l['tempo_video'], $l['inicio_video'], $l['fim_video']]);
         }
         if (!$jaEmTransacao) {
             $pdo->commit();
