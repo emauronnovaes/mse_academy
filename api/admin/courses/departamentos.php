@@ -111,7 +111,7 @@ if ($temTabela) {
 
 // Aulas mudaram: o banco de consulta se atualiza em até 1 minuto.
 require_once __DIR__ . '/../../../src/Viniconsultas.php';
-mse_vini_recalcular_agendado();
+mse_vini_recalcular_agendado(true);
 
 mse_json([
     'course_id' => $courseId,

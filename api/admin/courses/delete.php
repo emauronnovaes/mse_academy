@@ -98,7 +98,7 @@ $stmt->execute([$courseId]);
 
 // Aulas mudaram: o banco de consulta se atualiza em até 1 minuto.
 require_once __DIR__ . '/../../../src/Viniconsultas.php';
-mse_vini_recalcular_agendado();
+mse_vini_recalcular_agendado(true);
 
 // O arquivo no S3 é mantido de propósito: o bucket não tem versionamento,
 // então apagar aqui seria perda definitiva do vídeo.

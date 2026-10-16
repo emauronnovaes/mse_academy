@@ -373,45 +373,148 @@ function mse_vini_recalcular_pessoa(PDO $pdo, ?int $userId, string $nome, ?strin
 }
 
 /**
- * Recalcula TODAS as pessoas que estão em consultasmia (só banco, sem chamar
- * API de fora): pega aula nova, aula editada ou excluída, mudança de
- * departamento ou de obrigatoriedade. Devolve quantas pessoas recalculou.
+ * Acha o users.id de uma pessoa da tabela (por CPF, depois por e-mail).
  */
-function mse_vini_recalcular_todos(PDO $pdo): int
+function mse_vini_achar_usuario(PDO $pdo, ?string $cpf, ?string $email): ?int
+{
+    if ($cpf) {
+        $st = $pdo->prepare('SELECT id FROM users WHERE cpf = ? LIMIT 1');
+        $st->execute([$cpf]);
+        $id = $st->fetchColumn();
+        if ($id) {
+            return (int) $id;
+        }
+    }
+    if ($email) {
+        $st = $pdo->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
+        $st->execute([$email]);
+        $id = $st->fetchColumn();
+        if ($id) {
+            return (int) $id;
+        }
+    }
+    return null;
+}
+
+/**
+ * Recalcula as pessoas de consultasmia (só banco, sem API de fora), em LOTES
+ * COM LIMITE DE TEMPO, para nunca pesar nem travar o sistema:
+ *
+ *   1) quem teve atividade nova (assistiu/concluiu algo) desde a última
+ *      passada: sempre, primeiro;
+ *   2) se uma aula mudou (criar, editar, excluir, aprovar, departamentos), ou
+ *      na primeira vez, uma passada em TODOS, continuando de onde parou na
+ *      próxima chamada (cursor em configuracoes).
+ *
+ * @param float $orcamentoSeg tempo máximo desta chamada
+ * @return int quantas pessoas recalculou agora
+ */
+function mse_vini_recalcular_lote(PDO $pdo, float $orcamentoSeg = 5.0): int
 {
     if (!mse_tem_tabela($pdo, 'consultasmia') || !mse_tem_coluna($pdo, 'consultasmia', 'aulas_obrigatorias_concluidas')) {
         return 0;
     }
-    $pessoas = $pdo->query('SELECT nome, cpf, email FROM consultasmia GROUP BY nome, cpf, email')->fetchAll();
-    $achaPorCpf = $pdo->prepare('SELECT id FROM users WHERE cpf = ? LIMIT 1');
-    $achaPorEmail = $pdo->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
+    require_once __DIR__ . '/Configuracoes.php';
+    if (!mse_garantir_configuracoes($pdo)) {
+        return 0;
+    }
+    $inicio = microtime(true);
     $n = 0;
-    foreach ($pessoas as $p) {
-        $uid = null;
-        if ($p['cpf']) {
-            $achaPorCpf->execute([$p['cpf']]);
-            $uid = $achaPorCpf->fetchColumn() ?: null;
-        }
-        if (!$uid && $p['email']) {
-            $achaPorEmail->execute([$p['email']]);
-            $uid = $achaPorEmail->fetchColumn() ?: null;
-        }
+    $um = static function (array $p) use ($pdo, &$n): void {
         try {
-            mse_vini_recalcular_pessoa($pdo, $uid ? (int) $uid : null, (string) $p['nome'], $p['cpf'] ?: null, $p['email'] ?: null);
+            mse_vini_recalcular_pessoa($pdo, mse_vini_achar_usuario($pdo, $p['cpf'] ?: null, $p['email'] ?: null), (string) $p['nome'], $p['cpf'] ?: null, $p['email'] ?: null);
             $n++;
         } catch (Throwable $e) {
             error_log('[consultasmia] recalcular ' . $p['nome'] . ': ' . $e->getMessage());
+        }
+    };
+    $agora = (string) $pdo->query('SELECT NOW()')->fetchColumn();
+
+    // 1) atividade nova desde a última passada
+    $ultima = mse_config_ler($pdo, 'consultasmia_atividade_em', '');
+    if ($ultima !== '' && mse_tem_coluna($pdo, 'user_course_progress', 'updated_at')) {
+        $st = $pdo->prepare(
+            'SELECT MIN(cm.id) AS id, cm.nome, cm.cpf, cm.email
+             FROM consultasmia cm
+             JOIN users u ON (cm.cpf IS NOT NULL AND u.cpf COLLATE utf8mb4_unicode_ci = cm.cpf COLLATE utf8mb4_unicode_ci)
+                          OR (cm.cpf IS NULL AND u.email COLLATE utf8mb4_unicode_ci = cm.email COLLATE utf8mb4_unicode_ci)
+             JOIN user_course_progress p ON p.user_id = u.id
+             WHERE p.updated_at >= ?
+             GROUP BY cm.nome, cm.cpf, cm.email
+             LIMIT 200'
+        );
+        $st->execute([$ultima]);
+        $ativos = $st->fetchAll();
+        $feitos = 0;
+        foreach ($ativos as $p) {
+            if (microtime(true) - $inicio > $orcamentoSeg) {
+                break;
+            }
+            $um($p);
+            $feitos++;
+        }
+        // Só avança o ponto de corte se deu para atender todo mundo desta vez.
+        if ($feitos >= count($ativos)) {
+            mse_config_gravar($pdo, 'consultasmia_atividade_em', $agora, 'sistema');
+        }
+    } elseif ($ultima === '') {
+        mse_config_gravar($pdo, 'consultasmia_atividade_em', $agora, 'sistema');
+        mse_config_gravar($pdo, 'consultasmia_total_pendente', '1', 'sistema'); // primeira vez: passada completa, aos poucos
+    }
+
+    // 2) passada completa (aula mudou / primeira vez), em lotes, continuando do cursor
+    if (mse_config_ler($pdo, 'consultasmia_total_pendente', '0') === '1' && microtime(true) - $inicio < $orcamentoSeg) {
+        // O cursor é uma chave ESTÁVEL (CPF, ou nome sem CPF), não o id: recalcular uma pessoa
+        // apaga e regrava as linhas dela com ids novos, e um cursor por id nunca terminaria.
+        $cursor = mse_config_ler($pdo, 'consultasmia_total_cursor', '');
+        $st = $pdo->prepare(
+            "SELECT nome, cpf, email, COALESCE(cpf, CONCAT('~', nome)) AS chave FROM consultasmia
+             GROUP BY nome, cpf, email HAVING chave > ? ORDER BY chave ASC LIMIT 60"
+        );
+        $st->execute([$cursor]);
+        $lote = $st->fetchAll();
+        if (!$lote) {
+            mse_config_gravar($pdo, 'consultasmia_total_pendente', '0', 'sistema');
+            mse_config_gravar($pdo, 'consultasmia_total_cursor', '', 'sistema');
+        } else {
+            foreach ($lote as $p) {
+                if (microtime(true) - $inicio > $orcamentoSeg) {
+                    break;
+                }
+                $um($p);
+                $cursor = (string) $p['chave'];
+            }
+            mse_config_gravar($pdo, 'consultasmia_total_cursor', $cursor, 'sistema');
         }
     }
     return $n;
 }
 
 /**
- * Chamada de dentro de qualquer requisição (progresso, presença, mudança de
- * aula): recalcula todo mundo NO MÁXIMO uma vez por minuto, depois de a
- * resposta já ter sido entregue, para ninguém esperar. Nunca lança erro.
+ * Pede uma passada completa (uma aula mudou): o recálculo em lotes cuida dela
+ * nas próximas chamadas. Barato: só marca.
  */
-function mse_vini_recalcular_agendado(): void
+function mse_vini_marcar_recalculo_total(PDO $pdo): void
+{
+    try {
+        require_once __DIR__ . '/Configuracoes.php';
+        if (mse_tem_tabela($pdo, 'consultasmia') && mse_garantir_configuracoes($pdo)) {
+            mse_config_gravar($pdo, 'consultasmia_total_pendente', '1', 'sistema');
+            mse_config_gravar($pdo, 'consultasmia_total_cursor', '', 'sistema');
+        }
+    } catch (Throwable $e) {
+        error_log('[consultasmia] marcar recalculo: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Chamada de dentro de requisições comuns (progresso, presença, mudança de
+ * aula): no MÁXIMO uma vez por minuto, depois de entregar a resposta, faz um
+ * lote CURTO (limite de poucos segundos) de recálculo. Nunca lança erro.
+ *
+ * @param bool $aulaMudou true quando a chamada vem de uma mudança de aula (pede passada completa)
+ */
+function mse_vini_recalcular_agendado(bool $aulaMudou = false): void
 {
     try {
         $pdo = mse_db();
@@ -422,6 +525,9 @@ function mse_vini_recalcular_agendado(): void
         if (!mse_garantir_configuracoes($pdo)) {
             return;
         }
+        if ($aulaMudou) {
+            mse_vini_marcar_recalculo_total($pdo);
+        }
         // Quem pegar o "turno" do minuto roda; os outros seguem sem fazer nada (UPDATE atômico).
         $pdo->exec("INSERT IGNORE INTO configuracoes (chave, valor, atualizado_em) VALUES ('consultasmia_recalculo_em', '2000-01-01 00:00:00', NOW())");
         $st = $pdo->prepare("UPDATE configuracoes SET valor = NOW(), atualizado_em = NOW() WHERE chave = 'consultasmia_recalculo_em' AND valor <= DATE_SUB(NOW(), INTERVAL 60 SECOND)");
@@ -429,21 +535,18 @@ function mse_vini_recalcular_agendado(): void
         if ($st->rowCount() !== 1) {
             return;
         }
-        $rodar = static function () use ($pdo): void {
-            try {
-                ignore_user_abort(true);
-                @set_time_limit(120);
-                mse_vini_recalcular_todos($pdo);
-            } catch (Throwable $e) {
-                error_log('[consultasmia] recalculo agendado: ' . $e->getMessage());
-            }
-        };
-        // Roda depois da resposta (PHP-FPM); sem FPM roda no fim da requisição.
-        register_shutdown_function(static function () use ($rodar): void {
+        // Roda depois da resposta (PHP-FPM); sem FPM roda no fim da requisição, mas com limite curto.
+        register_shutdown_function(static function () use ($pdo): void {
             if (function_exists('fastcgi_finish_request')) {
                 @fastcgi_finish_request();
             }
-            $rodar();
+            try {
+                ignore_user_abort(true);
+                @set_time_limit(30);
+                mse_vini_recalcular_lote($pdo, 5.0);
+            } catch (Throwable $e) {
+                error_log('[consultasmia] recalculo agendado: ' . $e->getMessage());
+            }
         });
     } catch (Throwable $e) {
         error_log('[consultasmia] agendar recalculo: ' . $e->getMessage());

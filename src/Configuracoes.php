@@ -42,9 +42,7 @@ function mse_garantir_configuracoes(PDO $pdo): bool
 function mse_config_ler(PDO $pdo, string $chave, string $padrao): string
 {
     try {
-        if (!mse_tem_tabela($pdo, 'configuracoes')) {
-            return $padrao;
-        }
+        // Lê direto (sem o cache de "a tabela existe?", que fica velho logo depois de ela ser criada).
         $st = $pdo->prepare('SELECT valor FROM configuracoes WHERE chave = ?');
         $st->execute([$chave]);
         $v = $st->fetchColumn();
