@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS consultasmia (
   cpf                            VARCHAR(11)  NULL,
   email                          VARCHAR(150) NULL,
   aulas_obrigatorias_concluidas  INT          NOT NULL DEFAULT 0,
+  course_id                      INT UNSIGNED NULL,
   aula                           VARCHAR(200) NULL,
   tipo_aula                      VARCHAR(12)  NULL,
   concluida                      TINYINT(1)   NULL,

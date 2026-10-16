@@ -81,6 +81,14 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
             // Linhas antigas eram todas aulas obrigatórias concluídas.
             $pdo->exec("UPDATE consultasmia SET tipo_aula = 'obrigatoria', concluida = 1 WHERE aula IS NOT NULL");
         }
+        // Id da aula em cada linha (migração 049): é o que mantém o id da linha estável.
+        $col = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consultasmia' AND COLUMN_NAME = 'course_id'");
+        $col->execute();
+        if ($col->fetchColumn() === false) {
+            $pdo->exec('ALTER TABLE consultasmia ADD COLUMN course_id INT UNSIGNED NULL AFTER aulas_obrigatorias_concluidas');
+            // Linhas antigas: acha a aula pelo título (as que não acharem seguem pelo nome da aula).
+            $pdo->exec('UPDATE consultasmia c JOIN courses co ON co.title COLLATE utf8mb4_unicode_ci = c.aula COLLATE utf8mb4_unicode_ci SET c.course_id = co.id WHERE c.aula IS NOT NULL AND c.course_id IS NULL');
+        }
         // Hora em que a pessoa começou e terminou cada vídeo (migração 045).
         $col = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consultasmia' AND COLUMN_NAME = 'inicio_video'");
         $col->execute();
@@ -397,14 +405,16 @@ function mse_vini_achar_usuario(PDO $pdo, ?string $cpf, ?string $email): ?int
 }
 
 /**
- * Recalcula as pessoas de consultasmia (só banco, sem API de fora), em LOTES
- * COM LIMITE DE TEMPO, para nunca pesar nem travar o sistema:
+ * Recalcula as pessoas de consultasmia (só banco, sem API de fora), A CADA HORA
+ * e em LOTES COM LIMITE DE TEMPO, para nunca pesar nem travar o sistema.
  *
- *   1) quem teve atividade nova (assistiu/concluiu algo) desde a última
- *      passada: sempre, primeiro;
- *   2) se uma aula mudou (criar, editar, excluir, aprovar, departamentos), ou
- *      na primeira vez, uma passada em TODOS, continuando de onde parou na
- *      próxima chamada (cursor em configuracoes).
+ * Uma "passada" passa por todo mundo da tabela, pouco a pouco (continuando de
+ * onde parou na chamada seguinte, por um cursor estável). Ela começa:
+ *   - a cada 1 hora (desde o início da passada anterior);
+ *   - ou na hora, quando uma aula muda (criar, editar, excluir, aprovar,
+ *     trocar departamentos) ou na primeira vez.
+ * Sem passada em andamento e antes de completar 1 hora, não faz nada.
+ * (Quando a pessoa conclui uma aula, a linha dela já é atualizada na hora.)
  *
  * @param float $orcamentoSeg tempo máximo desta chamada
  * @return int quantas pessoas recalculou agora
@@ -419,74 +429,47 @@ function mse_vini_recalcular_lote(PDO $pdo, float $orcamentoSeg = 5.0): int
         return 0;
     }
     $inicio = microtime(true);
+
+    // Começa uma passada nova? (a cada hora, ou se já tem uma pedida / em andamento)
+    if (mse_config_ler($pdo, 'consultasmia_total_pendente', '0') !== '1') {
+        $ultima = mse_config_ler($pdo, 'consultasmia_passada_em', '');
+        $passouUmaHora = $ultima === ''
+            || (int) $pdo->query("SELECT TIMESTAMPDIFF(SECOND, " . $pdo->quote($ultima) . ", NOW())")->fetchColumn() >= 3600;
+        if (!$passouUmaHora) {
+            return 0;
+        }
+        mse_config_gravar($pdo, 'consultasmia_passada_em', (string) $pdo->query('SELECT NOW()')->fetchColumn(), 'sistema');
+        mse_config_gravar($pdo, 'consultasmia_total_pendente', '1', 'sistema');
+        mse_config_gravar($pdo, 'consultasmia_total_cursor', '', 'sistema');
+    }
+
     $n = 0;
-    $um = static function (array $p) use ($pdo, &$n): void {
+    // O cursor é uma chave ESTÁVEL (CPF, ou nome sem CPF).
+    $cursor = mse_config_ler($pdo, 'consultasmia_total_cursor', '');
+    $st = $pdo->prepare(
+        "SELECT nome, cpf, email, COALESCE(cpf, CONCAT('~', nome)) AS chave FROM consultasmia
+         GROUP BY nome, cpf, email HAVING chave > ? ORDER BY chave ASC LIMIT 60"
+    );
+    $st->execute([$cursor]);
+    $lote = $st->fetchAll();
+    if (!$lote) {
+        mse_config_gravar($pdo, 'consultasmia_total_pendente', '0', 'sistema');
+        mse_config_gravar($pdo, 'consultasmia_total_cursor', '', 'sistema');
+        return 0;
+    }
+    foreach ($lote as $p) {
+        if (microtime(true) - $inicio > $orcamentoSeg) {
+            break;
+        }
         try {
             mse_vini_recalcular_pessoa($pdo, mse_vini_achar_usuario($pdo, $p['cpf'] ?: null, $p['email'] ?: null), (string) $p['nome'], $p['cpf'] ?: null, $p['email'] ?: null);
             $n++;
         } catch (Throwable $e) {
             error_log('[consultasmia] recalcular ' . $p['nome'] . ': ' . $e->getMessage());
         }
-    };
-    $agora = (string) $pdo->query('SELECT NOW()')->fetchColumn();
-
-    // 1) atividade nova desde a última passada
-    $ultima = mse_config_ler($pdo, 'consultasmia_atividade_em', '');
-    if ($ultima !== '' && mse_tem_coluna($pdo, 'user_course_progress', 'updated_at')) {
-        $st = $pdo->prepare(
-            'SELECT MIN(cm.id) AS id, cm.nome, cm.cpf, cm.email
-             FROM consultasmia cm
-             JOIN users u ON (cm.cpf IS NOT NULL AND u.cpf COLLATE utf8mb4_unicode_ci = cm.cpf COLLATE utf8mb4_unicode_ci)
-                          OR (cm.cpf IS NULL AND u.email COLLATE utf8mb4_unicode_ci = cm.email COLLATE utf8mb4_unicode_ci)
-             JOIN user_course_progress p ON p.user_id = u.id
-             WHERE p.updated_at >= ?
-             GROUP BY cm.nome, cm.cpf, cm.email
-             LIMIT 200'
-        );
-        $st->execute([$ultima]);
-        $ativos = $st->fetchAll();
-        $feitos = 0;
-        foreach ($ativos as $p) {
-            if (microtime(true) - $inicio > $orcamentoSeg) {
-                break;
-            }
-            $um($p);
-            $feitos++;
-        }
-        // Só avança o ponto de corte se deu para atender todo mundo desta vez.
-        if ($feitos >= count($ativos)) {
-            mse_config_gravar($pdo, 'consultasmia_atividade_em', $agora, 'sistema');
-        }
-    } elseif ($ultima === '') {
-        mse_config_gravar($pdo, 'consultasmia_atividade_em', $agora, 'sistema');
-        mse_config_gravar($pdo, 'consultasmia_total_pendente', '1', 'sistema'); // primeira vez: passada completa, aos poucos
+        $cursor = (string) $p['chave'];
     }
-
-    // 2) passada completa (aula mudou / primeira vez), em lotes, continuando do cursor
-    if (mse_config_ler($pdo, 'consultasmia_total_pendente', '0') === '1' && microtime(true) - $inicio < $orcamentoSeg) {
-        // O cursor é uma chave ESTÁVEL (CPF, ou nome sem CPF), não o id: recalcular uma pessoa
-        // apaga e regrava as linhas dela com ids novos, e um cursor por id nunca terminaria.
-        $cursor = mse_config_ler($pdo, 'consultasmia_total_cursor', '');
-        $st = $pdo->prepare(
-            "SELECT nome, cpf, email, COALESCE(cpf, CONCAT('~', nome)) AS chave FROM consultasmia
-             GROUP BY nome, cpf, email HAVING chave > ? ORDER BY chave ASC LIMIT 60"
-        );
-        $st->execute([$cursor]);
-        $lote = $st->fetchAll();
-        if (!$lote) {
-            mse_config_gravar($pdo, 'consultasmia_total_pendente', '0', 'sistema');
-            mse_config_gravar($pdo, 'consultasmia_total_cursor', '', 'sistema');
-        } else {
-            foreach ($lote as $p) {
-                if (microtime(true) - $inicio > $orcamentoSeg) {
-                    break;
-                }
-                $um($p);
-                $cursor = (string) $p['chave'];
-            }
-            mse_config_gravar($pdo, 'consultasmia_total_cursor', $cursor, 'sistema');
-        }
-    }
+    mse_config_gravar($pdo, 'consultasmia_total_cursor', $cursor, 'sistema');
     return $n;
 }
 
@@ -509,8 +492,9 @@ function mse_vini_marcar_recalculo_total(PDO $pdo): void
 
 /**
  * Chamada de dentro de requisições comuns (progresso, presença, mudança de
- * aula): no MÁXIMO uma vez por minuto, depois de entregar a resposta, faz um
- * lote CURTO (limite de poucos segundos) de recálculo. Nunca lança erro.
+ * aula): no MÁXIMO uma vez por minuto confere se há passada a fazer (a cada
+ * hora, ou aula mudou) e, se houver, faz um lote CURTO (limite de poucos
+ * segundos) depois de entregar a resposta. Nunca lança erro.
  *
  * @param bool $aulaMudou true quando a chamada vem de uma mudança de aula (pede passada completa)
  */
@@ -609,19 +593,39 @@ function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?st
         $pdo->beginTransaction();
     }
     try {
-        if ($cpf) {
-            $pdo->prepare('DELETE FROM consultasmia WHERE cpf = ?')->execute([$cpf]);
-        } else {
-            $pdo->prepare('DELETE FROM consultasmia WHERE cpf IS NULL AND nome = ?')->execute([$nome]);
-        }
+        // Atualiza as linhas da pessoa NO LUGAR: a linha de cada aula mantém o mesmo id para sempre.
+        // Só entra linha nova para aula nova e só sai linha de aula que deixou de valer.
+        $quem = $pdo->prepare($cpf ? 'SELECT id, course_id, aula FROM consultasmia WHERE cpf = ? ORDER BY id' : 'SELECT id, course_id, aula FROM consultasmia WHERE cpf IS NULL AND nome = ? ORDER BY id');
+        $quem->execute([$cpf ?: $nome]);
+        $existentes = $quem->fetchAll();
+        $usadas = [];
+        $acha = static function (?int $cid, ?string $aula) use (&$existentes, &$usadas): ?int {
+            foreach ($existentes as $e) {
+                if (isset($usadas[(int) $e['id']])) {
+                    continue;
+                }
+                $mesmo = $cid !== null
+                    ? ((int) $e['course_id'] === $cid || ($e['course_id'] === null && $e['aula'] === $aula))
+                    : ($e['course_id'] === null && $e['aula'] === null);
+                if ($mesmo) {
+                    return (int) $e['id'];
+                }
+            }
+            return null;
+        };
+        $upd = $pdo->prepare(
+            'UPDATE consultasmia SET nome = ?, cpf = ?, email = ?, aulas_obrigatorias_concluidas = ?, course_id = ?, aula = ?, tipo_aula = ?, concluida = ?,
+                    assunto = ?, descricao = ?, palavras_chave = ?, tempo_video = ?, inicio_video = ?, fim_video = ? WHERE id = ?'
+        );
         $ins = $pdo->prepare(
-            'INSERT INTO consultasmia (nome, cpf, email, aulas_obrigatorias_concluidas, aula, tipo_aula, concluida, assunto, descricao, palavras_chave, tempo_video, inicio_video, fim_video)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO consultasmia (nome, cpf, email, aulas_obrigatorias_concluidas, course_id, aula, tipo_aula, concluida, assunto, descricao, palavras_chave, tempo_video, inicio_video, fim_video)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         // Início = primeira vez que abriu o vídeo; fim = quando concluiu.
         $montar = static function (array $c, string $tipo) use ($detalhes): array {
             $d = $detalhes[(int) $c['id']] ?? ['aula' => $c['curso'], 'assunto' => null, 'descricao' => null, 'palavras_chave' => null, 'tempo_video' => null];
             $feito = ($c['status'] ?? '') === 'concluido';
+            $d['course_id'] = (int) $c['id'];
             $d['tipo'] = $tipo;
             $d['concluida'] = $feito ? 1 : 0;
             $d['inicio_video'] = $c['primeira_entrada'] ?: ($c['checkin_em'] ?? null);
@@ -634,11 +638,25 @@ function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?st
             array_map(static fn($c) => $montar($c, 'recomendada'), $recomendadas)
         );
         if (!$linhas) {
-            $linhas = [['aula' => null, 'tipo' => null, 'concluida' => null, 'assunto' => null, 'descricao' => null, 'palavras_chave' => null, 'tempo_video' => null, 'inicio_video' => null, 'fim_video' => null]];
+            $linhas = [['course_id' => null, 'aula' => null, 'tipo' => null, 'concluida' => null, 'assunto' => null, 'descricao' => null, 'palavras_chave' => null, 'tempo_video' => null, 'inicio_video' => null, 'fim_video' => null]];
         }
         foreach ($linhas as $l) {
             // 1 nas linhas de aula OBRIGATÓRIA concluída; 0 nas recomendadas e na linha sem aula.
-            $ins->execute([$nome, $cpf, $email, $l['tipo'] === 'obrigatoria' ? 1 : 0, $l['aula'], $l['tipo'], $l['concluida'], $l['assunto'], $l['descricao'], $l['palavras_chave'], $l['tempo_video'], $l['inicio_video'], $l['fim_video']]);
+            $valores = [$nome, $cpf, $email, $l['tipo'] === 'obrigatoria' ? 1 : 0, $l['course_id'], $l['aula'], $l['tipo'], $l['concluida'], $l['assunto'], $l['descricao'], $l['palavras_chave'], $l['tempo_video'], $l['inicio_video'], $l['fim_video']];
+            $id = $acha($l['course_id'], $l['aula']);
+            if ($id !== null) {
+                $usadas[$id] = true;
+                $upd->execute(array_merge($valores, [$id]));
+            } else {
+                $ins->execute($valores);
+            }
+        }
+        // O que sobrou (aula que saiu da lista, excluída, ou a linha vazia que não vale mais) é apagado.
+        $apagar = $pdo->prepare('DELETE FROM consultasmia WHERE id = ?');
+        foreach ($existentes as $e) {
+            if (!isset($usadas[(int) $e['id']])) {
+                $apagar->execute([(int) $e['id']]);
+            }
         }
         if (!$jaEmTransacao) {
             $pdo->commit();
