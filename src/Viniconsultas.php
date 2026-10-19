@@ -628,8 +628,16 @@ function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?st
             $d['course_id'] = (int) $c['id'];
             $d['tipo'] = $tipo;
             $d['concluida'] = $feito ? 1 : 0;
-            $d['inicio_video'] = $c['primeira_entrada'] ?: ($c['checkin_em'] ?? null);
-            $d['fim_video'] = $feito ? ($c['concluido_em'] ?? null) : null;
+            $fim = $feito ? ($c['concluido_em'] ?? null) : null;
+            // Início = a primeira abertura registrada. Se só existe registro DEPOIS da conclusão
+            // (concluiu antes de o registro existir e reabriu depois), o início real é desconhecido: fica vazio.
+            $candidatos = array_filter([$c['primeira_entrada'] ?? null, $c['checkin_em'] ?? null]);
+            $inicio = $candidatos ? min($candidatos) : null;
+            if ($fim !== null && $inicio !== null && $inicio > $fim) {
+                $inicio = null;
+            }
+            $d['inicio_video'] = $inicio;
+            $d['fim_video'] = $fim;
             return $d;
         };
         // Obrigatórias: só as concluídas (uma linha por aula). Recomendadas: todas, feitas ou não.
