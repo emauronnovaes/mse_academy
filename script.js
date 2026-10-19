@@ -2807,10 +2807,18 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         iniciarSessaoPresenca(course.id);
         wrap.classList.add('tem-controles');
         wrap.innerHTML = `
-          <video src="${detalhe.video_url}" controls playsinline style="width:100%;border-radius:12px"></video>
+          <video src="${detalhe.video_url}" controls ${jaConcluiu ? '' : 'controlslist="noplaybackrate"'} playsinline style="width:100%;border-radius:12px"></video>
         `;
         ligarBotaoTelaCheia(wrap);
         const v = wrap.querySelector('video');
+        // Velocidade maior só depois de assistir tudo pelo menos uma vez: na primeira vez fica sempre em 1x
+        // (some do menu do player e, se mudar por outro caminho, volta para 1x).
+        if(!jaConcluiu){
+          v.defaultPlaybackRate = 1;
+          v.playbackRate = 1;
+          v.addEventListener('ratechange', () => { if(v.playbackRate !== 1) v.playbackRate = 1; });
+          v.addEventListener('loadedmetadata', () => { v.playbackRate = 1; });
+        }
         if(detalhe.aviso_presenca !== false) modalState.presenca = presencaNoVideo(wrap, v, course.id);
         if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoVideo(v));
 
