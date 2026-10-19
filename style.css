@@ -2286,4 +2286,12 @@
 
   /* Botão de tela cheia de reserva (só quando o navegador não libera tela cheia): canto de baixo,
      logo acima da barra do player */
-  .vid-player-wrap.tem-controles .vid-fullscreen-btn.vid-fs-reserva{ top:auto; bottom:52px; right:10px; }
+  /* Fica EXATAMENTE em cima do botão de tela cheia do próprio player (que não funcionaria) e o cobre:
+     um botão só, no lugar de sempre, na barra de baixo. */
+  .vid-player-wrap.tem-controles .vid-fullscreen-btn.vid-fs-reserva{
+    top:auto; bottom:32px; right:56px; width:32px; height:32px; border-radius:50%;
+    background:#111; border:none; color:#fff; opacity:1;
+  }
+  .vid-player-wrap.tem-controles .vid-fullscreen-btn.vid-fs-reserva:hover{ background:#2a2a2a; }
+  /* No YouTube fica por cima do botão de tela cheia dele (canto de baixo à direita), que não funcionaria */
+  .vid-player-wrap.tem-controles .vid-fullscreen-btn.vid-fs-reserva.vid-fs-yt{ right:6px; bottom:4px; background:rgba(0,0,0,0.75); }

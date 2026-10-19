@@ -914,7 +914,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Modo revisão — pode avançar a barra à vontade.</div>
           <div class="vid-player-wrap tem-controles">
             <div id="onb-yt-${mod.id}"></div>
-            ${botaoTelaCheiaReserva()}
+            ${botaoTelaCheiaReserva('yt')}
           </div>
         `
         : `
@@ -990,8 +990,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       ? `
         <div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Modo revisão — pode avançar a barra à vontade.</div>
         <div class="vid-player-wrap tem-controles">
-          <video id="onb-video-${mod.id}" src="${videoSrc}" controls playsinline></video>
-          ${botaoTelaCheiaReserva()}
+          <video id="onb-video-${mod.id}" src="${videoSrc}" controls ${atributoControlslist(false)} playsinline></video>
+          ${botaoTelaCheiaReserva('video')}
         </div>
       `
       : `
@@ -1712,14 +1712,26 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // Quando o navegador NÃO permite tela cheia (a Academy aberta dentro do Portal, num quadro sem
   // permissão), o botão do player não faz nada. Nesse caso aparece este botão de reserva, no canto
   // de baixo, que expande o player pela janela inteira da Academy. Com tela cheia liberada, não aparece.
-  function botaoTelaCheiaReserva(){
+  // UM botão de tela cheia só, na barra de baixo: com tela cheia liberada, o do próprio player;
+  // bloqueada, o do player some (controlslist="nofullscreen") e este entra no lugar dele.
+  // tipo: 'video' (vídeo enviado, barra do navegador) ou 'yt' (barra do YouTube).
+  function botaoTelaCheiaReserva(tipo){
     if(document.fullscreenEnabled) return '';
     // Desenho próprio (o ícone "expand" não existe no pacote de ícones carregado).
-    return `<button type="button" class="vid-fullscreen-btn vid-fs-reserva" aria-label="Tela cheia" title="Tela cheia">
+    return `<button type="button" class="vid-fullscreen-btn vid-fs-reserva${tipo === 'yt' ? ' vid-fs-yt' : ''}" aria-label="Tela cheia" title="Tela cheia">
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
         <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>
       </svg>
     </button>`;
+  }
+
+  // controlslist do <video>: tira a velocidade (antes da 1ª vez) e o botão de tela cheia do
+  // próprio player quando ele não funcionaria (tela cheia bloqueada pelo navegador).
+  function atributoControlslist(semVelocidade){
+    const itens = [];
+    if(semVelocidade) itens.push('noplaybackrate');
+    if(!document.fullscreenEnabled) itens.push('nofullscreen');
+    return itens.length ? `controlslist="${itens.join(' ')}"` : '';
   }
 
   // No fim do vídeo a pergunta aparece ABAIXO do player: sai da tela cheia (do navegador ou a
@@ -2831,8 +2843,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         iniciarSessaoPresenca(course.id);
         wrap.classList.add('tem-controles');
         wrap.innerHTML = `
-          <video src="${detalhe.video_url}" controls ${jaConcluiu ? '' : 'controlslist="noplaybackrate"'} playsinline style="width:100%;border-radius:12px"></video>
-          ${botaoTelaCheiaReserva()}
+          <video src="${detalhe.video_url}" controls ${atributoControlslist(!jaConcluiu)} playsinline style="width:100%;border-radius:12px"></video>
+          ${botaoTelaCheiaReserva('video')}
         `;
         ligarBotaoTelaCheia(wrap);
         const v = wrap.querySelector('video');
@@ -2896,7 +2908,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       // Depois de concluído também: a tela cheia do próprio YouTube não
       // deixa nada da Academy por cima, nem o "Você ainda está aí?".
       if(jaConcluiu) wrap.classList.add('tem-controles');
-      wrap.insertAdjacentHTML('beforeend', jaConcluiu ? botaoTelaCheiaReserva() : `
+      wrap.insertAdjacentHTML('beforeend', jaConcluiu ? botaoTelaCheiaReserva('yt') : `
         <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
           <i class="fa-solid fa-display" aria-hidden="true"></i>
         </button>
