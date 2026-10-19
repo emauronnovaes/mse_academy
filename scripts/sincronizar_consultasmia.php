@@ -48,6 +48,18 @@ try {
     exit(1);
 }
 
+// Todos os funcionários ativos da ficha (sem limite de tempo aqui).
+$f = ['processados' => 0, 'total' => 0, 'terminou' => false, 'erro' => null];
+$primeira = true;
+do {
+    $r2 = mse_vini_importar_funcionarios_lote(mse_db(), 600.0, $primeira);
+    $primeira = false;
+    $f['processados'] += $r2['processados'];
+    $f['total'] = $r2['total'] ?: $f['total'];
+    $f['erro'] = $r2['erro'];
+} while (!$r2['terminou'] && $r2['erro'] === null && $r2['total'] > 0);
+echo $f['erro'] ? "Funcionários da ficha: ERRO {$f['erro']}\n" : "Funcionários da ficha: {$f['processados']} de {$f['total']} atualizados.\n";
+
 printf(
     "OK em %.1fs: %d pessoas pendentes, %d concluíram, %d dispensadas, %d novas, %d linhas em consultasmia.%s\n",
     microtime(true) - $inicio,

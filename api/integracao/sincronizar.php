@@ -40,6 +40,11 @@ if ($fase !== '') {
     try {
         if ($fase === 'inicio') {
             [, $inicio] = mse_sincronizar_agora($pdo);
+            // Também traz todos os funcionários da ficha (em lotes, nos minutos seguintes).
+            require_once __DIR__ . '/../../src/Configuracoes.php';
+            if (mse_garantir_configuracoes($pdo)) {
+                mse_config_gravar($pdo, 'funcionarios_forcar', '1', 'admin');
+            }
             mse_json(['inicio' => $inicio]);
         }
         if ($fase === 'lote') {

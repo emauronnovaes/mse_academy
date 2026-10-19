@@ -67,6 +67,12 @@ function mse_garantir_viniconsultas(PDO $pdo): bool
         foreach (array_filter(array_map('trim', explode(';', (string) $sql))) as $comando) {
             $pdo->exec($comando);
         }
+        // Funcionários da ficha podem não ter data de admissão: a coluna aceita vazio.
+        $col = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consultasmia_2' AND COLUMN_NAME = 'data_admissao' AND IS_NULLABLE = 'NO'");
+        $col->execute();
+        if ($col->fetchColumn() !== false) {
+            $pdo->exec('ALTER TABLE consultasmia_2 MODIFY data_admissao DATE NULL');
+        }
         // Tempo de cada vídeo (coluna da migração 044): criada aqui se faltar.
         $col = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consultasmia' AND COLUMN_NAME = 'tempo_video'");
         $col->execute();
@@ -309,7 +315,7 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
         $upsertResumo->execute([
             mse_integracao_chave($cpf, (string) $p['nome'], (string) $p['data_admissao']),
             $p['nome'], $cpf, $p['email'] ?? null, $p['funcao'] ?? null, $p['departamento'] ?? null,
-            $p['data_admissao'], $userId, (int) $login['n'] > 0 ? 1 : 0, $login['primeiro'], $login['ultimo'], (int) $login['n'],
+            ($p['data_admissao'] ?? '') !== '' ? $p['data_admissao'] : null, $userId, (int) $login['n'] > 0 ? 1 : 0, $login['primeiro'], $login['ultimo'], (int) $login['n'],
             !empty($p['dispensado']) ? 'dispensado' : $p['situacao'],
             $p['situacao'] === 'concluiu' ? 1 : 0, $p['concluiu_em'] ?? null,
             count($aulas), $aulas && count($feitasNomes) === count($aulas) ? 1 : 0, $feitasNomes ? implode(' | ', $feitasNomes) : null,
@@ -441,7 +447,10 @@ function mse_vini_recalcular_lote(PDO $pdo, float $orcamentoSeg = 5.0): int
         mse_config_gravar($pdo, 'consultasmia_passada_em', (string) $pdo->query('SELECT NOW()')->fetchColumn(), 'sistema');
         mse_config_gravar($pdo, 'consultasmia_total_pendente', '1', 'sistema');
         mse_config_gravar($pdo, 'consultasmia_total_cursor', '', 'sistema');
+        // A de hora em hora só olha quem usa a Academy: quem nunca entrou não tem o que mudar.
+        mse_config_gravar($pdo, 'consultasmia_total_tipo', 'usuarios', 'sistema');
     }
+    $soUsuarios = mse_config_ler($pdo, 'consultasmia_total_tipo', 'todos') === 'usuarios';
 
     $n = 0;
     // O cursor é uma chave ESTÁVEL (CPF, ou nome sem CPF).
@@ -461,11 +470,14 @@ function mse_vini_recalcular_lote(PDO $pdo, float $orcamentoSeg = 5.0): int
         if (microtime(true) - $inicio > $orcamentoSeg) {
             break;
         }
-        try {
-            mse_vini_recalcular_pessoa($pdo, mse_vini_achar_usuario($pdo, $p['cpf'] ?: null, $p['email'] ?: null), (string) $p['nome'], $p['cpf'] ?: null, $p['email'] ?: null);
-            $n++;
-        } catch (Throwable $e) {
-            error_log('[consultasmia] recalcular ' . $p['nome'] . ': ' . $e->getMessage());
+        $uid = mse_vini_achar_usuario($pdo, $p['cpf'] ?: null, $p['email'] ?: null);
+        if ($uid !== null || !$soUsuarios) {
+            try {
+                mse_vini_recalcular_pessoa($pdo, $uid, (string) $p['nome'], $p['cpf'] ?: null, $p['email'] ?: null);
+                $n++;
+            } catch (Throwable $e) {
+                error_log('[consultasmia] recalcular ' . $p['nome'] . ': ' . $e->getMessage());
+            }
         }
         $cursor = (string) $p['chave'];
     }
@@ -484,6 +496,7 @@ function mse_vini_marcar_recalculo_total(PDO $pdo): void
         if (mse_tem_tabela($pdo, 'consultasmia') && mse_garantir_configuracoes($pdo)) {
             mse_config_gravar($pdo, 'consultasmia_total_pendente', '1', 'sistema');
             mse_config_gravar($pdo, 'consultasmia_total_cursor', '', 'sistema');
+            mse_config_gravar($pdo, 'consultasmia_total_tipo', 'todos', 'sistema'); // aula mudou: vale para todo mundo
         }
     } catch (Throwable $e) {
         error_log('[consultasmia] marcar recalculo: ' . $e->getMessage());
@@ -526,8 +539,10 @@ function mse_vini_recalcular_agendado(bool $aulaMudou = false): void
             }
             try {
                 ignore_user_abort(true);
-                @set_time_limit(60);
-                mse_vini_recalcular_lote($pdo, 12.0);
+                @set_time_limit(90);
+                $t0 = microtime(true);
+                mse_vini_importar_funcionarios_lote($pdo, 8.0);
+                mse_vini_recalcular_lote($pdo, max(3.0, 12.0 - (microtime(true) - $t0)));
             } catch (Throwable $e) {
                 error_log('[consultasmia] recalculo agendado: ' . $e->getMessage());
             }
@@ -535,6 +550,126 @@ function mse_vini_recalcular_agendado(bool $aulaMudou = false): void
     } catch (Throwable $e) {
         error_log('[consultasmia] agendar recalculo: ' . $e->getMessage());
     }
+}
+
+/**
+ * Data de admissão da ficha (YYYY-MM-DD ou dd/mm/aaaa) -> YYYY-MM-DD, ou '' se não houver.
+ */
+function mse_vini_data_da_ficha(array $f): string
+{
+    foreach (['data_admissao', 'admissao', 'dt_admissao', 'data_de_admissao'] as $k) {
+        $v = isset($f[$k]) && is_scalar($f[$k]) ? trim((string) $f[$k]) : '';
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $v, $m)) {
+            return "{$m[1]}-{$m[2]}-{$m[3]}";
+        }
+        if (preg_match('#^(\d{2})/(\d{2})/(\d{4})#', $v, $m)) {
+            return "{$m[3]}-{$m[2]}-{$m[1]}";
+        }
+    }
+    return '';
+}
+
+/**
+ * Importa TODOS os funcionários ativos da ficha do Portal para consultasmia e
+ * consultasmia_2 (além dos admitidos, que vêm da API de integração), em LOTES
+ * COM LIMITE DE TEMPO. Uma importação completa começa 1 vez por dia, ou na hora
+ * se pedida (botão "Atualizar banco"); a lista da ficha é baixada uma vez por
+ * importação e guardada num arquivo temporário até ela terminar.
+ *
+ * @param bool $forcar começa uma importação nova agora, mesmo se já houve hoje
+ * @return array{processados: int, total: int, terminou: bool, erro: ?string}
+ */
+function mse_vini_importar_funcionarios_lote(PDO $pdo, float $orcamentoSeg, bool $forcar = false): array
+{
+    require_once __DIR__ . '/Configuracoes.php';
+    require_once __DIR__ . '/Departamentos.php';
+    require_once __DIR__ . '/PortalFichaApi.php';
+    $res = ['processados' => 0, 'total' => 0, 'terminou' => false, 'erro' => null];
+    if (!mse_garantir_configuracoes($pdo) || !mse_garantir_viniconsultas($pdo)) {
+        return $res;
+    }
+    $inicio = microtime(true);
+    $arquivo = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mse_academy_funcionarios_' . md5(__DIR__) . '.json';
+    $emAndamento = mse_config_ler($pdo, 'funcionarios_pendente', '0') === '1' && is_file($arquivo);
+    if ($forcar || mse_config_ler($pdo, 'funcionarios_forcar', '0') === '1') {
+        $emAndamento = false;
+        $forcar = true;
+    }
+
+    if (!$emAndamento) {
+        $ultima = mse_config_ler($pdo, 'funcionarios_importacao_em', '');
+        $passouUmDia = $ultima === ''
+            || (int) $pdo->query('SELECT TIMESTAMPDIFF(SECOND, ' . $pdo->quote($ultima) . ', NOW())')->fetchColumn() >= 86400;
+        if (!$forcar && !$passouUmDia) {
+            return $res;
+        }
+        // Marca antes de chamar a API: se ela falhar, só tenta de novo amanhã (ou no próximo "Atualizar banco").
+        mse_config_gravar($pdo, 'funcionarios_importacao_em', (string) $pdo->query('SELECT NOW()')->fetchColumn(), 'sistema');
+        mse_config_gravar($pdo, 'funcionarios_forcar', '0', 'sistema');
+        try {
+            $fichas = mse_portal_fichas_ativas();
+        } catch (Throwable $e) {
+            mse_config_gravar($pdo, 'funcionarios_ultimo_erro', mb_substr($e->getMessage(), 0, 250), 'sistema');
+            $res['erro'] = $e->getMessage();
+            return $res;
+        }
+        file_put_contents($arquivo, json_encode(array_values($fichas), JSON_UNESCAPED_UNICODE));
+        mse_config_gravar($pdo, 'funcionarios_total', (string) count($fichas), 'sistema');
+        mse_config_gravar($pdo, 'funcionarios_cursor', '0', 'sistema');
+        mse_config_gravar($pdo, 'funcionarios_pendente', '1', 'sistema');
+        mse_config_gravar($pdo, 'funcionarios_ultimo_erro', '', 'sistema');
+    }
+
+    $fichas = json_decode((string) @file_get_contents($arquivo), true);
+    if (!is_array($fichas)) {
+        mse_config_gravar($pdo, 'funcionarios_pendente', '0', 'sistema');
+        return $res;
+    }
+    $res['total'] = count($fichas);
+    $cursor = (int) mse_config_ler($pdo, 'funcionarios_cursor', '0');
+    $hoje = (new DateTime('now', new DateTimeZone('America/Sao_Paulo')))->format('Y-m-d');
+    $agora = (string) $pdo->query('SELECT NOW()')->fetchColumn();
+
+    while ($cursor < count($fichas) && microtime(true) - $inicio < $orcamentoSeg) {
+        $parte = array_slice($fichas, $cursor, 15, true);
+        $admitidos = [];
+        $mapa = [];
+        foreach ($parte as $i => $f) {
+            if (!is_array($f) || trim((string) ($f['nome'] ?? '')) === '') {
+                continue;
+            }
+            $cpf = preg_replace('/\D/', '', (string) ($f['cpf'] ?? ''));
+            $admitidos[$i] = [
+                'nome' => mb_substr(trim((string) $f['nome']), 0, 200),
+                'cpf' => strlen($cpf) === 11 ? $cpf : null,
+                'data_admissao' => mse_vini_data_da_ficha($f),
+                'funcao' => null, 'obra' => null, 'vinculo' => null, 'empresa' => null,
+            ];
+            $email = isset($f['email']) && is_scalar($f['email']) ? strtolower(trim((string) $f['email'])) : '';
+            $mapa[$i] = ['bruta' => $f, 'ficha' => [
+                'cpf' => strlen($cpf) === 11 ? $cpf : null,
+                'funcao' => isset($f['funcao']) && is_scalar($f['funcao']) ? trim((string) $f['funcao']) : null,
+                'obras_departamento' => mse_ficha_departamento($f),
+                'email' => filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : null,
+            ]];
+        }
+        if ($admitidos) {
+            try {
+                $montado = mse_admitidos_montar($pdo, $admitidos, $mapa, $hoje);
+                mse_viniconsultas_gravar($pdo, $montado['pessoas'], $agora);
+                $res['processados'] += count($montado['pessoas']);
+            } catch (Throwable $e) {
+                error_log('[consultasmia] importar funcionarios: ' . $e->getMessage());
+            }
+        }
+        $cursor += count($parte);
+    }
+    mse_config_gravar($pdo, 'funcionarios_cursor', (string) $cursor, 'sistema');
+    if ($cursor >= count($fichas)) {
+        mse_config_gravar($pdo, 'funcionarios_pendente', '0', 'sistema');
+        $res['terminou'] = true;
+    }
+    return $res;
 }
 
 /** Segundos -> "mm:ss" (ou "h:mm:ss" a partir de 1 hora). 0 ou vazio = sem tempo. */

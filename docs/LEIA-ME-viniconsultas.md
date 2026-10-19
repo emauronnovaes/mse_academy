@@ -5,7 +5,11 @@ Quem consulta só **lê** (`SELECT`); quem grava é a própria Academy.
 
 | Tabela | O que é |
 |---|---|
-| `consultasmia` | Uma linha por **aula obrigatória concluída** de cada pessoa contratada recentemente |
+| `consultasmia` | Uma linha por aula de cada pessoa: obrigatórias concluídas e recomendadas (feitas ou não) |
+| `consultasmia_2` | Uma linha por pessoa (resumo) |
+
+**Quem está nas tabelas:** todos os **admitidos** (API de integração do RH) e todos os **funcionários ativos da ficha** do Portal,
+mesmo os que nunca entraram na Academy. A lista da ficha é importada **1 vez por dia** (e ao clicar em **Atualizar banco**).
 
 Os dados de acesso ao banco **não** estão aqui: peça ao TI um usuário **somente leitura**
 com `SELECT` nessa tabela. Exemplo para o TI:

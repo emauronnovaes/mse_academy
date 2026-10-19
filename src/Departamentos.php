@@ -255,6 +255,24 @@ function mse_departamentos_do_portal_cache(?string &$aviso): array
 /** GET /v1/ff_infos?all=1 e junta os obras_departamento distintos. */
 function mse_departamentos_da_api_ficha(): array
 {
+    $nomes = [];
+    foreach (mse_portal_fichas_ativas() as $f) {
+        $d = mse_ficha_departamento($f); // já troca nome de obra pelo departamento, se a ficha trouxer
+        if ($d !== null && $d !== '') {
+            $nomes[] = $d;
+        }
+    }
+    return array_values(array_filter(array_unique($nomes), 'strlen'));
+}
+
+/**
+ * TODAS as fichas de funcionário ATIVAS do Portal, numa chamada só
+ * (/v1/ff_infos?all=1). Lança erro se a API falhar.
+ *
+ * @return array<int, array> fichas brutas, como a API devolve
+ */
+function mse_portal_fichas_ativas(): array
+{
     if (!function_exists('curl_init')) {
         throw new RuntimeException('A extensão curl do PHP não está instalada no servidor.');
     }
@@ -267,7 +285,7 @@ function mse_departamentos_da_api_ficha(): array
     $ch = curl_init($base . '/v1/ff_infos?all=1');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 25,
+        CURLOPT_TIMEOUT => 60,
         CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $token, 'Accept: application/json'],
     ]);
     $resposta = curl_exec($ch);
@@ -285,22 +303,20 @@ function mse_departamentos_da_api_ficha(): array
     $dados = json_decode((string) $resposta, true);
     $fichas = is_array($dados) ? ($dados['data'] ?? $dados) : [];
 
-    $nomes = [];
+    $ativas = [];
     foreach ($fichas as $f) {
         // /v1/ff_infos já devolve só fichas ativas; se algum registro trouxer
         // status de desligado, desistente ou aguardando, fica de fora mesmo assim.
-        $situacao = is_array($f) ? mse_departamento_chave((string) ($f['status'] ?? $f['situacao'] ?? '')) : '';
+        if (!is_array($f)) {
+            continue;
+        }
+        $situacao = mse_departamento_chave((string) ($f['status'] ?? $f['situacao'] ?? ''));
         if ($situacao !== '' && !in_array($situacao, ['ativo', 'ativa', '1', 'sim', 'active'], true)) {
             continue;
         }
-        if (is_array($f)) {
-            $d = mse_ficha_departamento($f); // já troca nome de obra pelo departamento, se a ficha trouxer
-            if ($d !== null && $d !== '') {
-                $nomes[] = $d;
-            }
-        }
+        $ativas[] = $f;
     }
-    return array_values(array_filter(array_unique($nomes), 'strlen'));
+    return $ativas;
 }
 
 /** Departamentos marcados num vídeo (nomes como foram escolhidos). */
