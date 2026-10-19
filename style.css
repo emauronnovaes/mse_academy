@@ -2283,3 +2283,7 @@
   .trn-classif-obrig{ background:#FBEAEA; color:var(--red-dark); }
   .trn-classif-recom{ background:#FFF1E0; color:#B35F00; }
   .trn-classif-sem{ background:#EEF0F3; color:var(--steel); }
+
+  /* Botão de tela cheia de reserva (só quando o navegador não libera tela cheia): canto de baixo,
+     logo acima da barra do player */
+  .vid-player-wrap.tem-controles .vid-fullscreen-btn.vid-fs-reserva{ top:auto; bottom:52px; right:10px; }

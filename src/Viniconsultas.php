@@ -526,8 +526,8 @@ function mse_vini_recalcular_agendado(bool $aulaMudou = false): void
             }
             try {
                 ignore_user_abort(true);
-                @set_time_limit(30);
-                mse_vini_recalcular_lote($pdo, 5.0);
+                @set_time_limit(60);
+                mse_vini_recalcular_lote($pdo, 12.0);
             } catch (Throwable $e) {
                 error_log('[consultasmia] recalculo agendado: ' . $e->getMessage());
             }

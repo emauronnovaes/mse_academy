@@ -914,6 +914,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Modo revisão — pode avançar a barra à vontade.</div>
           <div class="vid-player-wrap tem-controles">
             <div id="onb-yt-${mod.id}"></div>
+            ${botaoTelaCheiaReserva()}
           </div>
         `
         : `
@@ -990,6 +991,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Modo revisão — pode avançar a barra à vontade.</div>
         <div class="vid-player-wrap tem-controles">
           <video id="onb-video-${mod.id}" src="${videoSrc}" controls playsinline></video>
+          ${botaoTelaCheiaReserva()}
         </div>
       `
       : `
@@ -1705,6 +1707,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }
 
     requestAnimationFrame(quadro);
+  }
+
+  // Quando o navegador NÃO permite tela cheia (a Academy aberta dentro do Portal, num quadro sem
+  // permissão), o botão do player não faz nada. Nesse caso aparece este botão de reserva, no canto
+  // de baixo, que expande o player pela janela inteira da Academy. Com tela cheia liberada, não aparece.
+  function botaoTelaCheiaReserva(){
+    if(document.fullscreenEnabled) return '';
+    return `<button type="button" class="vid-fullscreen-btn vid-fs-reserva" aria-label="Tela cheia" title="Tela cheia">
+      <i class="fa-solid fa-expand" aria-hidden="true"></i>
+    </button>`;
   }
 
   function ligarBotaoTelaCheia(escopo){
@@ -2808,6 +2820,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         wrap.classList.add('tem-controles');
         wrap.innerHTML = `
           <video src="${detalhe.video_url}" controls ${jaConcluiu ? '' : 'controlslist="noplaybackrate"'} playsinline style="width:100%;border-radius:12px"></video>
+          ${botaoTelaCheiaReserva()}
         `;
         ligarBotaoTelaCheia(wrap);
         const v = wrap.querySelector('video');
@@ -2871,7 +2884,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       // Depois de concluído também: a tela cheia do próprio YouTube não
       // deixa nada da Academy por cima, nem o "Você ainda está aí?".
       if(jaConcluiu) wrap.classList.add('tem-controles');
-      wrap.insertAdjacentHTML('beforeend', jaConcluiu ? '' : `
+      wrap.insertAdjacentHTML('beforeend', jaConcluiu ? botaoTelaCheiaReserva() : `
         <button type="button" class="vid-fullscreen-btn" aria-label="Tela cheia">
           <i class="fa-solid fa-display" aria-hidden="true"></i>
         </button>
