@@ -82,8 +82,10 @@ if ($soAprovados !== '') {
 }
 
 $temAviso = mse_tem_coluna($pdo, 'courses', 'aviso_presenca');
+$temClassif = mse_tem_coluna($pdo, 'courses', 'obrigatoriedade') && mse_tem_coluna($pdo, 'courses', 'palavras_chave');
 $sql = "SELECT c.id, c.title, c.description, c.type, c.is_published, c.created_at, c.video_source, c.duration_minutes,
                " . ($temAviso ? 'c.aviso_presenca' : '1 AS aviso_presenca') . ",
+               " . ($temClassif ? 'c.obrigatoriedade, c.palavras_chave' : 'NULL AS obrigatoriedade, NULL AS palavras_chave') . ",
                a.name AS area_name, " . mse_sql_tipo_efetivo($pdo) . " AS tipo,
                " . ($auditoria
                     ? 'c.tipo_treinamento, c.normas, c.instrutor, c.conteudo_programatico, c.assuntos'
@@ -198,6 +200,9 @@ foreach ($cursos as $c) {
         'tipo' => $c['tipo'],
         'tipo_preenchido' => $c['tipo_treinamento'] !== null,
         'aviso_presenca' => (int) $c['aviso_presenca'] === 1,
+        // Classificação: 'recomendado' | 'departamentos' | 'todos' | null (vídeo antigo, sem classificação).
+        'obrigatoriedade' => $c['obrigatoriedade'],
+        'palavras_chave' => $c['palavras_chave'] !== null && $c['palavras_chave'] !== '' ? explode(', ', (string) $c['palavras_chave']) : [],
         'normas' => $c['normas'] !== null && $c['normas'] !== '' ? explode(',', $c['normas']) : [],
         'instrutor' => $c['instrutor'],
         'conteudo_programatico' => $c['conteudo_programatico'],

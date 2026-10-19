@@ -5425,6 +5425,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         perguntasDoFim > 0 ? `${perguntasDoFim} ${perguntasDoFim === 1 ? 'pergunta' : 'perguntas'} no fim` : '',
         t.total_perguntas === 0 ? '<span class="aulas-sem-pergunta">sem pergunta</span>' : '',
         t.aviso_presenca === false ? 'sem aviso de presença' : '',
+        t.trilha ? '' : ({
+          todos: '<span class="trn-classif trn-classif-obrig">Obrigatória para todos</span>',
+          departamentos: '<span class="trn-classif trn-classif-obrig">Obrigatória (departamentos)</span>',
+          recomendado: '<span class="trn-classif trn-classif-recom">Recomendada</span>',
+        }[t.obrigatoriedade] || '<span class="trn-classif trn-classif-sem">Sem classificação</span>'),
       ].filter(Boolean);
 
       const tr = document.createElement('tr');
@@ -5529,6 +5534,17 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       <input type="text" id="trnEdTitulo" maxlength="200" value="${esc(t.tema)}">
       <label class="admin-field-label" for="trnEdDescricao">Descrição</label>
       <input type="text" id="trnEdDescricao" value="${esc(t.descricao || '')}">
+      ${t.trilha ? '' : `
+      <label class="admin-field-label" for="trnEdObrig">É obrigatório?</label>
+      <select id="trnEdObrig">
+        ${t.obrigatoriedade ? '' : '<option value="" selected>Sem classificação (não aparece no banco de consulta)</option>'}
+        <option value="recomendado" ${t.obrigatoriedade === 'recomendado' ? 'selected' : ''}>Não, é apenas recomendado</option>
+        <option value="departamentos" ${t.obrigatoriedade === 'departamentos' ? 'selected' : ''}>Sim, para os departamentos relacionados</option>
+        <option value="todos" ${t.obrigatoriedade === 'todos' ? 'selected' : ''}>Sim, para todos os colaboradores</option>
+      </select>
+      <p class="admin-field-hint">Os departamentos relacionados são marcados no botão <strong>Áreas</strong> da lista. Recomendado sem departamento marcado vale para todos.</p>
+      <label class="admin-field-label" for="trnEdPalavras">Palavras-chave <span class="vm-label-extra">(mínimo 3, separadas por vírgula)</span></label>
+      <input type="text" id="trnEdPalavras" maxlength="1000" value="${esc((t.palavras_chave || []).join(', '))}" placeholder="Ex: RMI, requisição, pedido">`}
       ${auditoria ? '' : '<p class="pq-aviso">Os campos abaixo ficam liberados depois que a migração 020 rodar no banco.</p>'}
       <label class="admin-field-label" for="trnEdTipo">Tipo</label>
       <select id="trnEdTipo" ${desab}>
@@ -5570,6 +5586,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         description: document.getElementById('trnEdDescricao').value.trim(),
       };
       if(trnEstado.avisoOpcional !== false) corpo.aviso_presenca = document.getElementById('trnEdAviso').checked;
+      if(!t.trilha){
+        const obrig = document.getElementById('trnEdObrig').value;
+        const palavras = document.getElementById('trnEdPalavras').value.split(',').map(x => x.trim()).filter(Boolean);
+        if((palavras.length || (t.palavras_chave || []).length) && palavras.length < 3){
+          fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = 'Escreva pelo menos 3 palavras-chave, separadas por vírgula.';
+          return;
+        }
+        if(obrig) corpo.obrigatoriedade = obrig;
+        if(palavras.length) corpo.palavras_chave = palavras;
+      }
       if(auditoria){
         Object.assign(corpo, {
           tipo_treinamento: document.getElementById('trnEdTipo').value,
