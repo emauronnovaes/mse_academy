@@ -1714,9 +1714,21 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // de baixo, que expande o player pela janela inteira da Academy. Com tela cheia liberada, não aparece.
   function botaoTelaCheiaReserva(){
     if(document.fullscreenEnabled) return '';
+    // Desenho próprio (o ícone "expand" não existe no pacote de ícones carregado).
     return `<button type="button" class="vid-fullscreen-btn vid-fs-reserva" aria-label="Tela cheia" title="Tela cheia">
-      <i class="fa-solid fa-expand" aria-hidden="true"></i>
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>
+      </svg>
     </button>`;
+  }
+
+  // No fim do vídeo a pergunta aparece ABAIXO do player: sai da tela cheia (do navegador ou a
+  // expandida pela janela) para a pessoa ver a pergunta.
+  function sairDaTelaCheiaNoFim(wrap){
+    if(document.fullscreenElement){
+      document.exitFullscreen().catch(() => {});
+    }
+    if(wrap && wrap.classList.contains('is-tela-cheia-janela')) sairTelaCheiaNaJanela(wrap);
   }
 
   function ligarBotaoTelaCheia(escopo){
@@ -2854,7 +2866,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           if(voltarPara !== null) v.currentTime = voltarPara;
           enviarProgresso(course.id, trava.pct);
         });
-        v.addEventListener('ended', () => { enviarProgresso(course.id, 1).then(r => aoConcluirCatalogoAssistindo(course.id, r)); encerrarSessaoPresenca(); showBonusQuiz(); });
+        v.addEventListener('ended', () => { sairDaTelaCheiaNoFim(wrap); enviarProgresso(course.id, 1).then(r => aoConcluirCatalogoAssistindo(course.id, r)); encerrarSessaoPresenca(); showBonusQuiz(); });
         return;
       }
 
@@ -2929,7 +2941,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
               }, 500);
             },
             onStateChange: (e) => {
-              if(e.data === YT.PlayerState.ENDED){ enviarProgresso(course.id, 1).then(r => aoConcluirCatalogoAssistindo(course.id, r)); encerrarSessaoPresenca(); showBonusQuiz(); }
+              if(e.data === YT.PlayerState.ENDED){ sairDaTelaCheiaNoFim(wrap); enviarProgresso(course.id, 1).then(r => aoConcluirCatalogoAssistindo(course.id, r)); encerrarSessaoPresenca(); showBonusQuiz(); }
             }
           }
         });
