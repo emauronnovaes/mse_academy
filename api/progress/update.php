@@ -46,7 +46,8 @@ if (!mse_course_is_unlocked($pdo, (int) $user['id'], $courseId)) {
 $temPergunta = mse_tem_pergunta_final($pdo, $courseId);
 
 $concluiuAssistindo = !$temPergunta && $watchedPct >= 95
-    && mse_atividades_pendentes($pdo, (int) $user['id'], $courseId) === 0;
+    && mse_atividades_pendentes($pdo, (int) $user['id'], $courseId) === 0
+    && mse_quiz_aprovado(mse_quiz_situacao($pdo, (int) $user['id'], $courseId)); // 70% de acerto de primeira
 
 $status = $concluiuAssistindo ? 'concluido' : ($watchedPct > 0 ? 'em_andamento' : 'nao_iniciado');
 // Relógio do banco, não do PHP: o check-in e a conclusão por pergunta usam

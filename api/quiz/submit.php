@@ -82,20 +82,88 @@ if ($momento === null) {
 }
 
 $isCorrect = (bool) $option['is_correct'];
+$uid = (int) $user['id'];
+
+// Regra das perguntas (ver mse_quiz_situacao em Progress.php): uma resposta
+// por pergunta; errou, só responde de novo depois de reassistir o trecho;
+// a aula só conclui com 70% de acerto de primeira. Aula já concluída
+// (revisão) fica de fora — ali nada muda mais.
+$stmt = $pdo->prepare('SELECT status FROM user_course_progress WHERE user_id = ? AND course_id = ?');
+$stmt->execute([$uid, $courseId]);
+$jaConcluida = $stmt->fetchColumn() === 'concluido';
+
+$situacao = mse_quiz_situacao($pdo, $uid, $courseId);
+$estaPergunta = $situacao['perguntas'][$questionId] ?? null;
+$trecho = mse_quiz_trecho($situacao, $questionId);
+
+/** Resposta padrão, com a nota da rodada pra tela mostrar (mse_json encerra o script). */
+$responder = function (array $extra) use (&$situacao): void {
+    $total = $situacao['total'];
+    mse_json($extra + [
+        'acertos' => $situacao['acertos_primeira'],
+        'erros' => $situacao['erros_primeira'],
+        'total' => $total,
+        'pct' => $total ? (int) floor($situacao['acertos_primeira'] / $total * 100) : 100,
+        'nota_minima' => (int) round(MSE_QUIZ_NOTA_MINIMA * 100),
+    ]);
+};
+
+if (!$jaConcluida && $estaPergunta) {
+    if ($estaPergunta['acertou']) {
+        // Já acertou nesta rodada: não grava de novo nem muda a nota.
+        $responder(['correct' => true, 'concluido' => false, 'ja_respondida' => true]);
+    }
+    if ($estaPergunta['primeira'] === false) {
+        // Errou antes: precisa ter reassistido o trecho. O servidor não vê a
+        // posição do vídeo, então confere o tempo desde o erro (80% do trecho).
+        $ate = $trecho['ate'];
+        if ($ate === null) {
+            $ate = 0;
+            if (mse_tem_coluna($pdo, 'courses', 'duration_seconds')) {
+                $stmt = $pdo->prepare('SELECT duration_seconds FROM courses WHERE id = ?');
+                $stmt->execute([$courseId]);
+                $ate = (int) $stmt->fetchColumn();
+            }
+        }
+        $exigido = $ate > $trecho['de'] ? (int) floor(($ate - $trecho['de']) * 0.8) : 30; // sem duração conhecida: 30 s
+        if ((int) $estaPergunta['seg_desde_erro'] < $exigido) {
+            $fmt = fn (int $s): string => sprintf('%02d:%02d', intdiv($s, 60), $s % 60);
+            mse_error(
+                'Para responder de novo, assista outra vez o trecho de ' . $fmt($trecho['de'])
+                    . ($trecho['ate'] === null ? ' até o fim.' : ' até ' . $fmt($trecho['ate']) . '.'),
+                403
+            );
+        }
+    }
+}
 
 $stmt = $pdo->prepare(
     'INSERT INTO quiz_attempts (user_id, question_id, option_id, is_correct) VALUES (?, ?, ?, ?)'
 );
-$stmt->execute([$user['id'], $questionId, $optionId, $isCorrect ? 1 : 0]);
+$stmt->execute([$uid, $questionId, $optionId, $isCorrect ? 1 : 0]);
+
+if (!$jaConcluida) {
+    $situacao = mse_quiz_situacao($pdo, $uid, $courseId);
+    $acabou = $situacao['pendentes'] === 0;
+    if (mse_quiz_sem_chance($situacao) || ($acabou && !mse_quiz_aprovado($situacao))) {
+        // Abaixo de 70%: a aula recomeça do início.
+        mse_quiz_reiniciar_rodada($pdo, $uid, $courseId);
+        $responder(['correct' => $isCorrect, 'concluido' => false, 'reprovado' => true]);
+    }
+    if (!$isCorrect) {
+        $responder(['correct' => false, 'concluido' => false, 'rever_de' => $trecho['de'], 'rever_ate' => $trecho['ate']]);
+    }
+}
 
 // Resposta certa conclui a aula só quando não falta mais nada: pergunta do
 // fim exige as atividades do meio todas acertadas; atividade do meio só
 // conclui se a aula não tem pergunta do fim e o vídeo já foi até o fim.
+// Com a nota de primeira em 70% ou mais (conferido acima).
 $concluiAula = false;
 if ($isCorrect) {
-    $semPendencias = mse_atividades_pendentes($pdo, (int) $user['id'], $courseId) === 0;
+    $semPendencias = mse_atividades_pendentes($pdo, $uid, $courseId) === 0;
     $concluiAula = $momento === null
-        ? $semPendencias
+        ? $semPendencias && ($jaConcluida || $situacao['pendentes'] === 0)
         : ($semPendencias && $pctAssistido >= 95 && !mse_tem_pergunta_final($pdo, $courseId));
 }
 
@@ -148,4 +216,4 @@ if ($concluiAula) {
     mse_vini_atualizar_aulas_do_usuario((int) $user['id']);
 }
 
-mse_json(['correct' => $isCorrect, 'concluido' => $concluiAula]);
+$responder(['correct' => $isCorrect, 'concluido' => $concluiAula]);
