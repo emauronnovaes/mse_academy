@@ -205,6 +205,26 @@ function mse_vini_aulas_do_departamento(PDO $pdo, ?int $userId, ?string $deptoFi
     return mse_vini_cursos_por_ids($pdo, $userId, array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN)));
 }
 
+/**
+ * Todas as aulas que a pessoa ASSISTIU (concluídas ou começadas, com algum %
+ * assistido), seja qual for a classificação ou o departamento da aula. Só a
+ * integração fica de fora (é separada).
+ */
+function mse_vini_aulas_assistidas(PDO $pdo, ?int $userId): array
+{
+    if (!$userId) {
+        return [];
+    }
+    $st = $pdo->prepare(
+        "SELECT c.id FROM user_course_progress p
+         JOIN courses c ON c.id = p.course_id
+         WHERE p.user_id = ? AND c.type <> 'onboarding' AND (p.status = 'concluido' OR p.watched_pct > 0)
+         ORDER BY c.order_index ASC, c.id ASC"
+    );
+    $st->execute([$userId]);
+    return mse_vini_cursos_por_ids($pdo, $userId, array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN)));
+}
+
 /** O que a pessoa fez em cada curso da lista (status, % assistido, conclusão, perguntas, entradas e saídas). */
 function mse_vini_cursos_por_ids(PDO $pdo, ?int $userId, array $ids): array
 {
@@ -304,7 +324,7 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
         // Aulas obrigatórias = as do departamento da pessoa e as obrigatórias para todos (integração fica de fora).
         $aulas = mse_vini_aulas_do_departamento($pdo, $userId, isset($p['departamento']) ? (string) $p['departamento'] : null);
         $recomendadas = mse_vini_aulas_do_departamento($pdo, $userId, isset($p['departamento']) ? (string) $p['departamento'] : null, 'recomendadas');
-        mse_vini_gravar_linhas_pessoa($pdo, (string) $p['nome'], $cpf, $p['email'] ?? null, $aulas, $recomendadas);
+        mse_vini_gravar_linhas_pessoa($pdo, (string) $p['nome'], $cpf, $p['email'] ?? null, $aulas, $recomendadas, mse_vini_aulas_assistidas($pdo, $userId));
 
         $login = ['n' => 0, 'primeiro' => null, 'ultimo' => null];
         if ($userId) {
@@ -375,7 +395,7 @@ function mse_vini_recalcular_pessoa(PDO $pdo, ?int $userId, string $nome, ?strin
     }
     $aulas = mse_vini_aulas_do_departamento($pdo, $userId, $depto);
     $recomendadas = mse_vini_aulas_do_departamento($pdo, $userId, $depto, 'recomendadas');
-    mse_vini_gravar_linhas_pessoa($pdo, $nome, $cpf, $email, $aulas, $recomendadas);
+    mse_vini_gravar_linhas_pessoa($pdo, $nome, $cpf, $email, $aulas, $recomendadas, mse_vini_aulas_assistidas($pdo, $userId));
     if ($depto !== null || ($userId && mse_tem_tabela($pdo, 'consultasmia_2'))) {
         $feitas = array_values(array_filter($aulas, static fn($c) => $c['status'] === 'concluido'));
         $where = $cpf ? 'cpf = ?' : 'email = ?';
@@ -685,23 +705,31 @@ function mse_vini_formatar_tempo(int $segundos): ?string
 }
 
 /**
- * Regrava as linhas da pessoa em consultasmia: uma por aula obrigatória
- * concluída (com assunto, descrição e palavras-chave da aula). Sem nenhuma
- * concluída, fica 1 linha com a aula vazia.
+ * Regrava as linhas da pessoa em consultasmia (com assunto, descrição e
+ * palavras-chave da aula), uma por aula:
+ * - obrigatoria: as obrigatórias concluídas ou já começadas (concluida 0/1);
+ * - recomendada: todas as recomendadas, feitas ou não;
+ * - extra: qualquer outra aula que ela assistiu (sem classificação, ou de
+ *   outro departamento).
+ * Sem nenhuma, fica 1 linha com a aula vazia.
  *
  * @param array $aulas as aulas obrigatórias da pessoa (mse_vini_aulas_do_departamento)
+ * @param array $assistidas todas as aulas que ela assistiu (mse_vini_aulas_assistidas)
  */
-function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?string $email, array $aulas, array $recomendadas = []): void
+function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?string $email, array $aulas, array $recomendadas = [], array $assistidas = []): void
 {
     require_once __DIR__ . '/Assuntos.php';
     // Cria/atualiza a tabela e as colunas (tempo_video...) ANTES da transação: DDL encerraria a transação.
     if (!$pdo->inTransaction() && !mse_garantir_viniconsultas($pdo)) {
         throw new RuntimeException('consultasmia indisponível');
     }
-    $feitas = array_values(array_filter($aulas, static fn($c) => $c['status'] === 'concluido'));
+    $foiAssistida = static fn($c) => $c['status'] === 'concluido' || (int) ($c['percentual_assistido'] ?? 0) > 0;
+    $feitas = array_values(array_filter($aulas, $foiAssistida));
+    $naLista = array_flip(array_merge(array_column($aulas, 'id'), array_column($recomendadas, 'id')));
+    $extras = array_values(array_filter($assistidas, static fn($c) => !isset($naLista[(int) $c['id']])));
     $detalhes = [];
-    if ($feitas || $recomendadas) {
-        $ids = array_map(static fn($c) => (int) $c['id'], array_merge($feitas, $recomendadas));
+    if ($feitas || $recomendadas || $extras) {
+        $ids = array_map(static fn($c) => (int) $c['id'], array_merge($feitas, $recomendadas, $extras));
         $marc = implode(',', array_fill(0, count($ids), '?'));
         $temPalavras = mse_tem_coluna($pdo, 'courses', 'palavras_chave');
         $temSeg = mse_tem_coluna($pdo, 'courses', 'duration_seconds');
@@ -775,17 +803,18 @@ function mse_vini_gravar_linhas_pessoa(PDO $pdo, string $nome, ?string $cpf, ?st
             $d['fim_video'] = $fim;
             return $d;
         };
-        // Obrigatórias: só as concluídas (uma linha por aula). Recomendadas: todas, feitas ou não.
+        // Obrigatórias: as concluídas ou começadas. Recomendadas: todas, feitas ou não. Extras: o resto que ela assistiu.
         $linhas = array_merge(
             array_map(static fn($c) => $montar($c, 'obrigatoria'), $feitas),
-            array_map(static fn($c) => $montar($c, 'recomendada'), $recomendadas)
+            array_map(static fn($c) => $montar($c, 'recomendada'), $recomendadas),
+            array_map(static fn($c) => $montar($c, 'extra'), $extras)
         );
         if (!$linhas) {
             $linhas = [['course_id' => null, 'aula' => null, 'tipo' => null, 'concluida' => null, 'assunto' => null, 'descricao' => null, 'palavras_chave' => null, 'tempo_video' => null, 'inicio_video' => null, 'fim_video' => null]];
         }
         foreach ($linhas as $l) {
-            // 1 nas linhas de aula OBRIGATÓRIA concluída; 0 nas recomendadas e na linha sem aula.
-            $valores = [$nome, $cpf, $email, $l['tipo'] === 'obrigatoria' ? 1 : 0, $l['course_id'], $l['aula'], $l['tipo'], $l['concluida'], $l['assunto'], $l['descricao'], $l['palavras_chave'], $l['tempo_video'], $l['inicio_video'], $l['fim_video']];
+            // 1 nas linhas de aula OBRIGATÓRIA concluída; 0 nas outras e na linha sem aula.
+            $valores = [$nome, $cpf, $email, $l['tipo'] === 'obrigatoria' && $l['concluida'] === 1 ? 1 : 0, $l['course_id'], $l['aula'], $l['tipo'], $l['concluida'], $l['assunto'], $l['descricao'], $l['palavras_chave'], $l['tempo_video'], $l['inicio_video'], $l['fim_video']];
             $id = $acha($l['course_id'], $l['aula']);
             if ($id !== null) {
                 $usadas[$id] = true;

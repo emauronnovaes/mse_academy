@@ -63,6 +63,10 @@ $completedAt = $concluiuAssistindo ? (string) $pdo->query('SELECT NOW()')->fetch
 // treinamento: o player manda 0% assim que carrega, então a primeira
 // gravação é a abertura. COALESCE mantém a primeira, reassistir não muda.
 $temCheckin = mse_tem_coluna($pdo, 'user_course_progress', 'checkin_em');
+// % assistido antes desta gravação: sair do zero = começou a assistir a aula agora.
+$stmt = $pdo->prepare('SELECT watched_pct FROM user_course_progress WHERE user_id = ? AND course_id = ?');
+$stmt->execute([$user['id'], $courseId]);
+$comecouAgora = $watchedPct > 0 && (float) $stmt->fetchColumn() <= 0;
 $stmt = $pdo->prepare(
     "INSERT INTO user_course_progress (user_id, course_id, status, watched_pct, completed_at"
         . ($temCheckin ? ', checkin_em' : '') . ")
@@ -105,8 +109,8 @@ if ($concluiuAssistindo) {
     }
 }
 
-// Concluiu a aula: o banco de consulta (consultasmia) já reflete na hora.
-if ($concluiuAssistindo) {
+// Concluiu ou começou a aula: o banco de consulta (consultasmia) já reflete na hora.
+if ($concluiuAssistindo || $comecouAgora) {
     require_once __DIR__ . '/../../src/Viniconsultas.php';
     mse_vini_atualizar_aulas_do_usuario((int) $user['id']);
 }
