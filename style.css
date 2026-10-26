@@ -2285,12 +2285,11 @@
   .trn-classif-recom{ background:#FFF1E0; color:#B35F00; }
   .trn-classif-sem{ background:#EEF0F3; color:var(--steel); }
 
-  /* Botão de tela cheia de reserva (só quando o navegador não libera tela cheia): canto de baixo,
-     logo acima da barra do player */
-  /* Fica EXATAMENTE em cima do botão de tela cheia do próprio player (que não funcionaria) e o cobre:
-     um botão só, no lugar de sempre, na barra de baixo. */
+  /* Botão de tela cheia de reserva (só quando o navegador não libera tela cheia): canto de cima à
+     direita. Na barra de baixo ele ficava por cima do volume — sem o botão de tela cheia do próprio
+     <video> (escondido abaixo), os controles da barra mudam de lugar. */
   .vid-player-wrap.tem-controles .vid-fullscreen-btn.vid-fs-reserva{
-    top:auto; bottom:32px; right:56px; width:32px; height:32px; border-radius:50%;
+    top:10px; bottom:auto; right:10px; width:32px; height:32px; border-radius:50%;
     background:#111; border:none; color:#fff; opacity:1;
   }
   .vid-player-wrap.tem-controles .vid-fullscreen-btn.vid-fs-reserva:hover{ background:#2a2a2a; }
@@ -2304,4 +2303,4 @@
      (o Chrome deixava um ícone apagado ao lado, e o botão ficava duplicado). */
   .vid-player-wrap.tem-controles:has(.vid-fs-reserva) video::-webkit-media-controls-fullscreen-button{ display:none; }
   /* No YouTube fica por cima do botão de tela cheia dele (canto de baixo à direita), que não funcionaria */
-  .vid-player-wrap.tem-controles .vid-fullscreen-btn.vid-fs-reserva.vid-fs-yt{ right:6px; bottom:4px; background:rgba(0,0,0,0.75); }
+  .vid-player-wrap.tem-controles .vid-fullscreen-btn.vid-fs-reserva.vid-fs-yt{ top:auto; right:6px; bottom:4px; background:rgba(0,0,0,0.75); }
