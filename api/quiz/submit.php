@@ -110,8 +110,14 @@ $responder = function (array $extra) use (&$situacao): void {
 
 if (!$jaConcluida && $estaPergunta) {
     if ($estaPergunta['acertou']) {
-        // Já acertou nesta rodada: não grava de novo nem muda a nota.
-        $responder(['correct' => true, 'concluido' => false, 'ja_respondida' => true]);
+        // Já acertou nesta rodada: não grava de novo nem muda a nota. O
+        // resultado, porém, é o da opção escolhida agora — devolver "certo"
+        // sempre fazia a alternativa errada aparecer como correta ao
+        // reabrir um vídeo cuja pergunta já tinha sido acertada.
+        if ($isCorrect) {
+            $responder(['correct' => true, 'concluido' => false, 'ja_respondida' => true]);
+        }
+        $responder(['correct' => false, 'concluido' => false, 'ja_respondida' => true, 'rever_de' => $trecho['de'], 'rever_ate' => $trecho['ate']]);
     }
     if ($estaPergunta['primeira'] === false) {
         // Errou antes: precisa ter reassistido o trecho. O servidor não vê a

@@ -946,6 +946,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             // valendo e a barra não aparece.
             : { controls: 0, disablekb: 1, rel: 0, modestbranding: 1, fs: 0 },
           events: {
+            onPlaybackRateChange: aoMudarVelocidadeYouTube,
             onStateChange: (e) => {
               if(e.data === YT.PlayerState.ENDED){ onbSetWatchPct(mod, 1); encerrarSessaoPresenca(); reativarPerguntasParaRever(document.getElementById(`quiz-box-${mod.id}`)); }
             }
@@ -990,7 +991,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       ? `
         <div class="vid-hint"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Modo revisão — pode avançar a barra à vontade.</div>
         <div class="vid-player-wrap tem-controles">
-          <video id="onb-video-${mod.id}" src="${videoSrc}" controls ${atributoControlslist(false)} playsinline></video>
+          <video id="onb-video-${mod.id}" src="${videoSrc}" controls ${atributoControlslist()} playsinline></video>
           ${botaoTelaCheiaReserva('video')}
         </div>
       `
@@ -1016,6 +1017,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(detalhe.aviso_presenca !== false) onbPresenca = presencaNoVideo(body.querySelector('.vid-player-wrap'), videoEl, mod.id);
 
     if(isRewatch){
+      fixarVelocidadeSeNaoAdmin(videoEl);
       return; // controles nativos cuidam de tudo — não precisa rastrear progresso
     }
     onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoVideo(videoEl), { aoReprovar: () => renderModuleBody(mod, false) });
@@ -1795,13 +1797,28 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     </button>`;
   }
 
-  // controlslist do <video>: tira a velocidade (antes da 1ª vez) e o botão de tela cheia do
+  // controlslist do <video>: tira a velocidade (só administrador usa) e o botão de tela cheia do
   // próprio player quando ele não funcionaria (tela cheia bloqueada pelo navegador).
-  function atributoControlslist(semVelocidade){
+  function atributoControlslist(){
     const itens = [];
-    if(semVelocidade) itens.push('noplaybackrate');
+    if(!window.mseEhAdmin) itens.push('noplaybackrate');
     if(!document.fullscreenEnabled) itens.push('nofullscreen');
     return itens.length ? `controlslist="${itens.join(' ')}"` : '';
+  }
+
+  // Velocidade maior é só do administrador. Para os demais, o menu some do <video>
+  // (controlslist) e, se a velocidade mudar por outro caminho, volta para 1x.
+  function fixarVelocidadeSeNaoAdmin(v){
+    if(window.mseEhAdmin) return;
+    v.defaultPlaybackRate = 1;
+    v.playbackRate = 1;
+    v.addEventListener('ratechange', () => { if(v.playbackRate !== 1) v.playbackRate = 1; });
+    v.addEventListener('loadedmetadata', () => { v.playbackRate = 1; });
+  }
+
+  // O menu de velocidade do YouTube não dá pra esconder; para quem não é administrador, volta para 1x.
+  function aoMudarVelocidadeYouTube(e){
+    if(!window.mseEhAdmin && e.data !== 1) e.target.setPlaybackRate(1);
   }
 
   // No fim do vídeo a pergunta aparece ABAIXO do player: sai da tela cheia (do navegador ou a
@@ -2926,20 +2943,14 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         iniciarSessaoPresenca(course.id);
         wrap.classList.add('tem-controles');
         wrap.innerHTML = `
-          <video src="${detalhe.video_url}" controls ${atributoControlslist(!jaConcluiu)} playsinline style="width:100%;border-radius:12px"></video>
+          <video src="${detalhe.video_url}" controls ${atributoControlslist()} playsinline style="width:100%;border-radius:12px"></video>
           ${botaoTelaCheiaReserva('video')}
         `;
         ligarBotaoTelaCheia(wrap);
         const v = wrap.querySelector('video');
         modalState.controles = controlesDoVideo(v);
-        // Velocidade maior só depois de assistir tudo pelo menos uma vez: na primeira vez fica sempre em 1x
-        // (some do menu do player e, se mudar por outro caminho, volta para 1x).
-        if(!jaConcluiu){
-          v.defaultPlaybackRate = 1;
-          v.playbackRate = 1;
-          v.addEventListener('ratechange', () => { if(v.playbackRate !== 1) v.playbackRate = 1; });
-          v.addEventListener('loadedmetadata', () => { v.playbackRate = 1; });
-        }
+        // Velocidade maior só para administrador (ver fixarVelocidadeSeNaoAdmin).
+        fixarVelocidadeSeNaoAdmin(v);
         if(detalhe.aviso_presenca !== false) modalState.presenca = presencaNoVideo(wrap, v, course.id);
         if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoVideo(v), { aoReprovar: () => reabrirAulaCatalogo(course) });
 
@@ -3010,6 +3021,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             // deixaria de valer.
             : { controls: 0, disablekb: 1, modestbranding: 1, rel: 0, fs: 0 },
           events: {
+            onPlaybackRateChange: aoMudarVelocidadeYouTube,
             onReady: () => {
               if(jaConcluiu) return;
               const p = modalState.player;
