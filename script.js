@@ -956,7 +956,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         ligarBotaoTelaCheia(body);
         if(detalhe.aviso_presenca !== false) onbPresenca = presencaNoYouTube(body.querySelector('.vid-player-wrap'), player, mod.id);
         if(isRewatch) return;
-        onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoYouTube(player), { aoReprovar: () => renderModuleBody(mod, false) });
+        onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoYouTube(player), { aoReprovar: () => renderModuleBody(mod, false), limite: () => trava.maxSegundos });
 
         const trava = criarTravaDeAvanco(false);
         ligarControlesDeRevisao(
@@ -1020,7 +1020,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       fixarVelocidadeSeNaoAdmin(videoEl);
       return; // controles nativos cuidam de tudo — não precisa rastrear progresso
     }
-    onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoVideo(videoEl), { aoReprovar: () => renderModuleBody(mod, false) });
+    onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoVideo(videoEl), { aoReprovar: () => renderModuleBody(mod, false), limite: () => trava.maxSegundos });
 
     const trava = criarTravaDeAvanco(false);
     ligarControlesDeRevisao(
@@ -1398,7 +1398,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // exige que a pessoa tenha chegado àquele ponto do vídeo. A trava de
   // avanço garante que não dá pra pular por cima: o vídeo passa pelo
   // segundo marcado.
-  function ligarAtividadesNoVideo(wrap, perguntas, { posicao, tocando, pausar, tocar, irPara }, { aoReprovar } = {}){
+  function ligarAtividadesNoVideo(wrap, perguntas, { posicao, tocando, pausar, tocar, irPara }, { aoReprovar, limite } = {}){
     const atividades = (perguntas || [])
       .filter(q => q.momento_seg != null)
       .sort((a, b) => a.momento_seg - b.momento_seg);
@@ -1418,7 +1418,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       }
       const pos = posicao();
       if(!isFinite(pos)) return;
-      const proxima = atividades.find(q => !resolvidas.has(q.id) && pos >= q.momento_seg);
+      // Só abre quando o vídeo CHEGOU no ponto assistindo: um pulo pela barra
+      // deixa a posição adiante do que foi visto (limite = trava de avanço),
+      // e aí a pergunta abria fora de hora e o vídeo seguia dali.
+      const visto = limite ? limite() : Infinity;
+      const proxima = atividades.find(q => !resolvidas.has(q.id) && pos >= q.momento_seg && q.momento_seg <= visto + 1.5);
       if(proxima) mostrar(proxima);
     }, 250);
 
@@ -1778,20 +1782,22 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     return itens.length ? `controlslist="${itens.join(' ')}"` : '';
   }
 
-  // Pulo barrado: volta pro limite sem brigar com o arrasto. Arrastar a barra
-  // dispara dezenas de "seeking"; corrigir a cada um fazia o vídeo tremer e
-  // parar. Aqui só uma correção por vez (a próxima espera a anterior terminar)
-  // e, se estava tocando, segue tocando.
+  // Pulo barrado: volta pro limite e, se estava tocando, segue tocando (sem
+  // isso o vídeo parava no meio do arrasto e parecia travado). Toda tentativa
+  // é corrigida: ignorar as que chegavam durante uma correção deixava passar
+  // cliques seguidos na barra, e o vídeo pulava pra frente.
   function voltarDoPulo(v, seg){
-    if(v._corrigindoPulo) return;
-    v._corrigindoPulo = true;
-    const tocava = !v.paused && !v.ended;
-    const fim = () => {
-      v._corrigindoPulo = false;
-      if(tocava && v.paused) v.play().catch(() => {});
-    };
-    v.addEventListener('seeked', fim, { once: true });
-    setTimeout(() => { if(v._corrigindoPulo) fim(); }, 800); // rede de segurança
+    if(!v._corrigindoPulo){
+      const tocava = !v.paused && !v.ended;
+      v._corrigindoPulo = true;
+      const fim = () => {
+        if(!v._corrigindoPulo) return;
+        v._corrigindoPulo = false;
+        if(tocava && v.paused) v.play().catch(() => {});
+      };
+      v.addEventListener('seeked', fim, { once: true });
+      setTimeout(fim, 800); // rede de segurança
+    }
     v.currentTime = seg;
   }
 
@@ -2963,7 +2969,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         // Velocidade maior só para administrador (ver fixarVelocidadeSeNaoAdmin).
         fixarVelocidadeSeNaoAdmin(v);
         if(detalhe.aviso_presenca !== false) modalState.presenca = presencaNoVideo(wrap, v, course.id);
-        if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoVideo(v), { aoReprovar: () => reabrirAulaCatalogo(course) });
+        if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoVideo(v), { aoReprovar: () => reabrirAulaCatalogo(course), limite: () => trava.maxSegundos });
 
         // Os controles nativos ficam visíveis mesmo travado, pra dar pra
         // VOLTAR. O que é bloqueado é só avançar além do que já foi visto —
@@ -3066,7 +3072,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         });
         modalState.controles = controlesDoYouTube(modalState.player);
         if(detalhe.aviso_presenca !== false) modalState.presenca = presencaNoYouTube(wrap, modalState.player, course.id);
-        if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoYouTube(modalState.player), { aoReprovar: () => reabrirAulaCatalogo(course) });
+        if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoYouTube(modalState.player), { aoReprovar: () => reabrirAulaCatalogo(course), limite: () => trava.maxSegundos });
       });
     }).catch(e => {
       const wrap = videoModalBodyEl.querySelector('.vid-player-wrap');
