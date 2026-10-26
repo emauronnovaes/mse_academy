@@ -227,7 +227,7 @@ function mse_tem_pergunta_final(PDO $pdo, int $courseId): bool
 }
 
 /**
- * Quantas atividades do meio do vídeo esta pessoa ainda não acertou (na
+ * Quantas atividades do meio do vídeo esta pessoa ainda não respondeu (na
  * rodada atual). A aula só conclui com zero — senão bastaria pular a
  * atividade pela API.
  */
@@ -235,7 +235,7 @@ function mse_atividades_pendentes(PDO $pdo, int $userId, int $courseId): int
 {
     $n = 0;
     foreach (mse_quiz_situacao($pdo, $userId, $courseId)['perguntas'] as $q) {
-        if ($q['momento_seg'] !== null && !$q['acertou']) {
+        if ($q['momento_seg'] !== null && !$q['respondida']) {
             $n++;
         }
     }
@@ -245,12 +245,11 @@ function mse_atividades_pendentes(PDO $pdo, int $userId, int $courseId): int
 // ================================================================
 // Regra das perguntas (aulas e integração)
 // ================================================================
-// - Cada pergunta é respondida UMA vez. Errou: só responde de novo depois
-//   de assistir outra vez o trecho dela (da atividade anterior até o
-//   momento da pergunta; pergunta do fim: da última atividade até o fim).
-// - Vale a PRIMEIRA resposta de cada pergunta: a aula só conclui com pelo
-//   menos 70% de acerto de primeira. Quando um erro já deixa impossível
-//   chegar nos 70%, a rodada acaba ali: a aula recomeça do início (o %
+// - Cada pergunta é respondida UMA vez e o vídeo segue, acertando ou errando
+//   (errar não volta o vídeo nem trava a pergunta).
+// - Só no FIM (depois da última pergunta, ou no fim do vídeo quando a aula
+//   só tem atividades no meio) a nota é conferida: a aula só conclui com
+//   pelo menos 70% de acerto. Abaixo disso a aula recomeça do início (o %
 //   assistido volta a zero e as respostas anteriores deixam de contar).
 // - Rodada = tentativas com id maior que user_course_progress.quiz_rodada_desde.
 const MSE_QUIZ_NOTA_MINIMA = 0.70;
@@ -321,6 +320,7 @@ function mse_quiz_situacao(PDO $pdo, int $userId, int $courseId): array
             'momento_seg' => $l['momento_seg'] === null ? null : (int) $l['momento_seg'],
             'primeira' => $l['primeira'] === null ? null : (bool) $l['primeira'],
             'acertou' => (bool) $l['acertou'],
+            'respondida' => $l['primeira'] !== null,
             'seg_desde_erro' => $l['seg_desde_erro'] === null ? null : (int) $l['seg_desde_erro'],
         ];
         if ($p['primeira'] === true) {
@@ -328,7 +328,7 @@ function mse_quiz_situacao(PDO $pdo, int $userId, int $courseId): array
         } elseif ($p['primeira'] === false) {
             $erros++;
         }
-        if (!$p['acertou']) {
+        if (!$p['respondida']) {
             $pendentes++;
         }
         $perguntas[$p['id']] = $p;

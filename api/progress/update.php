@@ -45,9 +45,18 @@ if (!mse_course_is_unlocked($pdo, (int) $user['id'], $courseId)) {
 // tenham sido acertadas.
 $temPergunta = mse_tem_pergunta_final($pdo, $courseId);
 
-$concluiuAssistindo = !$temPergunta && $watchedPct >= 95
-    && mse_atividades_pendentes($pdo, (int) $user['id'], $courseId) === 0
-    && mse_quiz_aprovado(mse_quiz_situacao($pdo, (int) $user['id'], $courseId)); // 70% de acerto de primeira
+$semPendencias = !$temPergunta && $watchedPct >= 95
+    && mse_atividades_pendentes($pdo, (int) $user['id'], $courseId) === 0;
+$situacaoQuiz = $semPendencias ? mse_quiz_situacao($pdo, (int) $user['id'], $courseId) : null;
+$aprovado = $situacaoQuiz !== null && mse_quiz_aprovado($situacaoQuiz); // 70% de acerto
+$concluiuAssistindo = $aprovado;
+
+// Fim do vídeo (100%) numa aula só com atividades no meio, e abaixo de 70%
+// de acerto: a aula recomeça do início. Só vale pra aula ainda não concluída.
+$stmt = $pdo->prepare('SELECT status FROM user_course_progress WHERE user_id = ? AND course_id = ?');
+$stmt->execute([$user['id'], $courseId]);
+$reprovou = $situacaoQuiz !== null && !$aprovado && $watchedPct >= 100
+    && $stmt->fetchColumn() !== 'concluido';
 
 $status = $concluiuAssistindo ? 'concluido' : ($watchedPct > 0 ? 'em_andamento' : 'nao_iniciado');
 // Relógio do banco, não do PHP: o check-in e a conclusão por pergunta usam
@@ -113,6 +122,19 @@ if ($concluiuAssistindo) {
 if ($concluiuAssistindo || $comecouAgora) {
     require_once __DIR__ . '/../../src/Viniconsultas.php';
     mse_vini_atualizar_aulas_do_usuario((int) $user['id']);
+}
+
+if ($reprovou) {
+    mse_quiz_reiniciar_rodada($pdo, (int) $user['id'], $courseId);
+    $total = $situacaoQuiz['total'];
+    mse_json([
+        'ok' => true, 'status' => 'em_andamento', 'watched_pct' => 0, 'reprovado' => true,
+        'acertos' => $situacaoQuiz['acertos_primeira'],
+        'erros' => $situacaoQuiz['erros_primeira'],
+        'total' => $total,
+        'pct' => $total ? (int) floor($situacaoQuiz['acertos_primeira'] / $total * 100) : 100,
+        'nota_minima' => (int) round(MSE_QUIZ_NOTA_MINIMA * 100),
+    ]);
 }
 
 mse_json(['ok' => true, 'status' => $status, 'watched_pct' => $watchedPct]);

@@ -1038,7 +1038,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const travarBusca = () => {
       trava.definirDuracao(videoEl.duration);
       const voltarPara = trava.aoBuscar(videoEl.currentTime);
-      if(voltarPara !== null) videoEl.currentTime = voltarPara;
+      if(voltarPara !== null) voltarDoPulo(videoEl, voltarPara);
     };
     // "seeking" avisa quando o salto começa; "seeked", quando termina. Os
     // dois porque nem todo navegador aceita corrigir a posição já no
@@ -1069,7 +1069,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       // O progresso vem da trava, não da posição do vídeo: era daí que
       // saía o furo — a posição sobe com o arrasto, o limite não.
       const voltarPara = trava.conferir(videoEl.currentTime);
-      if(voltarPara !== null) videoEl.currentTime = voltarPara;
+      if(voltarPara !== null) voltarDoPulo(videoEl, voltarPara);
       onbSetWatchPct(mod, trava.pct);
     });
     videoEl.addEventListener('ended', () => { onbSetWatchPct(mod, 1); encerrarSessaoPresenca(); reativarPerguntasParaRever(document.getElementById(`quiz-box-${mod.id}`)); });
@@ -1097,6 +1097,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // Aula do catálogo concluída ASSISTINDO (sem pergunta): o servidor já marcou;
   // aqui o painel e os selos passam a contar na hora, sem recarregar a página.
   function aoConcluirCatalogoAssistindo(courseId, resposta){
+    if(resposta && resposta.reprovado){
+      // Fim do vídeo abaixo de 70% de acerto nas atividades: a aula recomeça.
+      const caixa = document.getElementById('catalogBonusQuiz');
+      if(caixa && modalState.course){
+        caixa.innerHTML = `<div class="quiz-box"><div class="quiz-feedback bad">${textoReprovado(resposta)}
+          <button type="button" class="btn btn-primary quiz-rever-btn">Assistir a aula de novo</button></div></div>`;
+        caixa.querySelector('button').addEventListener('click', () => reabrirAulaCatalogo(modalState.course));
+      }
+      return;
+    }
     if(!resposta || resposta.status !== 'concluido') return;
     if(!catalogProgress.completed.includes(courseId)){
       catalogProgress.completed.push(courseId);
@@ -1382,9 +1392,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // ================================================================
   // Pergunta com momento_seg aparece no meio do vídeo: no segundo marcado o
   // vídeo pausa e a pergunta cobre o player. Cada pergunta é respondida uma
-  // vez: errou, o vídeo volta pro começo do trecho dela (a atividade
-  // anterior) e ela aparece de novo quando o vídeo chegar outra vez no
-  // ponto. Se o erro já deixar a nota abaixo de 70%, a aula recomeça
+  // vez, e o vídeo segue acertando ou errando (errar não volta o vídeo).
+  // A nota de 70% só é conferida no fim: abaixo disso a aula recomeça
   // (aoReprovar). Quem confere é o servidor (quiz/submit.php), que também
   // exige que a pessoa tenha chegado àquele ponto do vídeo. A trava de
   // avanço garante que não dá pra pular por cima: o vídeo passa pelo
@@ -1394,9 +1403,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       .filter(q => q.momento_seg != null)
       .sort((a, b) => a.momento_seg - b.momento_seg);
     const resolvidas = new Set();
-    // Errou: só pode aparecer de novo depois que o vídeo voltar pra antes do
-    // ponto dela (senão reabriria na hora, antes de o salto pra trás pegar).
-    const esperandoVolta = new Set();
     let aberta = null;
     let timer = null; // declarado antes da saída abaixo: parar() usa, e sem atividade ele rodava antes de existir (erro que travava o fechar do vídeo)
     const controle = { pendentes: () => atividades.length - resolvidas.size, parar };
@@ -1412,8 +1418,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       }
       const pos = posicao();
       if(!isFinite(pos)) return;
-      atividades.forEach(q => { if(esperandoVolta.has(q.id) && pos < q.momento_seg - 0.5) esperandoVolta.delete(q.id); });
-      const proxima = atividades.find(q => !resolvidas.has(q.id) && !esperandoVolta.has(q.id) && pos >= q.momento_seg);
+      const proxima = atividades.find(q => !resolvidas.has(q.id) && pos >= q.momento_seg);
       if(proxima) mostrar(proxima);
     }, 250);
 
@@ -1471,29 +1476,15 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           fb.querySelector('button').addEventListener('click', () => { if(aoReprovar) aoReprovar(); });
           return;
         }
-        if(r.correct){
-          btn.classList.add('correct');
-          fb.className = 'vid-atividade-feedback ok';
-          fb.textContent = 'Isso aí! Voltando ao vídeo...';
-          resolvidas.add(q.id);
-          setTimeout(() => {
-            if(aberta === caixa){ caixa.remove(); aberta = null; }
-            tocar();
-          }, 1200);
-        } else {
-          // Errou: não responde de novo agora. Volta pro começo do trecho e
-          // a pergunta aparece outra vez quando o vídeo chegar no ponto.
-          const de = r.rever_de || 0;
-          btn.classList.add('incorrect');
-          fb.className = 'vid-atividade-feedback bad';
-          fb.textContent = `Resposta errada. Para responder de novo, assista outra vez de ${formatarMmSs(de)} até ${mmss}. Voltando o vídeo...`;
-          esperandoVolta.add(q.id);
-          setTimeout(() => {
-            if(irPara) irPara(de);
-            if(aberta === caixa){ caixa.remove(); aberta = null; }
-            tocar();
-          }, 3500);
-        }
+        // Uma resposta só por pergunta: acertando ou errando, o vídeo segue.
+        resolvidas.add(q.id);
+        btn.classList.add(r.correct ? 'correct' : 'incorrect');
+        fb.className = 'vid-atividade-feedback ' + (r.correct ? 'ok' : 'bad');
+        fb.textContent = r.correct ? 'Isso aí! Voltando ao vídeo...' : 'Resposta errada. Voltando ao vídeo...';
+        setTimeout(() => {
+          if(aberta === caixa){ caixa.remove(); aberta = null; }
+          tocar();
+        }, r.correct ? 1200 : 2000);
       }));
       if(botoes[0]) botoes[0].focus();
     }
@@ -1532,25 +1523,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       });
       const fb = bloco.querySelector('.quiz-feedback');
       if(fb) fb.hidden = true;
-    });
-  }
-
-  // Errou a pergunta do fim: trava a pergunta e oferece voltar pro trecho.
-  function marcarPerguntaParaRever(bloco, feedbackEl, r, controles){
-    const de = r.rever_de || 0;
-    bloco.dataset.rever = '1';
-    feedbackEl.hidden = false;
-    feedbackEl.className = 'quiz-feedback bad';
-    feedbackEl.innerHTML = `<i class="fa-solid fa-circle-xmark" aria-hidden="true"></i> Resposta errada. Para responder de novo, assista outra vez o vídeo de ${formatarMmSs(de)} até o fim.
-      <button type="button" class="btn btn-primary quiz-rever-btn">Assistir o trecho de novo</button>`;
-    feedbackEl.querySelector('button').addEventListener('click', () => {
-      const c = controles();
-      if(!c) return;
-      c.irPara(de);
-      c.tocar();
-      const wrap = bloco.closest('.video-modal-inner, .onb-body');
-      const player = wrap && wrap.querySelector('.vid-player-wrap');
-      if(player) player.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
   }
 
@@ -1806,6 +1778,23 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     return itens.length ? `controlslist="${itens.join(' ')}"` : '';
   }
 
+  // Pulo barrado: volta pro limite sem brigar com o arrasto. Arrastar a barra
+  // dispara dezenas de "seeking"; corrigir a cada um fazia o vídeo tremer e
+  // parar. Aqui só uma correção por vez (a próxima espera a anterior terminar)
+  // e, se estava tocando, segue tocando.
+  function voltarDoPulo(v, seg){
+    if(v._corrigindoPulo) return;
+    v._corrigindoPulo = true;
+    const tocava = !v.paused && !v.ended;
+    const fim = () => {
+      v._corrigindoPulo = false;
+      if(tocava && v.paused) v.play().catch(() => {});
+    };
+    v.addEventListener('seeked', fim, { once: true });
+    setTimeout(() => { if(v._corrigindoPulo) fim(); }, 800); // rede de segurança
+    v.currentTime = seg;
+  }
+
   // Velocidade maior é só do administrador. Para os demais, o menu some do <video>
   // (controlslist) e, se a velocidade mudar por outro caminho, volta para 1x.
   function fixarVelocidadeSeNaoAdmin(v){
@@ -1830,9 +1819,34 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(wrap && wrap.classList.contains('is-tela-cheia-janela')) sairTelaCheiaNaJanela(wrap);
   }
 
+  // O botão de reserva só aparece junto com a barra do player. A barra do
+  // <video> some sozinha depois de uns segundos tocando (ou com o mouse fora),
+  // então o botão segue o mesmo ritmo; pausado, a barra fica e o botão também.
+  // No YouTube (iframe) a página não vê o mouse lá dentro: vale o :hover do CSS.
+  function ligarVisibilidadeDoBotaoReserva(btn){
+    const wrap = btn.closest('.vid-player-wrap');
+    const v = wrap && wrap.querySelector('video');
+    if(!v) return;
+    let timer = null;
+    const mostrar = () => {
+      wrap.classList.add('ctrl-visivel');
+      clearTimeout(timer);
+      if(!v.paused && !v.ended) timer = setTimeout(() => wrap.classList.remove('ctrl-visivel'), 2800);
+    };
+    ['mousemove', 'pointerdown', 'touchstart', 'keydown', 'focusin'].forEach(ev => wrap.addEventListener(ev, mostrar, { passive: true }));
+    wrap.addEventListener('mouseleave', () => {
+      if(v.paused || v.ended) return;
+      clearTimeout(timer);
+      wrap.classList.remove('ctrl-visivel');
+    });
+    ['play', 'pause', 'ended'].forEach(ev => v.addEventListener(ev, mostrar));
+    if(v.paused) wrap.classList.add('ctrl-visivel');
+  }
+
   function ligarBotaoTelaCheia(escopo){
     const btn = escopo.querySelector('.vid-fullscreen-btn');
     if(!btn) return;
+    if(btn.classList.contains('vid-fs-reserva')) ligarVisibilidadeDoBotaoReserva(btn);
     btn.addEventListener('click', () => {
       const alvo = btn.closest('.vid-player-wrap');
       if(!alvo) return;
@@ -1940,8 +1954,18 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   async function concluirModuloSemPergunta(mod){
     const caixa = document.getElementById(`quiz-box-${mod.id}`);
     try {
-      await apiPost('api/progress/update.php', { course_id: mod.id, watched_pct: 100 });
-      onbProgress.firstTry[mod.id] = true; // sem pergunta não tem o que errar: conta como aprovado pro baú
+      const r = await apiPost('api/progress/update.php', { course_id: mod.id, watched_pct: 100 });
+      if(r && r.reprovado){
+        // Fim do vídeo abaixo de 70% de acerto nas atividades: a aula recomeça.
+        if(caixa){
+          caixa.hidden = false;
+          caixa.innerHTML = `<div class="quiz-feedback bad">${textoReprovado(r)}
+            <button type="button" class="btn btn-primary quiz-rever-btn">Assistir o módulo de novo</button></div>`;
+          caixa.querySelector('button').addEventListener('click', () => renderModuleBody(mod, false));
+        }
+        return;
+      }
+      onbProgress.firstTry[mod.id] = true; // sem pergunta do fim: passou nas atividades (70%) ou não tem nenhuma pergunta
       if(!onbProgress.completed.includes(mod.id)){
         onbProgress.completed.push(mod.id);
         saveOnboardingProgress(onbProgress);
@@ -1965,13 +1989,13 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // tentativa de cada pergunta (não do retry de 1,2s que já existia), e
   // "acertadas" diz quais já foram vencidas, pra saber quando o módulo
   // inteiro acabou.
-  let onbSessaoQuiz = { primeira: {}, acertadas: new Set() };
+  let onbSessaoQuiz = { primeira: {}, respondidas: new Set() };
 
   function revealQuiz(mod){
     const quizEl = document.getElementById(`quiz-box-${mod.id}`);
     if(!quizEl) return;
     quizEl.hidden = false;
-    onbSessaoQuiz = { primeira: {}, acertadas: new Set() }; // nova sessão
+    onbSessaoQuiz = { primeira: {}, respondidas: new Set() }; // nova sessão
 
     // Só as perguntas do fim: as atividades (momento_seg) já foram
     // respondidas durante o vídeo.
@@ -2042,59 +2066,46 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       return;
     }
 
-    // Guarda o resultado só da PRIMEIRA resposta dessa sessão (não do
-    // retry imediato de 1.2s que já existia) — senão a pessoa sempre
-    // acabava com "acertou" eventualmente, e a exigência de 75% não
-    // significaria nada. Só reassistir de novo (nova sessão) permite
-    // tentar consertar o resultado.
-    // Por pergunta, não por módulo: com várias, a segunda em diante nunca
-    // seria registrada se a marca fosse uma só pro módulo inteiro.
-    if(!(question.id in onbSessaoQuiz.primeira)){
-      onbSessaoQuiz.primeira[question.id] = isCorrect;
+    // Uma resposta só por pergunta, acertando ou errando: errar não trava
+    // nem volta o vídeo. A nota de 70% é conferida pelo servidor quando a
+    // última pergunta é respondida (reprovado = a aula recomeça).
+    onbSessaoQuiz.primeira[question.id] = isCorrect;
+    onbSessaoQuiz.respondidas.add(question.id);
+    const faltam = perguntas.filter(q => !onbSessaoQuiz.respondidas.has(q.id)).length;
+
+    btn.classList.add(isCorrect ? 'correct' : 'incorrect');
+    btn.insertAdjacentHTML('beforeend', isCorrect
+      ? '<i class="fa-solid fa-check opt-icon" aria-hidden="true"></i>'
+      : '<i class="fa-solid fa-circle-xmark opt-icon" aria-hidden="true"></i>');
+    feedbackEl.hidden = false;
+    feedbackEl.className = 'quiz-feedback ' + (isCorrect ? 'ok' : 'bad');
+    const veredito = isCorrect
+      ? '<i class="fa-solid fa-check" aria-hidden="true"></i> Certo! '
+      : '<i class="fa-solid fa-circle-xmark" aria-hidden="true"></i> Resposta errada. ';
+
+    if(faltam > 0){
+      feedbackEl.innerHTML = veredito + (faltam === 1 ? 'Falta uma pergunta.' : `Faltam ${faltam} perguntas.`);
+      return;
     }
 
-    if(isCorrect){
-      btn.classList.add('correct');
-      btn.insertAdjacentHTML('beforeend', '<i class="fa-solid fa-check opt-icon" aria-hidden="true"></i>');
-      feedbackEl.hidden = false;
-      feedbackEl.className = 'quiz-feedback ok';
-
-      onbSessaoQuiz.acertadas.add(question.id);
-      const faltam = perguntas.filter(q => !onbSessaoQuiz.acertadas.has(q.id)).length;
-
-      if(faltam > 0){
-        // Módulo só conclui quando todas forem acertadas — senão a primeira
-        // certa liberaria o próximo e as outras não valeriam nada.
-        feedbackEl.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i> Certo! '
-          + (faltam === 1 ? 'Falta uma pergunta.' : `Faltam ${faltam} perguntas.`);
-        return;
-      }
-
-      if(!r.concluido){
-        // O servidor ainda não concluiu (ex.: falta assistir o vídeo até o fim).
-        feedbackEl.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i> Certo! Assista o vídeo até o fim para concluir o módulo.';
-        return;
-      }
-      feedbackEl.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i> Rota concluída. Você já sabe navegar por aqui.';
-
-      // O servidor só conclui o módulo com pelo menos 70% de acerto de
-      // primeira, então módulo concluído conta como aprovado pro baú.
-      onbProgress.firstTry[mod.id] = true;
-
-      if(!onbProgress.completed.includes(mod.id)){
-        onbProgress.completed.push(mod.id);
-      }
-      saveOnboardingProgress(onbProgress);
-      renderProgressPanel();
-      setTimeout(renderOnboarding, 900);
-    } else {
-      btn.classList.add('incorrect');
-      btn.insertAdjacentHTML('beforeend', '<i class="fa-solid fa-circle-xmark opt-icon" aria-hidden="true"></i>');
-      feedbackEl.hidden = false;
-      feedbackEl.className = 'quiz-feedback bad';
-      // Não responde de novo agora: só depois de reassistir o trecho.
-      marcarPerguntaParaRever(bloco, feedbackEl, r, onbControles);
+    if(!r.concluido){
+      // O servidor ainda não concluiu (ex.: falta assistir o vídeo até o fim).
+      feedbackEl.innerHTML = veredito + 'Assista o vídeo até o fim para concluir o módulo.';
+      return;
     }
+    feedbackEl.className = 'quiz-feedback ok';
+    feedbackEl.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i> Rota concluída. Você já sabe navegar por aqui.';
+
+    // O servidor só conclui o módulo com pelo menos 70% de acerto,
+    // então módulo concluído conta como aprovado pro baú.
+    onbProgress.firstTry[mod.id] = true;
+
+    if(!onbProgress.completed.includes(mod.id)){
+      onbProgress.completed.push(mod.id);
+    }
+    saveOnboardingProgress(onbProgress);
+    renderProgressPanel();
+    setTimeout(renderOnboarding, 900);
   }
 
   // Controles do player do módulo aberto (vídeo enviado ou YouTube).
@@ -2961,7 +2972,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         const travarBusca = () => {
           trava.definirDuracao(v.duration);
           const voltarPara = trava.aoBuscar(v.currentTime);
-          if(voltarPara !== null) v.currentTime = voltarPara;
+          if(voltarPara !== null) voltarDoPulo(v, voltarPara);
         };
         v.addEventListener('seeking', travarBusca);
         v.addEventListener('seeked', travarBusca);
@@ -2970,7 +2981,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           if(!v.duration) return;
           trava.definirDuracao(v.duration);
           const voltarPara = trava.conferir(v.currentTime);
-          if(voltarPara !== null) v.currentTime = voltarPara;
+          if(voltarPara !== null) voltarDoPulo(v, voltarPara);
           enviarProgresso(course.id, trava.pct);
         });
         v.addEventListener('ended', () => { sairDaTelaCheiaNoFim(wrap); enviarProgresso(course.id, 1).then(r => aoConcluirCatalogoAssistindo(course.id, r)); encerrarSessaoPresenca(); showBonusQuiz(); });
@@ -3146,45 +3157,52 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       return;
     }
 
-    if(isCorrect){
-      btn.classList.add('correct');
-      btn.insertAdjacentHTML('beforeend', '<i class="fa-solid fa-check opt-icon" aria-hidden="true"></i>');
-      feedbackEl.hidden = false;
-      feedbackEl.className = 'quiz-feedback ok';
-      feedbackEl.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i> Isso aí — sua bússola está calibrada. +10 pontos.';
-
-      modalState.quizAnswered = true;
-      const course = modalState.course;
-
-      // +10 por pergunta distinta acertada, e só uma vez cada: sem o
-      // registro do que já foi acertado, reabrir a aula e responder de novo
-      // viraria uma máquina de pontos.
-      modalState.acertadas = modalState.acertadas || new Set();
-      const primeiraVezNesta = !modalState.acertadas.has(question.id);
-      modalState.acertadas.add(question.id);
-
-      let mudou = false;
-      // Concluída só quando o servidor diz (todas certas e nota de 70% ou mais).
-      if(r.concluido && !catalogProgress.completed.includes(course.id)){
-        catalogProgress.completed.push(course.id);
-        mudou = true;
-      }
-      if(primeiraVezNesta){
-        catalogProgress.points += 10;
-        mudou = true;
-      }
-      if(mudou) saveCatalogProgress(catalogProgress);
-      // Atualiza o selo "Concluído" na tela de área/busca que ficou aberta por baixo
-      if(!areaModalEl.hidden) refreshCourseScreen();
-      renderProgressPanel();
-    } else {
+    // Uma resposta só por pergunta: errar não trava a pergunta nem volta o vídeo.
+    modalState.quizAnswered = true;
+    const course = modalState.course;
+    if(!isCorrect){
       btn.classList.add('incorrect');
       btn.insertAdjacentHTML('beforeend', '<i class="fa-solid fa-circle-xmark opt-icon" aria-hidden="true"></i>');
       feedbackEl.hidden = false;
       feedbackEl.className = 'quiz-feedback bad';
-      // Não responde de novo agora: só depois de reassistir o trecho.
-      marcarPerguntaParaRever(bloco, feedbackEl, r, () => modalState.controles);
+      feedbackEl.innerHTML = '<i class="fa-solid fa-circle-xmark" aria-hidden="true"></i> Resposta errada.';
+      // Era a última e a nota fechou em 70% ou mais: a aula conclui mesmo assim.
+      if(r.concluido && !catalogProgress.completed.includes(course.id)){
+        catalogProgress.completed.push(course.id);
+        saveCatalogProgress(catalogProgress);
+        if(!areaModalEl.hidden) refreshCourseScreen();
+        renderProgressPanel();
+      }
+      return;
     }
+
+    btn.classList.add('correct');
+    btn.insertAdjacentHTML('beforeend', '<i class="fa-solid fa-check opt-icon" aria-hidden="true"></i>');
+    feedbackEl.hidden = false;
+    feedbackEl.className = 'quiz-feedback ok';
+    feedbackEl.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i> Isso aí — sua bússola está calibrada. +10 pontos.';
+
+    // +10 por pergunta distinta acertada, e só uma vez cada: sem o
+    // registro do que já foi acertado, reabrir a aula e responder de novo
+    // viraria uma máquina de pontos.
+    modalState.acertadas = modalState.acertadas || new Set();
+    const primeiraVezNesta = !modalState.acertadas.has(question.id);
+    modalState.acertadas.add(question.id);
+
+    let mudou = false;
+    // Concluída só quando o servidor diz (todas certas e nota de 70% ou mais).
+    if(r.concluido && !catalogProgress.completed.includes(course.id)){
+      catalogProgress.completed.push(course.id);
+      mudou = true;
+    }
+    if(primeiraVezNesta){
+      catalogProgress.points += 10;
+      mudou = true;
+    }
+    if(mudou) saveCatalogProgress(catalogProgress);
+    // Atualiza o selo "Concluído" na tela de área/busca que ficou aberta por baixo
+    if(!areaModalEl.hidden) refreshCourseScreen();
+    renderProgressPanel();
   }
 
   // Reprovou (abaixo de 70%): fecha e abre a aula do zero, com a trava de

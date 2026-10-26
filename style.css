@@ -2294,6 +2294,12 @@
     background:#111; border:none; color:#fff; opacity:1;
   }
   .vid-player-wrap.tem-controles .vid-fullscreen-btn.vid-fs-reserva:hover{ background:#2a2a2a; }
+  /* O botão de reserva só aparece junto com a barra do player: escondido por
+     padrão, volta quando a barra volta (classe ctrl-visivel, posta pelo JS no
+     <video>; no YouTube, enquanto o mouse está sobre o player). */
+  .vid-player-wrap.tem-controles .vid-fullscreen-btn.vid-fs-reserva{ opacity:0; pointer-events:none; transition:opacity .2s ease, background .2s ease; }
+  .vid-player-wrap.tem-controles.ctrl-visivel .vid-fullscreen-btn.vid-fs-reserva,
+  .vid-player-wrap.tem-controles:has(iframe):hover .vid-fullscreen-btn.vid-fs-reserva{ opacity:1; pointer-events:auto; }
   /* Com o botão de reserva na tela, o do próprio <video> sai de vez: só o controlslist não bastava
      (o Chrome deixava um ícone apagado ao lado, e o botão ficava duplicado). */
   .vid-player-wrap.tem-controles:has(.vid-fs-reserva) video::-webkit-media-controls-fullscreen-button{ display:none; }
