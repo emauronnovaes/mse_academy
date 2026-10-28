@@ -113,6 +113,9 @@ function mse_lista_presenca(PDO $pdo, int $courseId, array $filtros = []): array
     $temCheckin = mse_tem_coluna($pdo, 'user_course_progress', 'checkin_em');
     $temMomento = mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg');
     $temDuracao = mse_tem_coluna($pdo, 'courses', 'duration_seconds');
+    $desdeRodada = mse_tem_coluna($pdo, 'user_course_progress', 'quiz_rodada_desde')
+        ? 'COALESCE(p.quiz_rodada_desde, 0)'
+        : '0';
 
     $where = ['p.course_id = :cid'];
     $params = [':cid' => $courseId];
@@ -138,6 +141,14 @@ function mse_lista_presenca(PDO $pdo, int $courseId, array $filtros = []): array
                       JOIN quiz_questions qq ON qq.id = t.question_id
                      WHERE qq.course_id = p.course_id AND t.user_id = p.user_id) AS tentativas,
                    (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = p.course_id) AS total_perguntas,
+                   (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = p.course_id
+                      AND (SELECT t.is_correct FROM quiz_attempts t
+                            WHERE t.question_id = qq.id AND t.user_id = p.user_id AND t.id > {$desdeRodada}
+                            ORDER BY t.id LIMIT 1) = 1) AS acertos_primeira,
+                   (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = p.course_id
+                      AND (SELECT t.id FROM quiz_attempts t
+                            WHERE t.question_id = qq.id AND t.user_id = p.user_id AND t.id > {$desdeRodada}
+                            ORDER BY t.id LIMIT 1) IS NOT NULL) AS respondidas_rodada,
                    " . mse_sql_resumo_log($pdo) . "
             FROM user_course_progress p
             JOIN users u ON u.id = p.user_id
@@ -178,6 +189,11 @@ function mse_lista_presenca(PDO $pdo, int $courseId, array $filtros = []): array
             'acertos' => (int) $r['acertos'],
             'tentativas' => (int) $r['tentativas'],
             'total_perguntas' => (int) $r['total_perguntas'],
+            'nota_pct' => mse_nota_primeira_rodada(
+                (int) ($r['acertos_primeira'] ?? 0),
+                (int) ($r['respondidas_rodada'] ?? 0),
+                (int) $r['total_perguntas']
+            ),
         ];
     }, $stmt->fetchAll());
 }
@@ -332,6 +348,9 @@ function mse_treinamentos_da_pessoa(PDO $pdo, int $userId, array $filtros): arra
     $temCheckin = mse_tem_coluna($pdo, 'user_course_progress', 'checkin_em');
     $temDuracao = mse_tem_coluna($pdo, 'courses', 'duration_seconds');
     $auditoria = mse_tem_campos_auditoria($pdo);
+    $desdeRodada = mse_tem_coluna($pdo, 'user_course_progress', 'quiz_rodada_desde')
+        ? 'COALESCE(p.quiz_rodada_desde, 0)'
+        : '0';
 
     $where = ['p.user_id = :uid', mse_sql_participou($pdo)];
     $params = [':uid' => $userId];
@@ -349,6 +368,14 @@ function mse_treinamentos_da_pessoa(PDO $pdo, int $userId, array $filtros): arra
                    (SELECT COUNT(*) FROM quiz_attempts t JOIN quiz_questions qq ON qq.id = t.question_id
                      WHERE qq.course_id = c.id AND t.user_id = p.user_id) AS tentativas,
                    (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = c.id) AS total_perguntas,
+                   (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = c.id
+                      AND (SELECT t.is_correct FROM quiz_attempts t
+                            WHERE t.question_id = qq.id AND t.user_id = p.user_id AND t.id > {$desdeRodada}
+                            ORDER BY t.id LIMIT 1) = 1) AS acertos_primeira,
+                   (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = c.id
+                      AND (SELECT t.id FROM quiz_attempts t
+                            WHERE t.question_id = qq.id AND t.user_id = p.user_id AND t.id > {$desdeRodada}
+                            ORDER BY t.id LIMIT 1) IS NOT NULL) AS respondidas_rodada,
                    " . mse_sql_resumo_log($pdo) . "
             FROM user_course_progress p
             JOIN courses c ON c.id = p.course_id
@@ -388,6 +415,11 @@ function mse_treinamentos_da_pessoa(PDO $pdo, int $userId, array $filtros): arra
             'acertos' => (int) $r['acertos'],
             'tentativas' => (int) $r['tentativas'],
             'total_perguntas' => (int) $r['total_perguntas'],
+            'nota_pct' => mse_nota_primeira_rodada(
+                (int) ($r['acertos_primeira'] ?? 0),
+                (int) ($r['respondidas_rodada'] ?? 0),
+                (int) $r['total_perguntas']
+            ),
         ];
     }, $stmt->fetchAll());
 }
@@ -481,6 +513,58 @@ function mse_ler_aviso_presenca(PDO $pdo, array $input): array
  * Departamento mostrado nos relatórios: o que vem do Portal (migração 023)
  * e, sem ele, o departamento da Academy. Espera users = u e areas = a.
  */
+/** Cria courses.codigo_nr (NR-06 / NR-12) se a migração 051 ainda não rodou. */
+function mse_garantir_codigo_nr(PDO $pdo): bool
+{
+    static $ok = null;
+    if ($ok !== null) {
+        return $ok;
+    }
+    if (mse_tem_coluna($pdo, 'courses', 'codigo_nr')) {
+        return $ok = true;
+    }
+    try {
+        $pdo->exec('ALTER TABLE courses ADD COLUMN codigo_nr VARCHAR(10) NULL');
+        return $ok = true;
+    } catch (Throwable $e) {
+        error_log('[codigo_nr] Não consegui criar a coluna (rode a migração 051): ' . $e->getMessage());
+        return $ok = false;
+    }
+}
+
+/**
+ * codigo_nr do corpo. '' tira o vídeo da trava do crachá.
+ * "auto" ou ausência de valor marcado volta para NULL (reconhecimento pelo título).
+ *
+ * @return array<string, ?string>
+ */
+function mse_ler_codigo_nr(PDO $pdo, array $input): array
+{
+    if (!array_key_exists('codigo_nr', $input)) {
+        return [];
+    }
+    if (!mse_garantir_codigo_nr($pdo)) {
+        mse_error('A prova de NR ainda não pode ser gravada: falta rodar a migração 051 no banco.', 409);
+    }
+    $valor = trim((string) $input['codigo_nr']);
+    if ($valor === '' || $valor === 'auto') {
+        return ['codigo_nr' => $valor === 'auto' ? null : ''];
+    }
+    if (!in_array($valor, ['NR-06', 'NR-12'], true)) {
+        mse_error('Prova inválida. Use NR-06 ou NR-12.', 422);
+    }
+    return ['codigo_nr' => $valor];
+}
+
+/** Nota oficial (primeira resposta da rodada), ou null se a prova não fechou. */
+function mse_nota_primeira_rodada(int $acertos, int $respondidas, int $total): ?int
+{
+    if ($total <= 0 || $respondidas < $total) {
+        return null;
+    }
+    return (int) floor((($acertos / $total) * 100) + 1e-9);
+}
+
 function mse_sql_departamento(PDO $pdo): string
 {
     return mse_tem_coluna($pdo, 'users', 'setor_portal')

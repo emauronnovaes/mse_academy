@@ -2,6 +2,15 @@
   Require all denied
 </FilesMatch>
 
+# O Apache do XAMPP não entrega o header Authorization ao PHP.
+# Sem isso o login da Academy até devolve o token, e a lista responde 401.
+CGIPassAuth On
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+
 # Scripts em /scripts são só pra rodar via linha de comando (php scripts/x.php),
 # nunca devem ser acessáveis pelo navegador.
 RedirectMatch 404 ^/scripts/

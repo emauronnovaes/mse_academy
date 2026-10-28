@@ -75,12 +75,61 @@ function mse_s3_client(): S3Client
     return $client;
 }
 
+/**
+ * Link de leitura sem o SDK. O aws.phar usa sintaxe do PHP 8 e quebra no
+ * XAMPP 7.4 antes de assinar. No PHP 8 o fluxo de cima continua no SDK.
+ */
+function mse_s3_presigned_url_php7(string $objectKey, int $expiresSeconds): string
+{
+    $bucket = mse_aws_bucket();
+    $region = mse_aws_region();
+    $accessKey = trim(mse_env('AWS_ACCESS_KEY_ID'));
+    $secretKey = trim(mse_env('AWS_SECRET_ACCESS_KEY'));
+    if ($accessKey === '' || $secretKey === '' || $bucket === '' || $region === '') {
+        throw new RuntimeException('AWS não configurado no .env');
+    }
+
+    $expiresSeconds = max(1, min(604800, $expiresSeconds));
+    $objectKey = ltrim($objectKey, '/');
+    $encodedKey = implode('/', array_map('rawurlencode', explode('/', $objectKey)));
+    $now = gmdate('Ymd\THis\Z');
+    $date = gmdate('Ymd');
+    $scope = $date . '/' . $region . '/s3/aws4_request';
+    $host = $bucket . '.s3.' . $region . '.amazonaws.com';
+    $params = array(
+        'X-Amz-Algorithm' => 'AWS4-HMAC-SHA256',
+        'X-Amz-Credential' => $accessKey . '/' . $scope,
+        'X-Amz-Date' => $now,
+        'X-Amz-Expires' => (string) $expiresSeconds,
+        'X-Amz-SignedHeaders' => 'host',
+    );
+    ksort($params);
+    $pares = array();
+    foreach ($params as $nome => $valor) {
+        $pares[] = rawurlencode($nome) . '=' . rawurlencode($valor);
+    }
+    $query = implode('&', $pares);
+    $canonical = "GET\n/" . $encodedKey . "\n" . $query . "\nhost:" . $host . "\n\nhost\nUNSIGNED-PAYLOAD";
+    $stringToSign = "AWS4-HMAC-SHA256\n" . $now . "\n" . $scope . "\n" . hash('sha256', $canonical);
+    $kDate = hash_hmac('sha256', $date, 'AWS4' . $secretKey, true);
+    $kRegion = hash_hmac('sha256', $region, $kDate, true);
+    $kService = hash_hmac('sha256', 's3', $kRegion, true);
+    $kSigning = hash_hmac('sha256', 'aws4_request', $kService, true);
+    $signature = hash_hmac('sha256', $stringToSign, $kSigning);
+
+    return 'https://' . $host . '/' . $encodedKey . '?' . $query . '&X-Amz-Signature=' . $signature;
+}
+
 /** @return string a URL assinada, pronta pra usar no <video src="..."> */
 function mse_s3_presigned_url(string $objectKey, int $expiresSeconds = 1800): string
 {
     $bucket = mse_aws_bucket();
     if ($bucket === '') {
         throw new RuntimeException('AWS_S3_BUCKET não configurado no .env');
+    }
+
+    if (PHP_VERSION_ID < 80000) {
+        return mse_s3_presigned_url_php7($objectKey, $expiresSeconds);
     }
 
     try {
