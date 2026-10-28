@@ -956,7 +956,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         ligarBotaoTelaCheia(body);
         if(detalhe.aviso_presenca !== false) onbPresenca = presencaNoYouTube(body.querySelector('.vid-player-wrap'), player, mod.id);
         if(isRewatch) return;
-        onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoYouTube(player), { aoReprovar: () => renderModuleBody(mod, false), limite: () => trava.maxSegundos });
+        onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoYouTube(player), { aoReprovar: () => renderModuleBody(mod, false), limite: () => trava.maxSegundos, antesDeResponder: () => enviarProgresso(mod.id, trava.pct, true) });
 
         const trava = criarTravaDeAvanco(false);
         ligarControlesDeRevisao(
@@ -1020,7 +1020,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       fixarVelocidadeSeNaoAdmin(videoEl);
       return; // controles nativos cuidam de tudo — não precisa rastrear progresso
     }
-    onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoVideo(videoEl), { aoReprovar: () => renderModuleBody(mod, false), limite: () => trava.maxSegundos });
+    onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoVideo(videoEl), { aoReprovar: () => renderModuleBody(mod, false), limite: () => trava.maxSegundos, antesDeResponder: () => enviarProgresso(mod.id, trava.pct, true) });
 
     const trava = criarTravaDeAvanco(false);
     ligarControlesDeRevisao(
@@ -1080,17 +1080,21 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // "timeupdate" seriam ~4 requisições por segundo, então só avisamos a
   // cada 5 pontos percentuais — e sempre no 100%, que é o que libera.
   let ultimoPctEnviado = -1;
-  async function enviarProgresso(courseId, pct){
+  async function enviarProgresso(courseId, pct, forcar){
     const inteiro = Math.min(Math.round(pct * 100), 100);
-    if(inteiro <= ultimoPctEnviado || (inteiro % 5 !== 0 && inteiro < 100)) return null;
+    if(!forcar && (inteiro <= ultimoPctEnviado || (inteiro % 5 !== 0 && inteiro < 100))) return null;
+    if(forcar && inteiro <= ultimoPctEnviado) return { ok: true };
+    const anterior = ultimoPctEnviado;
     ultimoPctEnviado = inteiro;
     try {
       return await apiPost('api/progress/update.php', { course_id: courseId, watched_pct: inteiro });
     } catch(e){
-      // Não interrompe a aula: no pior caso o quiz recusa e a pessoa
-      // reassiste. Derrubar o player por causa disso seria pior.
+      // Sem este recuo, um 0% que falhou (login ainda sem token) travava
+      // o envio até o próximo marco de 5%, e a pergunta do minuto 1
+      // chegava sem nenhuma linha de progresso no servidor.
+      ultimoPctEnviado = anterior;
       console.warn('[progresso] não consegui registrar:', e.message);
-      return null;
+      return false;
     }
   }
 
@@ -1398,7 +1402,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // exige que a pessoa tenha chegado àquele ponto do vídeo. A trava de
   // avanço garante que não dá pra pular por cima: o vídeo passa pelo
   // segundo marcado.
-  function ligarAtividadesNoVideo(wrap, perguntas, { posicao, tocando, pausar, tocar, irPara }, { aoReprovar, limite } = {}){
+  function ligarAtividadesNoVideo(wrap, perguntas, { posicao, tocando, pausar, tocar, irPara }, { aoReprovar, limite, antesDeResponder } = {}){
     const atividades = (perguntas || [])
       .filter(q => q.momento_seg != null)
       .sort((a, b) => a.momento_seg - b.momento_seg);
@@ -1459,6 +1463,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         botoes.forEach(b => { b.disabled = true; });
         let r;
         try{
+          if(antesDeResponder){
+            const gravou = await antesDeResponder();
+            if(gravou === false) throw new Error('Não consegui registrar o vídeo. Espere um instante e responda de novo.');
+          }
           r = await apiPost('api/quiz/submit.php', {
             question_id: q.id,
             option_id: parseInt(btn.dataset.optionId, 10),
@@ -2969,7 +2977,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         // Velocidade maior só para administrador (ver fixarVelocidadeSeNaoAdmin).
         fixarVelocidadeSeNaoAdmin(v);
         if(detalhe.aviso_presenca !== false) modalState.presenca = presencaNoVideo(wrap, v, course.id);
-        if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoVideo(v), { aoReprovar: () => reabrirAulaCatalogo(course), limite: () => trava.maxSegundos });
+        if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoVideo(v), { aoReprovar: () => reabrirAulaCatalogo(course), limite: () => trava.maxSegundos, antesDeResponder: () => enviarProgresso(course.id, trava.pct, true) });
 
         // Os controles nativos ficam visíveis mesmo travado, pra dar pra
         // VOLTAR. O que é bloqueado é só avançar além do que já foi visto —
@@ -2982,6 +2990,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         };
         v.addEventListener('seeking', travarBusca);
         v.addEventListener('seeked', travarBusca);
+        v.addEventListener('play', () => enviarProgresso(course.id, trava.pct, true));
 
         v.addEventListener('timeupdate', () => {
           if(!v.duration) return;
@@ -3072,7 +3081,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         });
         modalState.controles = controlesDoYouTube(modalState.player);
         if(detalhe.aviso_presenca !== false) modalState.presenca = presencaNoYouTube(wrap, modalState.player, course.id);
-        if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoYouTube(modalState.player), { aoReprovar: () => reabrirAulaCatalogo(course), limite: () => trava.maxSegundos });
+        if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoYouTube(modalState.player), { aoReprovar: () => reabrirAulaCatalogo(course), limite: () => trava.maxSegundos, antesDeResponder: () => enviarProgresso(course.id, trava.pct, true) });
       });
     }).catch(e => {
       const wrap = videoModalBodyEl.querySelector('.vid-player-wrap');
@@ -3410,9 +3419,17 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       return; // achou ?sso= — não tenta mais nada depois disso
     }
 
-    // Sem token novo, preserva sessão Academy já existente. A sessão PHP
-    // compartilhada continua disponível apenas como fallback controlado.
-    if(getRealSessionToken()) return;
+    // Token guardado no navegador pode ter sido apagado do banco
+    // (importação local) ou o Apache pode ter recusado o header.
+    // Se o servidor responde 401, descarta e tenta a sessão do Portal.
+    if(getRealSessionToken()){
+      try{
+        await apiFetch('api/auth/me.php');
+        return;
+      }catch(e){
+        clearRealSession();
+      }
+    }
     await tryPortalSessionLogin(diagnostico);
   }
 
@@ -5502,7 +5519,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             <th>Treinamento</th><th>Tipo</th><th>Norma</th><th>Instrutor</th>
             <th title="Primeira vez que abriu o vídeo">Check-in</th><th title="Quando concluiu">Check-out</th>
             <th>Assistido</th><th title="Vezes que respondeu &quot;Estou aqui&quot; durante o vídeo">Presença confirmada</th>
-            <th title="Perguntas e atividades acertadas">Acertos</th><th>Situação</th>
+            <th title="Perguntas e atividades acertadas">Acertos</th>
+            <th title="Percentual de acerto na primeira resposta da rodada. O crachá exige 70% em NR-06 e NR-12.">Nota</th>
+            <th>Situação</th>
             <th title="Vezes que entrou no vídeo (check-ins do log)">Sessões</th>
           </tr></thead>
           <tbody>
@@ -5517,6 +5536,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
                 <td class="trn-nowrap">${Math.round(t.watched_pct)}%${t.tempo_assistido_seg != null ? `<span class="trn-sub">≈ ${esc(trnFmtTempo(t.tempo_assistido_seg))}</span>` : ''}</td>
                 <td class="trn-nowrap">${t.confirmacoes_presenca}×${t.ultima_confirmacao_em ? `<span class="trn-sub">última ${esc(trnFmtDataHora(t.ultima_confirmacao_em))}</span>` : ''}</td>
                 <td class="trn-nowrap">${t.total_perguntas ? `${t.acertos}/${t.total_perguntas}` : vazio}${t.tentativas > t.acertos ? `<span class="trn-sub">${t.tentativas} tentativas</span>` : ''}</td>
+                <td class="trn-nowrap">${t.nota_pct == null ? (t.total_perguntas ? '<span class="trn-sub">em andamento</span>' : vazio) : `${t.nota_pct}%`}</td>
                 <td><span class="watchers-status ${esc(t.status)}">${esc(trnStatus(t.status))}</span></td>
                 <td class="trn-nowrap">${trnSessoesHtml(t, userId, t.id)}</td>
               </tr>
@@ -5604,6 +5624,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         perguntasDoFim > 0 ? `${perguntasDoFim} ${perguntasDoFim === 1 ? 'pergunta' : 'perguntas'} no fim` : '',
         t.total_perguntas === 0 ? '<span class="aulas-sem-pergunta">sem pergunta</span>' : '',
         t.aviso_presenca === false ? 'sem aviso de presença' : '',
+        t.codigo_nr === 'NR-06' || t.codigo_nr === 'NR-12' ? `<span class="trn-classif trn-classif-obrig">Prova ${esc(t.codigo_nr)}</span>` : '',
         t.trilha ? '' : ({
           todos: '<span class="trn-classif trn-classif-obrig">Obrigatória para todos</span>',
           departamentos: '<span class="trn-classif trn-classif-obrig">Obrigatória (departamentos)</span>',
@@ -5672,7 +5693,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             <th>Participante</th><th>CPF</th><th>Cargo</th><th>Departamento</th>
             <th title="Primeira vez que abriu o vídeo">Check-in</th><th title="Quando concluiu">Check-out</th>
             <th>Assistido</th><th title="Vezes que respondeu &quot;Estou aqui&quot; durante o vídeo">Presença confirmada</th>
-            <th title="Perguntas e atividades acertadas">Acertos</th><th>Situação</th>
+            <th title="Perguntas e atividades acertadas">Acertos</th>
+            <th title="Percentual de acerto na primeira resposta da rodada. O crachá exige 70% em NR-06 e NR-12.">Nota</th>
+            <th>Situação</th>
             <th title="Vezes que entrou no vídeo (check-ins do log)">Sessões</th>
           </tr></thead>
           <tbody>
@@ -5687,6 +5710,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
                 <td class="trn-nowrap">${Math.round(p.watched_pct)}%${p.tempo_assistido_seg != null ? `<span class="trn-sub">≈ ${esc(trnFmtTempo(p.tempo_assistido_seg))}</span>` : ''}</td>
                 <td class="trn-nowrap">${p.confirmacoes_presenca}×${p.ultima_confirmacao_em ? `<span class="trn-sub">última ${esc(trnFmtDataHora(p.ultima_confirmacao_em))}</span>` : ''}</td>
                 <td class="trn-nowrap">${p.total_perguntas ? `${p.acertos}/${p.total_perguntas}` : vazio}${p.tentativas > p.acertos ? `<span class="trn-sub">${p.tentativas} tentativas</span>` : ''}</td>
+                <td class="trn-nowrap">${p.nota_pct == null ? (p.total_perguntas ? '<span class="trn-sub">em andamento</span>' : vazio) : `${p.nota_pct}%`}</td>
                 <td><span class="watchers-status ${esc(p.status)}">${esc(trnStatus(p.status))}</span></td>
                 <td class="trn-nowrap">${trnSessoesHtml(p, courseId ? p.user_id : null, courseId)}</td>
               </tr>
@@ -5741,6 +5765,14 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         placeholder="${esc(t.descricao ? 'Hoje a busca mostra a descrição: ' + t.descricao : 'Tópicos abordados, na ordem do vídeo')}">${esc(t.conteudo_programatico || '')}</textarea>
       <label class="admin-field-label" for="trnEdAssuntos">Assuntos</label>
       <input type="text" id="trnEdAssuntos" maxlength="500" value="${esc(t.assuntos || '')}" placeholder="Ex.: NR-35, ancoragem, resgate" ${desab}>
+      <label class="admin-field-label" for="trnEdNr">Prova do crachá no Portal</label>
+      <select id="trnEdNr">
+        <option value="auto" ${t.codigo_nr == null ? 'selected' : ''}>Automático pelo título</option>
+        <option value="NR-06" ${t.codigo_nr === 'NR-06' ? 'selected' : ''}>NR-06</option>
+        <option value="NR-12" ${t.codigo_nr === 'NR-12' ? 'selected' : ''}>NR-12</option>
+        <option value="" ${t.codigo_nr === '' ? 'selected' : ''}>Não entra na liberação do crachá</option>
+      </select>
+      <p class="admin-field-hint">NR-06 e NR-12: o Portal só libera o crachá com nota de pelo menos 70% na primeira resposta. No automático, o título, os assuntos ou as palavras-chave precisam citar a NR.</p>
       <label class="admin-check">
         <input type="checkbox" id="trnEdAviso" ${t.aviso_presenca !== false ? 'checked' : ''} ${trnEstado.avisoOpcional === false ? 'disabled' : ''}>
         Aviso "Você ainda está aí?" durante o vídeo
@@ -5784,6 +5816,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           assuntos: document.getElementById('trnEdAssuntos').value.trim(),
         });
       }
+      const campoNr = document.getElementById('trnEdNr');
+      if(campoNr) corpo.codigo_nr = campoNr.value;
       salvar.disabled = true;
       try{
         await apiFetch('api/admin/courses/update.php', { method: 'POST', body: JSON.stringify(corpo) });
@@ -7454,7 +7488,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       renderProgressPanel();
     } catch(e){
       console.error('[conteudo] falha ao carregar:', e.message);
-      const trilha = document.getElementById('onboardingPath') || document.querySelector('.onb-track');
+      const trilha = document.getElementById('onbPathTrack') || document.querySelector('.onb-path-card');
       if(trilha) trilha.insertAdjacentHTML('beforebegin',
         `<p style="text-align:center;color:#C4212C;font-size:14px">Não consegui carregar as aulas: ${e.message}</p>`);
     }

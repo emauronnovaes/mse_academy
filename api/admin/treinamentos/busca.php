@@ -83,7 +83,9 @@ if ($soAprovados !== '') {
 
 $temAviso = mse_tem_coluna($pdo, 'courses', 'aviso_presenca');
 $temClassif = mse_tem_coluna($pdo, 'courses', 'obrigatoriedade') && mse_tem_coluna($pdo, 'courses', 'palavras_chave');
+$temCodigoNr = mse_tem_coluna($pdo, 'courses', 'codigo_nr');
 $sql = "SELECT c.id, c.title, c.description, c.type, c.is_published, c.created_at, c.video_source, c.duration_minutes,
+               " . ($temCodigoNr ? 'c.codigo_nr' : 'NULL AS codigo_nr') . ",
                " . ($temAviso ? 'c.aviso_presenca' : '1 AS aviso_presenca') . ",
                " . ($temClassif ? 'c.obrigatoriedade, c.palavras_chave' : 'NULL AS obrigatoriedade, NULL AS palavras_chave') . ",
                a.name AS area_name, " . mse_sql_tipo_efetivo($pdo) . " AS tipo,
@@ -207,6 +209,7 @@ foreach ($cursos as $c) {
         'instrutor' => $c['instrutor'],
         'conteudo_programatico' => $c['conteudo_programatico'],
         'assuntos' => $c['assuntos'],
+        'codigo_nr' => $c['codigo_nr'],
         // Todos os assuntos do vídeo, separados por vírgula.
         'area' => $nomesAssuntos[(int) $c['id']] ?? $c['area_name'],
         'trilha' => $c['type'] === 'onboarding',
