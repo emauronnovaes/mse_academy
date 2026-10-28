@@ -4836,7 +4836,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     trnEstado.visao = visao;
     document.querySelectorAll('#trnVisao button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.visao === visao)));
     const porPessoa = visao === 'pessoas';
-    const admitidos = visao === 'admitidos' || visao === 'pendentes' || visao === 'dispensados';
+    const admitidos = visao === 'admitidos' || visao === 'pendentes' || visao === 'concluiram' || visao === 'dispensados';
     document.getElementById('trnTabelaTreinamentos').hidden = porPessoa || admitidos;
     document.getElementById('trnTabelaPessoas').hidden = !porPessoa;
     document.getElementById('trnTabelaAdmitidos').hidden = !admitidos;
@@ -4941,7 +4941,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   let admDados = null;
   let admChaveCarregada = '';
 
-  function admEhVisao(){ return ['admitidos', 'pendentes', 'dispensados'].includes(trnEstado.visao); }
+  function admEhVisao(){ return ['admitidos', 'pendentes', 'concluiram', 'dispensados'].includes(trnEstado.visao); }
 
   async function carregarAdmitidos(){
     const f = trnFiltros();
@@ -5031,6 +5031,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       // Quem está há mais tempo sem fazer aparece primeiro. Dispensado não é pendente.
       lista = lista.filter(p => p.situacao !== 'concluiu' && !p.dispensado)
         .sort((a, b) => b.dias_desde_admissao - a.dias_desde_admissao || a.nome.localeCompare(b.nome));
+    } else if(trnEstado.visao === 'concluiram'){
+      // Quem terminou mais recentemente aparece primeiro.
+      lista = lista.filter(p => p.situacao === 'concluiu' && !p.dispensado)
+        .sort((a, b) => String(b.concluiu_em || '').localeCompare(String(a.concluiu_em || '')) || a.nome.localeCompare(b.nome));
     } else if(trnEstado.visao === 'dispensados'){
       lista = lista.filter(p => p.dispensado)
         .sort((a, b) => String((b.dispensa || {}).em || '').localeCompare(String((a.dispensa || {}).em || '')));
@@ -5063,6 +5067,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(trnEstado.visao === 'pendentes'){
       return `${lista.length} ${lista.length === 1 ? 'novo contratado pendente' : 'novos contratados pendentes'} (sem a integração completa)`;
     }
+    if(trnEstado.visao === 'concluiram'){
+      return `${lista.length} ${lista.length === 1 ? 'admitido concluiu' : 'admitidos concluíram'} a integração`;
+    }
     if(trnEstado.visao === 'dispensados'){
       return `${lista.length} ${lista.length === 1 ? 'pessoa dispensada' : 'pessoas dispensadas'} da integração`;
     }
@@ -5083,6 +5090,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(!lista.length){
       corpo.innerHTML = `<tr><td colspan="7" class="trn-vazio-lista">${trnEstado.visao === 'pendentes'
         ? 'Nenhum novo contratado pendente: todos os admitidos no período já fizeram a integração (ou foram dispensados).'
+        : trnEstado.visao === 'concluiram' ? 'Ninguém admitido nesse período concluiu a integração ainda.'
         : trnEstado.visao === 'dispensados' ? 'Ninguém foi dispensado da integração nesse período.'
         : 'Nenhum admitido nesse período.'}</td></tr>`;
       return;
@@ -5292,7 +5300,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   function admBaixarCsv(){
     const lista = admFiltrados();
-    trnBaixarCsv(trnEstado.visao === 'pendentes' ? 'novos-contratados-pendentes.csv' : 'admitidos-integracao.csv', [
+    trnBaixarCsv(trnEstado.visao === 'pendentes' ? 'novos-contratados-pendentes.csv'
+      : trnEstado.visao === 'concluiram' ? 'integracao-concluida.csv' : 'admitidos-integracao.csv', [
       ['Nome', 'CPF', 'E-mail', 'Telefone', 'Vínculo', 'Cargo', 'Departamento', 'Obra', 'Empresa', 'Gerente', 'E-mail do gerente',
         'Data de admissão', 'Dias desde a admissão', 'Integração', 'Aulas concluídas', 'Aulas obrigatórias', 'Concluiu em', 'Último acesso à Academy'],
       ...lista.map(p => [p.nome, trnFmtCpf(p.cpf), p.email, p.telefone, p.vinculo, p.funcao, p.departamento, p.obra, p.empresa,
@@ -5304,11 +5313,13 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   async function admBaixarPdf(){
     const lista = admFiltrados();
     const pendentes = trnEstado.visao === 'pendentes';
+    const concluiram = trnEstado.visao === 'concluiram';
     const btn = document.getElementById('trnAdmPdf');
     btn.disabled = true;
     btn.textContent = 'Gerando...';
     try{
-      const html = trnCabecalhoRelatorioHtml(pendentes ? 'Novos contratados pendentes de integração' : 'Admitidos e integração', admResumoTexto(lista)) + `
+      const html = trnCabecalhoRelatorioHtml(pendentes ? 'Novos contratados pendentes de integração'
+        : concluiram ? 'Admitidos que concluíram a integração' : 'Admitidos e integração', admResumoTexto(lista)) + `
         <table class="trn-tabela">
           <thead><tr><th>Novo contratado</th><th>Cargo / departamento</th><th>Obra / empresa</th><th>Gerente</th><th>Admissão</th><th>Integração</th></tr></thead>
           <tbody>${lista.map(p => `
@@ -5319,10 +5330,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
               <td>${esc(p.gerente_nome || '—')}<span class="trn-sub">${esc(p.gerente_email || '')}</span></td>
               <td>${esc(trnFmtData(p.data_admissao))}<span class="trn-sub">há ${p.dias_desde_admissao} dias</span></td>
               <td>${admSituacaoHtml(p)}</td>
-            </tr>`).join('') || `<tr><td colspan="6" class="trn-vazio-lista">${pendentes ? 'Nenhum novo contratado pendente.' : 'Nenhum admitido nesse período.'}</td></tr>`}
+            </tr>`).join('') || `<tr><td colspan="6" class="trn-vazio-lista">${pendentes ? 'Nenhum novo contratado pendente.' : concluiram ? 'Ninguém concluiu a integração nesse período.' : 'Nenhum admitido nesse período.'}</td></tr>`}
           </tbody>
         </table>`;
-      await trnBaixarPdf(html, pendentes ? 'novos-contratados-pendentes.pdf' : 'admitidos-integracao.pdf');
+      await trnBaixarPdf(html, pendentes ? 'novos-contratados-pendentes.pdf' : concluiram ? 'integracao-concluida.pdf' : 'admitidos-integracao.pdf');
     }catch(e){
       alert('Não foi possível gerar o PDF: ' + e.message);
     }finally{
