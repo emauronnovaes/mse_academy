@@ -10,7 +10,7 @@ require_once __DIR__ . '/../../../src/Treinamentos.php';
  * Relatório por pessoa (aba "Por pessoa" da Busca de treinamentos).
  *
  * GET, todos opcionais:
- *   q                  nome, e-mail ou CPF
+ *   q                  nome, e-mail ou CPF — ou nome de um curso (lista quem fez)
  *   tipo, norma        contam só treinamentos desse tipo/norma
  *   data_de, data_ate  contam só participação no período
  *   modalidade         presencial = lista vazia (não existe na Academy)
@@ -67,5 +67,6 @@ if (!empty($_GET['com_treinamentos'])) {
 }
 mse_json([
     'pessoas' => $pessoas,
+    'busca_por_curso' => mse_busca_e_curso($pdo, $filtros['q']),
     'total_integracao' => (int) $pdo->query("SELECT COUNT(*) FROM courses WHERE type = 'onboarding' AND is_published = 1")->fetchColumn(),
 ]);

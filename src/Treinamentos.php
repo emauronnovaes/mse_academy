@@ -285,6 +285,18 @@ function mse_sql_participou(PDO $pdo): string
         : "p.status <> 'nao_iniciado'";
 }
 
+/** A busca é o nome de um curso? (algum vídeo tem esse texto no título) */
+function mse_busca_e_curso(PDO $pdo, string $q): bool
+{
+    $q = trim($q);
+    if (mb_strlen($q) < 3) {
+        return false;
+    }
+    $st = $pdo->prepare('SELECT 1 FROM courses WHERE title LIKE ? LIMIT 1');
+    $st->execute(['%' . $q . '%']);
+    return $st->fetchColumn() !== false;
+}
+
 /**
  * Relatório por pessoa: todo colaborador ativo, com quantos treinamentos
  * fez dentro dos filtros. Quem tem zero aparece também — pra auditoria,
@@ -292,6 +304,8 @@ function mse_sql_participou(PDO $pdo): string
  */
 function mse_lista_pessoas(PDO $pdo, array $filtros): array
 {
+    $q = (string) ($filtros['q'] ?? '');
+    $porCurso = mse_busca_e_curso($pdo, $q);
     $cond = [mse_sql_participou($pdo)];
     $params = [];
     mse_filtros_treinamento_sql($pdo, $filtros, $cond, $params);
@@ -300,7 +314,20 @@ function mse_lista_pessoas(PDO $pdo, array $filtros): array
     if (mse_tem_coluna($pdo, 'users', 'oculto_em_relatorios')) {
         $where[] = 'u.oculto_em_relatorios = 0';
     }
-    mse_filtro_pessoa_sql((string) ($filtros['q'] ?? ''), $where, $params);
+    $pessoa = [];
+    mse_filtro_pessoa_sql($q, $pessoa, $params);
+    $achouPessoa = '';
+    $having = '';
+    if ($porCurso) {
+        // Busca pelo nome de um curso: conta só esse curso e aparece quem o
+        // fez (nos filtros), além de quem tem esse texto no nome.
+        $cond[] = 'c.title LIKE :pq_curso';
+        $params[':pq_curso'] = '%' . trim($q) . '%';
+        $achouPessoa = ', MAX(' . $pessoa[0] . ') AS achou_pessoa';
+        $having = 'HAVING treinamentos > 0 OR achou_pessoa = 1';
+    } else {
+        $where = array_merge($where, $pessoa);
+    }
 
     // O filtro de treinamento fica no JOIN, não no WHERE: assim quem não
     // fez nenhum treinamento continua na lista, com zero.
@@ -309,13 +336,14 @@ function mse_lista_pessoas(PDO $pdo, array $filtros): array
                    (SELECT COUNT(*) FROM user_course_progress pi JOIN courses ci ON ci.id = pi.course_id
                      WHERE pi.user_id = u.id AND ci.type = 'onboarding' AND pi.status = 'concluido') AS integracao_concluidos,
                    COUNT(c.id) AS treinamentos,
-                   COALESCE(SUM(c.id IS NOT NULL AND p.status = 'concluido'), 0) AS concluidos
+                   COALESCE(SUM(c.id IS NOT NULL AND p.status = 'concluido'), 0) AS concluidos{$achouPessoa}
             FROM users u
             LEFT JOIN areas a ON a.id = u.area_id
             LEFT JOIN user_course_progress p ON p.user_id = u.id
             LEFT JOIN courses c ON c.id = p.course_id AND " . implode(' AND ', $cond) . "
             WHERE " . implode(' AND ', $where) . "
             GROUP BY u.id, u.name, u.email, u.cpf, u.cargo, area_name, u.last_access_date, u.distinct_access_count
+            {$having}
             ORDER BY u.name ASC";
     $stmt = $pdo->prepare($sql);
     foreach ($params as $k => $v) {

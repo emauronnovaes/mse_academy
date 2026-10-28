@@ -4847,7 +4847,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const dica = document.querySelector('#treinamentosTela .trn-dica');
     if(dica) dica.textContent = admitidos
       ? 'Aqui as datas filtram pela data de admissão (sem datas: últimos 30 dias). A busca filtra por nome, CPF, e-mail, cargo, departamento, obra ou gerente.'
-      : 'As datas filtram pelo período em que as pessoas participaram (check-in, conclusão ou última atividade).';
+      : porPessoa
+        ? 'Busque pelo nome, e-mail ou CPF da pessoa — ou pelo nome de um curso para ver quem fez. As datas filtram pelo período em que as pessoas participaram.'
+        : 'As datas filtram pelo período em que as pessoas participaram (check-in, conclusão ou última atividade).';
   }
 
 
@@ -5356,6 +5358,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       if(pedido !== trnEstado.pedido) return;
       trnEstado.pessoas = d.pessoas || [];
       trnEstado.totalIntegracao = d.total_integracao || 0;
+      trnEstado.buscaPorCurso = !!d.busca_por_curso;
       renderPessoas();
       completarDadosDoPortal();
     }catch(e){
@@ -5406,8 +5409,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   function renderPessoas(){
     const lista = trnEstado.pessoas;
     const fizeram = lista.filter(p => p.treinamentos > 0).length;
-    document.getElementById('trnContagem').textContent =
-      `${lista.length} ${lista.length === 1 ? 'pessoa' : 'pessoas'} · ${fizeram} com treinamento nos filtros`;
+    const busca = trnFiltros().q;
+    document.getElementById('trnContagem').textContent = trnEstado.buscaPorCurso
+      ? `${fizeram} ${fizeram === 1 ? 'pessoa fez' : 'pessoas fizeram'} curso com "${busca}" no nome`
+      : `${lista.length} ${lista.length === 1 ? 'pessoa' : 'pessoas'} · ${fizeram} com treinamento nos filtros`;
     const corpo = document.getElementById('trnCorpoPessoas');
     corpo.innerHTML = '';
     if(!lista.length){
@@ -5527,7 +5532,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       <div class="trn-tabela-wrap">
         <table class="trn-tabela trn-tabela-presenca">
           <thead><tr>
-            <th>Treinamento</th><th>Tipo</th><th>Norma</th><th>Instrutor</th>
+            <th>Treinamento</th><th>Tipo</th><th>Norma</th>
             <th title="Primeira vez que abriu o vídeo">Check-in</th><th title="Quando concluiu">Check-out</th>
             <th>Assistido</th><th title="Vezes que respondeu &quot;Estou aqui&quot; durante o vídeo">Presença confirmada</th>
             <th title="Perguntas e atividades acertadas">Acertos</th>
@@ -5541,7 +5546,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
                 <td><strong>${esc(t.tema)}</strong>${t.arquivado ? ' <span class="aulas-badge">arquivada</span>' : ''}<span class="trn-sub">Online</span></td>
                 <td>${esc(t.tipo)}</td>
                 <td>${t.normas.length ? esc(t.normas.join(' · ')) : vazio}</td>
-                <td>${t.instrutor ? esc(t.instrutor) : vazio}</td>
                 <td class="trn-nowrap">${t.checkin_em ? esc(trnFmtDataHora(t.checkin_em)) : vazio}</td>
                 <td class="trn-nowrap">${t.checkout_em ? esc(trnFmtDataHora(t.checkout_em)) : vazio}</td>
                 <td class="trn-nowrap">${Math.round(t.watched_pct)}%${t.tempo_assistido_seg != null ? `<span class="trn-sub">≈ ${esc(trnFmtTempo(t.tempo_assistido_seg))}</span>` : ''}</td>
@@ -5889,7 +5893,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // linha só, com os campos do treinamento vazios.
   function trnLinhasCsvPessoas(pessoas){
     const cab = ['Participante', 'CPF', 'E-mail', 'Cargo', 'Departamento', 'Treinamento', 'Modalidade', 'Tipo',
-      'Normas', 'Instrutor', 'Check-in', 'Check-out', '% assistido', 'Tempo assistido (estimado)',
+      'Normas', 'Check-in', 'Check-out', '% assistido', 'Tempo assistido (estimado)',
       'Presença confirmada (vezes)', 'Acertos', 'Perguntas', 'Situação', 'Sessões (check-ins)', 'Última saída (check-out do log)'];
     const linhas = [cab];
     pessoas.forEach(p => {
@@ -5897,7 +5901,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       const lista = p.lista_treinamentos || [];
       if(!lista.length) linhas.push(base.concat(['Nenhum treinamento'], Array(cab.length - base.length - 1).fill('')));
       lista.forEach(t => linhas.push(base.concat([
-        t.tema, 'Online', t.tipo, (t.normas || []).join(' / '), t.instrutor || '',
+        t.tema, 'Online', t.tipo, (t.normas || []).join(' / '),
         trnFmtDataHora(t.checkin_em), trnFmtDataHora(t.checkout_em), String(Math.round(t.watched_pct)),
         trnFmtTempo(t.tempo_assistido_seg), String(t.confirmacoes_presenca), String(t.acertos),
         String(t.total_perguntas), trnStatus(t.status), String(t.sessoes || 0), trnFmtDataHora(t.ultimo_checkout_em),
@@ -7289,7 +7293,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <td colspan="5"><b>NORMA:</b> ${esc(normas.join(' · ') || '-')}</td>
           <td>${lpCaixa(!normas.length, 'Não se aplica')}</td>
         </tr>
-        <tr><td colspan="6"><b>INSTRUTOR:</b> ${esc(t.instrutor || '')}</td></tr>
         <tr><td colspan="6"><b>SETOR:</b> ${esc(setor)}</td></tr>
         <tr>
           <td colspan="2"><b>DATA:</b> ${esc(data)}</td>
@@ -7325,7 +7328,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   // REH-002-F1 por pessoa: um formulário só, numa página, com uma linha
   // por treinamento que a pessoa fez. O cabeçalho junta os treinamentos:
-  // temas, tipos marcados, normas, instrutores, período e carga somada.
+  // temas, tipos marcados, normas, período e carga somada.
   // Monta o formulário (HTML) sem baixar: a "Ver ficha" mostra na tela e
   // o botão "Baixar PDF" usa o mesmo HTML. Sem treinamento, html = null.
   async function montarRehPessoa(userId, filtros){
@@ -7345,7 +7348,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       motivoTexto: unicos(metas.map(lpMotivo)).join('; '),
       conteudo_programatico: metas.map(m => `${m.tema}: ${m.conteudo_programatico || m.descricao || '-'}`).join(' | '),
       normas: unicos([].concat(...metas.map(m => m.normas || []))),
-      instrutor: unicos(metas.map(m => m.instrutor)).join(', '),
       setorTexto: pessoa.departamento || unicos(metas.map(lpSetorDoTreinamento)).join(', '),
       duracao_seg: segundos,
     };
