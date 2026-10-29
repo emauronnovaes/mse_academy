@@ -384,7 +384,7 @@ function mse_treinamentos_da_pessoa(PDO $pdo, int $userId, array $filtros): arra
     $params = [':uid' => $userId];
     mse_filtros_treinamento_sql($pdo, $filtros, $where, $params);
 
-    $sql = "SELECT c.id, c.title, c.description, c.created_at, c.is_published, " . mse_sql_tipo_efetivo($pdo) . " AS tipo,
+    $sql = "SELECT c.id, c.title, c.description, c.created_at, c.is_published, c.type AS course_type, " . mse_sql_tipo_efetivo($pdo) . " AS tipo,
                    " . ($auditoria ? 'c.normas, c.instrutor, c.conteudo_programatico, c.assuntos'
                                    : 'NULL AS normas, NULL AS instrutor, NULL AS conteudo_programatico, NULL AS assuntos') . ",
                    " . ($temDuracao ? 'c.duration_seconds' : 'NULL AS duration_seconds') . ",
@@ -424,6 +424,7 @@ function mse_treinamentos_da_pessoa(PDO $pdo, int $userId, array $filtros): arra
             'descricao' => $r['description'],
             'data' => $r['created_at'],
             'arquivado' => (int) $r['is_published'] === 0,
+            'trilha' => $r['course_type'] === 'onboarding',
             'tipo' => $r['tipo'],
             'normas' => $r['normas'] !== null && $r['normas'] !== '' ? explode(',', $r['normas']) : [],
             'instrutor' => $r['instrutor'],

@@ -2003,6 +2003,7 @@
   .reh-detalhes .trn-btn{ margin-top:10px; }
   .reh-preview{ background:#E9E8E4; border-radius:10px; padding:24px 16px; overflow:auto; }
   .reh-folha{ width:700px; margin:0 auto; padding:28px 24px; box-shadow:0 4px 18px rgba(0,0,0,0.12); }
+  .reh-folha + .reh-folha{ margin-top:24px; }
 
   /* Adicionar vídeo: mais largo, com a prévia do vídeo e as perguntas */
   #videoModalOverlay .admin-modal-wide{ max-width:880px; }

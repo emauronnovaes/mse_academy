@@ -5580,7 +5580,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         </div>
         <div id="rehDetalhesCorpo" class="reh-detalhes" hidden></div>
         ${r.html
-          ? `<div class="reh-preview"><div class="rel-pdf rel-formulario reh-folha">${r.html}</div></div>`
+          ? `<div class="reh-preview">${[].concat(r.html).map(folha => `<div class="rel-pdf rel-formulario reh-folha">${folha}</div>`).join('')}</div>`
           : `<p class="trn-vazio-lista">${esc(alvo.nome)} ainda não tem treinamento${f.data_de || f.data_ate ? ' nesse período' : ''}.</p>`}
       `;
       const btnBaixar = document.getElementById('rehBaixar');
@@ -7326,11 +7326,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     return q;
   }
 
-  // REH-002-F1 por pessoa: um formulário só, numa página, com uma linha
-  // por treinamento que a pessoa fez. O cabeçalho junta os treinamentos:
-  // temas, tipos marcados, normas, período e carga somada.
-  // Monta o formulário (HTML) sem baixar: a "Ver ficha" mostra na tela e
-  // o botão "Baixar PDF" usa o mesmo HTML. Sem treinamento, html = null.
+  // REH-002-F1 por pessoa: um formulário (uma página) para cada vídeo que
+  // a pessoa fez. Os vídeos da integração vão juntos num formulário só,
+  // com uma linha por vídeo e o cabeçalho somado (temas, tipos, normas,
+  // período e carga). html é a lista de folhas, a da integração primeiro.
+  // Monta sem baixar: a "Ver ficha" mostra na tela e o botão "Baixar PDF"
+  // usa as mesmas folhas. Sem treinamento, html = null.
   async function montarRehPessoa(userId, filtros){
     const q = lpPeriodo(filtros);
     q.set('user_id', userId);
@@ -7341,22 +7342,27 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(!lista.length) return { html: null, nomeArquivo, pessoa, lista };
     const metas = lista.map(t => Object.assign({}, t, lpEstado.treinamentos.find(x => x.id === t.id) || {}));
     const unicos = (valores) => [...new Set(valores.filter(Boolean))];
-    const segundos = metas.reduce((soma, m) => soma + (m.duracao_seg || (m.duracao_min ? m.duracao_min * 60 : 0)), 0);
-    const resumo = {
-      tema: metas.map(m => m.tema).join('; '),
-      tipos: unicos(metas.map(m => m.tipo)),
-      motivoTexto: unicos(metas.map(lpMotivo)).join('; '),
-      conteudo_programatico: metas.map(m => `${m.tema}: ${m.conteudo_programatico || m.descricao || '-'}`).join(' | '),
-      normas: unicos([].concat(...metas.map(m => m.normas || []))),
-      setorTexto: pessoa.departamento || unicos(metas.map(lpSetorDoTreinamento)).join(', '),
-      duracao_seg: segundos,
-    };
-    const linhas = metas.map(m => ({
+    const linha = (m) => ({
       departamento: pessoa.departamento, setorTreinamento: lpSetorDoTreinamento(m),
       nome: pessoa.nome, email: pessoa.email, treinamento: m.tema,
       checkin_em: m.checkin_em, checkout_em: m.checkout_em, ultimo_checkout_em: m.ultimo_checkout_em,
-    }));
-    return { html: lpFormularioHtml(resumo, linhas, null, { porPessoa: true }), nomeArquivo, pessoa, lista };
+    });
+    const folhas = [];
+    const integracao = metas.filter(m => m.trilha);
+    if(integracao.length){
+      const resumo = {
+        tema: integracao.map(m => m.tema).join('; '),
+        tipos: unicos(integracao.map(m => m.tipo)),
+        motivoTexto: unicos(integracao.map(lpMotivo)).join('; '),
+        conteudo_programatico: integracao.map(m => `${m.tema}: ${m.conteudo_programatico || m.descricao || '-'}`).join(' | '),
+        normas: unicos([].concat(...integracao.map(m => m.normas || []))),
+        setorTexto: pessoa.departamento || unicos(integracao.map(lpSetorDoTreinamento)).join(', '),
+        duracao_seg: integracao.reduce((soma, m) => soma + (m.duracao_seg || (m.duracao_min ? m.duracao_min * 60 : 0)), 0),
+      };
+      folhas.push(lpFormularioHtml(resumo, integracao.map(linha), null, { porPessoa: true }));
+    }
+    metas.filter(m => !m.trilha).forEach(m => folhas.push(lpFormularioHtml(m, [linha(m)])));
+    return { html: folhas, nomeArquivo, pessoa, lista };
   }
 
   async function baixarRehPessoa(userId, filtros){
