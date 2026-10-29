@@ -5667,7 +5667,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const corpo = document.getElementById('trnCorpo');
     corpo.innerHTML = '';
     if(!lista.length){
-      corpo.innerHTML = `<tr><td colspan="10" class="trn-vazio-lista">${
+      corpo.innerHTML = `<tr><td colspan="9" class="trn-vazio-lista">${
         filtros.modalidade === 'presencial'
           ? 'Treinamentos presenciais ainda não são registrados na Academy — aqui estão só os vídeos (online).'
           : 'Nenhum treinamento com esses filtros.'}</td></tr>`;
@@ -5702,7 +5702,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <td><span class="trn-pill trn-pill-online">Online</span></td>
         <td>${esc(t.tipo)}</td>
         <td>${t.normas.length ? esc(t.normas.join(' · ')) : vazio}</td>
-        <td>${t.instrutor ? esc(t.instrutor) : vazio}</td>
         <td class="trn-texto">${t.conteudo_programatico
           ? `<span class="trn-clamp" title="${esc(t.conteudo_programatico)}">${esc(t.conteudo_programatico)}</span>`
           : (t.descricao ? `<span class="trn-clamp trn-fallback" title="Ainda sem conteúdo programático — mostrando a descrição do vídeo">${esc(t.descricao)}</span>` : vazio)}</td>
@@ -5895,13 +5894,13 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // CSV com uma linha por participante (e uma linha vazia pro treinamento
   // sem ninguém): é o formato que a auditoria pede e o Excel abre direto.
   function trnLinhasCsv(treinamentos){
-    const cab = ['Data de publicação', 'Tema', 'Modalidade', 'Tipo', 'Normas', 'Instrutor', 'Conteúdo programático',
+    const cab = ['Data de publicação', 'Tema', 'Modalidade', 'Tipo', 'Normas', 'Conteúdo programático',
       'Assuntos', 'Participante', 'CPF', 'E-mail', 'Cargo', 'Departamento', 'Check-in', 'Check-out',
       '% assistido', 'Tempo assistido (estimado)', 'Presença confirmada (vezes)', 'Acertos', 'Perguntas', 'Situação',
       'Sessões (check-ins)', 'Última saída (check-out do log)'];
     const linhas = [cab];
     treinamentos.forEach(t => {
-      const base = [trnFmtData(t.data), t.tema, 'Online', t.tipo, (t.normas || []).join(' / '), t.instrutor || '',
+      const base = [trnFmtData(t.data), t.tema, 'Online', t.tipo, (t.normas || []).join(' / '),
         t.conteudo_programatico || t.descricao || '', t.assuntos || ''];
       const pessoas = t.lista_presenca || [];
       if(!pessoas.length) linhas.push(base.concat(Array(cab.length - base.length).fill('')));
@@ -5991,7 +5990,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             <div><dt>Modalidade</dt><dd>Online</dd></div>
             <div><dt>Tipo</dt><dd>${esc(t.tipo)}</dd></div>
             <div><dt>Normas</dt><dd>${esc((t.normas || []).join(' · ') || '—')}</dd></div>
-            <div><dt>Instrutor</dt><dd>${esc(t.instrutor || '—')}</dd></div>
             <div><dt>Assuntos</dt><dd>${esc(t.assuntos || '—')}</dd></div>
             <div class="rel-largo"><dt>Conteúdo programático</dt><dd>${esc(t.conteudo_programatico || t.descricao || '—')}</dd></div>
           </dl>
