@@ -5543,7 +5543,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <td><strong>${esc(p.nome)}</strong><span class="trn-sub">${esc(p.email || '')}</span></td>
         <td>${p.cargo ? esc(p.cargo) : vazio}</td>
         <td>${p.departamento ? esc(p.departamento) : vazio}</td>
-        <td class="trn-nowrap">${trnEstado.totalIntegracao ? `${p.integracao_concluidos} de ${trnEstado.totalIntegracao}${p.integracao_concluidos >= trnEstado.totalIntegracao ? ' ✓' : ''}` : vazio}</td>
+        <td class="trn-nowrap">${(() => {
+          // Total da trilha DESTA pessoa (sede não tem os vídeos só para obra).
+          const total = p.integracao_total != null ? p.integracao_total : trnEstado.totalIntegracao;
+          return total ? `${p.integracao_concluidos} de ${total}${p.integracao_concluidos >= total ? ' ✓' : ''}` : vazio;
+        })()}</td>
         <td class="trn-nowrap">${p.treinamentos}${p.treinamentos ? `<span class="trn-sub">${p.concluidos} ${p.concluidos === 1 ? 'concluído' : 'concluídos'}</span>` : ''}</td>
         <td class="trn-nowrap">${p.ultimo_acesso ? esc(trnFmtData(p.ultimo_acesso)) : vazio}<span class="trn-sub">${p.acessos} ${p.acessos === 1 ? 'acesso' : 'acessos'}</span></td>
         <td><button type="button" class="aulas-btn">Ver ficha</button></td>

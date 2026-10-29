@@ -333,8 +333,6 @@ function mse_lista_pessoas(PDO $pdo, array $filtros): array
     // fez nenhum treinamento continua na lista, com zero.
     $sql = "SELECT u.id, u.name, u.email, u.cpf, u.cargo, " . mse_sql_departamento($pdo) . " AS area_name, u.last_access_date,
                    u.distinct_access_count,
-                   (SELECT COUNT(*) FROM user_course_progress pi JOIN courses ci ON ci.id = pi.course_id
-                     WHERE pi.user_id = u.id AND ci.type = 'onboarding' AND pi.status = 'concluido') AS integracao_concluidos,
                    COUNT(c.id) AS treinamentos,
                    COALESCE(SUM(c.id IS NOT NULL AND p.status = 'concluido'), 0) AS concluidos{$achouPessoa}
             FROM users u
@@ -350,8 +348,11 @@ function mse_lista_pessoas(PDO $pdo, array $filtros): array
         $stmt->bindValue($k, $v);
     }
     $stmt->execute();
+    // Integração pela trilha de cada um: quem é da sede não tem os vídeos
+    // "só para obra", então o total muda de pessoa para pessoa.
+    $integracao = mse_integracao_por_pessoa($pdo);
 
-    return array_map(function ($r) {
+    return array_map(function ($r) use ($integracao) {
         return [
             'user_id' => (int) $r['id'],
             'nome' => $r['name'],
@@ -363,7 +364,8 @@ function mse_lista_pessoas(PDO $pdo, array $filtros): array
             // O que a antiga tela "Acessos" mostrava: dias em que entrou e
             // módulos da integração concluídos.
             'acessos' => (int) $r['distinct_access_count'],
-            'integracao_concluidos' => (int) $r['integracao_concluidos'],
+            'integracao_concluidos' => $integracao[(int) $r['id']]['concluidas'] ?? 0,
+            'integracao_total' => $integracao[(int) $r['id']]['total'] ?? 0,
             'treinamentos' => (int) $r['treinamentos'],
             'concluidos' => (int) $r['concluidos'],
         ];

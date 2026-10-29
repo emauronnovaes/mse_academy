@@ -152,6 +152,89 @@ function mse_aulas_da_trilha(PDO $pdo, int $userId): array
     ], $escolhidas);
 }
 
+/**
+ * Integração de várias pessoas de uma vez, pela trilha de cada uma (mesma
+ * regra de mse_aulas_da_trilha: "só para obra", sorteio e obrigatórias),
+ * sem sortear nada nem fazer uma consulta por pessoa.
+ *
+ * @return array<int, array{total:int, concluidas:int}>  por user_id
+ */
+function mse_integracao_por_pessoa(PDO $pdo): array
+{
+    $temSorteio = mse_tem_coluna($pdo, 'courses', 'grupo_sorteio') && mse_tem_tabela($pdo, 'user_sorteio_aula');
+    $temObrigatorio = mse_tem_coluna($pdo, 'courses', 'obrigatorio');
+    $temObra = mse_tem_coluna($pdo, 'courses', 'somente_obra') && mse_tem_coluna($pdo, 'users', 'eh_obra');
+
+    $aulas = $pdo->query(
+        'SELECT id, ' . ($temSorteio ? 'grupo_sorteio' : 'NULL AS grupo_sorteio') . ', '
+        . ($temObra ? 'somente_obra' : '0 AS somente_obra')
+        . " FROM courses WHERE type = 'onboarding' AND is_published = 1"
+        . ($temObrigatorio ? ' AND obrigatorio = 1' : '')
+    )->fetchAll();
+
+    $ehObra = [];
+    if ($temObra) {
+        $porCpf = mse_tem_coluna($pdo, 'users', 'login_por_cpf')
+            ? "COALESCE(login_por_cpf, email LIKE '%@sem-email.mse.local')" : "email LIKE '%@sem-email.mse.local'";
+        foreach ($pdo->query("SELECT id FROM users WHERE eh_obra = 1 AND {$porCpf} = 1") as $u) {
+            $ehObra[(int) $u['id']] = true;
+        }
+    }
+    $sorteio = [];
+    if ($temSorteio) {
+        foreach ($pdo->query('SELECT user_id, grupo, course_id FROM user_sorteio_aula') as $s) {
+            $sorteio[(int) $s['user_id']][$s['grupo']] = (int) $s['course_id'];
+        }
+    }
+    $feitas = [];
+    foreach ($pdo->query(
+        "SELECT p.user_id, p.course_id FROM user_course_progress p JOIN courses c ON c.id = p.course_id
+         WHERE c.type = 'onboarding' AND p.status = 'concluido'"
+    ) as $p) {
+        $feitas[(int) $p['user_id']][(int) $p['course_id']] = true;
+    }
+
+    $calc = static function (int $uid) use ($aulas, $ehObra, $sorteio, $feitas): array {
+        $obra = isset($ehObra[$uid]);
+        $total = 0;
+        $concluidas = 0;
+        $grupos = [];
+        foreach ($aulas as $a) {
+            if ((int) $a['somente_obra'] === 1 && !$obra) {
+                continue;
+            }
+            $id = (int) $a['id'];
+            $g = $a['grupo_sorteio'];
+            if ($g === null || $g === '') {
+                $total++;
+                $concluidas += isset($feitas[$uid][$id]) ? 1 : 0;
+                continue;
+            }
+            // Grupo sorteado conta uma aula só: a sorteada (ou, sem sorteio
+            // ainda, qualquer alternativa que ela já tenha concluído).
+            $grupos[$g][] = $id;
+        }
+        foreach ($grupos as $g => $ids) {
+            $total++;
+            $sorteada = $sorteio[$uid][$g] ?? null;
+            $alvo = $sorteada !== null && in_array($sorteada, $ids, true) ? [$sorteada] : $ids;
+            foreach ($alvo as $id) {
+                if (isset($feitas[$uid][$id])) {
+                    $concluidas++;
+                    break;
+                }
+            }
+        }
+        return ['total' => $total, 'concluidas' => $concluidas];
+    };
+
+    $r = [];
+    foreach ($pdo->query('SELECT id FROM users WHERE active = 1') as $u) {
+        $r[(int) $u['id']] = $calc((int) $u['id']);
+    }
+    return $r;
+}
+
 function mse_course_is_unlocked(PDO $pdo, int $userId, int $courseId): bool
 {
     $stmt = $pdo->prepare('SELECT type, order_index FROM courses WHERE id = ?');
