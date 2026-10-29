@@ -2746,16 +2746,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     lightningPct = pct;
     document.getElementById('progressBarFill').classList.toggle('tier-supercharged', pct >= 100);
 
-    const badgesWrap = document.getElementById('progressBadges');
-    badgesWrap.innerHTML = '';
-    BADGES.forEach(b => {
-      const unlocked = b.check();
-      const chip = document.createElement('span');
-      chip.className = 'progress-badge' + (unlocked ? ' unlocked' : '');
-      chip.innerHTML = `<i class="fa-solid ${unlocked ? b.icon : 'fa-lock'}" aria-hidden="true"></i> ${b.label}`;
-      badgesWrap.appendChild(chip);
-    });
-
     // Contagem discreta em cada card de área ("3 de 5 concluídos")
     document.querySelectorAll('.area-card').forEach(card => {
       const slug = card.dataset.area;
