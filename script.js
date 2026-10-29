@@ -4959,6 +4959,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('trnAdmCsv').hidden = !admitidos;
     document.getElementById('trnAdmSync').hidden = visao !== 'pendentes';
     document.getElementById('trnAdmPdf').hidden = !admitidos;
+    document.getElementById('trnCampoLocal').hidden = !admitidos;
+    // Em Pendentes e Concluíram o status já está decidido pela aba.
+    document.getElementById('trnCampoStatus').hidden = visao !== 'admitidos';
     document.getElementById('trnNovoVideo').hidden = porPessoa || admitidos || trnEstado.modo === 'relatorios';
     const dica = document.querySelector('#treinamentosTela .trn-dica');
     if(dica) dica.textContent = admitidos
@@ -5157,6 +5160,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       lista = lista.filter(p => p.dispensado)
         .sort((a, b) => String((b.dispensa || {}).em || '').localeCompare(String((a.dispensa || {}).em || '')));
     }
+    const local = document.getElementById('trnLocal').value;
+    if(local) lista = lista.filter(p => (local === 'obra') === !!p.eh_obra);
+    const status = trnEstado.visao === 'admitidos' ? document.getElementById('trnStatus').value : '';
+    if(status) lista = lista.filter(p => status === 'dispensado' ? p.dispensado : p.situacao === status);
     if(!termo) return lista;
     const digitos = termo.replace(/\D/g, '');
     return lista.filter(p => mse_normalizar([p.nome, p.funcao, p.departamento, p.obra, p.empresa, p.email, p.gerente_nome].join(' ')).includes(termo)
@@ -6230,8 +6237,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('trnBusca').addEventListener('input', recarregarEmBreve);
     ['trnDataDe', 'trnDataAte'].forEach(id =>
       document.getElementById(id).addEventListener('change', carregarTreinamentos));
+    ['trnLocal', 'trnStatus'].forEach(id =>
+      document.getElementById(id).addEventListener('change', () => { if(admEhVisao()) renderAdmitidos(); }));
     document.getElementById('trnLimpar').addEventListener('click', () => {
-      ['trnBusca', 'trnDataDe', 'trnDataAte'].forEach(id => { document.getElementById(id).value = ''; });
+      ['trnBusca', 'trnDataDe', 'trnDataAte', 'trnLocal', 'trnStatus'].forEach(id => { document.getElementById(id).value = ''; });
       carregarTreinamentos();
     });
     // Por treinamento / Por pessoa: os mesmos filtros valem pras duas.

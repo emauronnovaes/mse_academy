@@ -331,6 +331,25 @@
           <label class="trn-rotulo" for="trnDataAte">Data até</label>
           <input type="date" id="trnDataAte" class="trn-input">
         </div>
+        <div class="trn-campo" id="trnCampoLocal" hidden>
+          <label class="trn-rotulo" for="trnLocal">Local</label>
+          <select id="trnLocal" class="trn-input">
+            <option value="">Sede e obra</option>
+            <option value="sede">Sede</option>
+            <option value="obra">Obra</option>
+          </select>
+        </div>
+        <div class="trn-campo" id="trnCampoStatus" hidden>
+          <label class="trn-rotulo" for="trnStatus">Status da integração</label>
+          <select id="trnStatus" class="trn-input">
+            <option value="">Todos</option>
+            <option value="concluiu">Concluído</option>
+            <option value="em_andamento">Em andamento</option>
+            <option value="nao_iniciou">Não iniciou</option>
+            <option value="sem_acesso">Nunca entrou na Academy</option>
+            <option value="dispensado">Dispensado</option>
+          </select>
+        </div>
         <button type="button" class="trn-btn" id="trnLimpar">Limpar filtros</button>
       </div>
       <p class="trn-dica">As datas filtram pelo período em que as pessoas participaram (check-in, conclusão ou última atividade).</p>
@@ -718,7 +737,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261029e"></script>
+<script src="script.js?v=20261029f"></script>
 
 </body>
 </html>

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Progress.php';
+require_once __DIR__ . '/PortalFichaApi.php';
 
 function mse_integracao_chave(?string $cpf, string $nome, string $dataAdmissao): string
 {
@@ -108,6 +109,9 @@ foreach ($admitidos as $i => $a) {
     $a['gerente_nome'] = $campo('gerente_nome');
     $a['gerente_email'] = $campo('gerente_email');
     $a['ficha'] = $bruta; // todos os dados da ficha, pra "Ver dados"
+    // Obra ou sede: pela ficha (mesma regra que decide os vídeos de integração);
+    // sem ficha ainda, vale a obra que veio da API de integração.
+    $a['eh_obra'] = mse_ficha_eh_obra(is_array($bruta) ? $bruta : ['nome_obra' => $a['obra'] ?? '']);
 
     $usuario = null;
     $cruzouPor = null;
