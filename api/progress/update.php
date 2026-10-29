@@ -30,32 +30,23 @@ if (!mse_course_is_unlocked($pdo, (int) $user['id'], $courseId)) {
     mse_error('Este módulo ainda está bloqueado.', 403);
 }
 
-// Aula COM pergunta nunca conclui aqui — quem conclui é o
-// quiz/submit.php, depois da resposta certa. Sem essa distinção a
-// pergunta viraria decorativa: dava pra pular e o curso já aparecia
-// como feito.
+// Assistir até o fim só conclui a aula sem nenhuma pergunta pendente: com
+// pergunta do fim ainda sem resposta, quem conclui é o quiz/submit.php.
+// Sem essa distinção a pergunta viraria decorativa: dava pra pular e o
+// curso já aparecia como feito.
 //
-// Mas aula SEM pergunta cadastrada não tem como ser concluída pelo
-// quiz, então ficaria "em andamento" pra sempre e a trilha nunca
-// avançaria. Nesse caso, assistir até o fim é o que conclui — quem
-// decide é o admin, ao cadastrar (ou não) uma pergunta na aula.
-//
-// Atividade do meio do vídeo (pergunta com momento_seg) não é pergunta
-// do fim: aula só com atividades conclui assistindo, desde que todas
-// tenham sido acertadas.
-$temPergunta = mse_tem_pergunta_final($pdo, $courseId);
-
-$semPendencias = !$temPergunta && $watchedPct >= 95
-    && mse_atividades_pendentes($pdo, (int) $user['id'], $courseId) === 0;
-$situacaoQuiz = $semPendencias ? mse_quiz_situacao($pdo, (int) $user['id'], $courseId) : null;
-$aprovado = $situacaoQuiz !== null && mse_quiz_aprovado($situacaoQuiz); // 70% de acerto
+// Aula SEM pergunta, ou com todas já respondidas (só atividades no meio, ou
+// refazendo só as atividades erradas), conclui assistindo — com 70% de acerto.
+$situacaoQuiz = $watchedPct >= 95 ? mse_quiz_situacao($pdo, (int) $user['id'], $courseId) : null;
+$semPendencias = $situacaoQuiz !== null && $situacaoQuiz['pendentes'] === 0;
+$aprovado = $semPendencias && mse_quiz_aprovado($situacaoQuiz); // 70% de acerto
 $concluiuAssistindo = $aprovado;
 
-// Fim do vídeo (100%) numa aula só com atividades no meio, e abaixo de 70%
-// de acerto: a aula recomeça do início. Só vale pra aula ainda não concluída.
+// Fim do vídeo (100%) sem pergunta pendente e abaixo de 70% de acerto: a
+// pessoa refaz só as que errou. Só vale pra aula ainda não concluída.
 $stmt = $pdo->prepare('SELECT status FROM user_course_progress WHERE user_id = ? AND course_id = ?');
 $stmt->execute([$user['id'], $courseId]);
-$reprovou = $situacaoQuiz !== null && !$aprovado && $watchedPct >= 100
+$reprovou = $semPendencias && !$aprovado && $watchedPct >= 100
     && $stmt->fetchColumn() !== 'concluido';
 
 $status = $concluiuAssistindo ? 'concluido' : ($watchedPct > 0 ? 'em_andamento' : 'nao_iniciado');
@@ -125,10 +116,10 @@ if ($concluiuAssistindo || $comecouAgora) {
 }
 
 if ($reprovou) {
-    mse_quiz_reiniciar_rodada($pdo, (int) $user['id'], $courseId);
+    $voltar = mse_quiz_refazer_erradas($pdo, (int) $user['id'], $courseId);
     $total = $situacaoQuiz['total'];
     mse_json([
-        'ok' => true, 'status' => 'em_andamento', 'watched_pct' => 0, 'reprovado' => true,
+        'ok' => true, 'status' => 'em_andamento', 'reprovado' => true, 'voltar_seg' => $voltar,
         'acertos' => $situacaoQuiz['acertos_primeira'],
         'erros' => $situacaoQuiz['erros_primeira'],
         'total' => $total,

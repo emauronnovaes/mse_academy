@@ -86,7 +86,8 @@ $uid = (int) $user['id'];
 
 // Regra das perguntas (ver mse_quiz_situacao em Progress.php): uma resposta
 // por pergunta, acertando ou errando — errar não volta o vídeo. A nota só é
-// conferida no FIM: com 70% de acerto a aula conclui, abaixo disso recomeça.
+// conferida no FIM: com 70% de acerto a aula conclui; abaixo disso a pessoa
+// refaz só as que errou (o vídeo volta ao trecho antes de cada uma).
 // Aula já concluída (revisão) fica de fora — ali nada muda mais.
 $stmt = $pdo->prepare('SELECT status FROM user_course_progress WHERE user_id = ? AND course_id = ?');
 $stmt->execute([$uid, $courseId]);
@@ -107,8 +108,8 @@ $responder = function (array $extra) use (&$situacao): void {
     ]);
 };
 
-// Já respondida nesta rodada: não grava de novo nem muda a nota (vale a
-// primeira resposta). O resultado devolvido é o da opção escolhida agora.
+// Já respondida nesta rodada: não grava de novo nem muda a nota (só a
+// errada que precisa ser refeita aceita outra resposta). O resultado devolvido é o da opção escolhida agora.
 // Segue adiante sem gravar, pra conferir o fim caso a última resposta
 // tenha ficado sem o fechamento (ex.: queda de conexão).
 $jaRespondida = !$jaConcluida && $estaPergunta && $estaPergunta['respondida'];
@@ -131,12 +132,13 @@ if ($jaConcluida) {
     if (!$jaRespondida) {
         $situacao = mse_quiz_situacao($pdo, $uid, $courseId);
     }
-    $fim = $situacao['pendentes'] === 0 && ($momento === null || $pctAssistido >= 95);
+    // Refazendo as erradas, a nota fecha na última que faltava, mesmo no meio do vídeo.
+    $fim = $situacao['pendentes'] === 0 && ($momento === null || $pctAssistido >= 95 || $situacao['refazendo']);
     if ($fim) {
         if (!mse_quiz_aprovado($situacao)) {
-            // Abaixo de 70%: a aula recomeça do início.
-            mse_quiz_reiniciar_rodada($pdo, $uid, $courseId);
-            $responder(['correct' => $isCorrect, 'concluido' => false, 'reprovado' => true]);
+            // Abaixo de 70%: refaz só as erradas, voltando ao trecho de cada uma.
+            $voltar = mse_quiz_refazer_erradas($pdo, $uid, $courseId);
+            $responder(['correct' => $isCorrect, 'concluido' => false, 'reprovado' => true, 'voltar_seg' => $voltar]);
         }
         $concluiAula = true;
     }

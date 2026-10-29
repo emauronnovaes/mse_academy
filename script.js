@@ -345,8 +345,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   // O vídeo vem como URL assinada que expira em 30 min, então o detalhe
   // é buscado na hora de abrir o módulo — não dá pra pré-carregar tudo.
-  async function carregarDetalheCurso(id){
-    if(detalheCache.has(id)) return detalheCache.get(id);
+  // novo: busca de novo no servidor. Ao abrir a aula é sempre assim: o link
+  // do vídeo (S3) vence, e o que a pessoa já respondeu muda a cada resposta.
+  async function carregarDetalheCurso(id, novo){
+    if(!novo && detalheCache.has(id)) return detalheCache.get(id);
     const dados = await apiGet('api/courses/detail.php?id=' + encodeURIComponent(id));
     detalheCache.set(id, dados.course);
     return dados.course;
@@ -864,7 +866,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     let detalhe;
     try {
-      detalhe = await carregarDetalheCurso(mod.id);
+      detalhe = await carregarDetalheCurso(mod.id, true);
     } catch(e){
       body.innerHTML = `<div class="vid-hint"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> Não foi possível carregar este módulo: ${e.message}</div>`;
       return;
@@ -930,6 +932,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         `;
 
       iniciarSessaoPresenca(mod.id);
+      // Continua de onde parou (ou do trecho a refazer).
+      const inicioYt = isRewatch ? 0 : inicioDoVideo(detalhe, detalhe.duration_seconds || 0);
       loadYouTubeApi().then(() => {
         const player = new YT.Player(`onb-yt-${mod.id}`, {
           videoId: detalhe.youtube_id,
@@ -944,7 +948,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             // tela cheia da Academy continua funcionando: ele expande a
             // moldura inteira, não o player, então controls:0 continua
             // valendo e a barra não aparece.
-            : { controls: 0, disablekb: 1, rel: 0, modestbranding: 1, fs: 0 },
+            : { controls: 0, disablekb: 1, rel: 0, modestbranding: 1, fs: 0, start: Math.floor(inicioYt) },
           events: {
             onPlaybackRateChange: aoMudarVelocidadeYouTube,
             onStateChange: (e) => {
@@ -956,9 +960,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         ligarBotaoTelaCheia(body);
         if(detalhe.aviso_presenca !== false) onbPresenca = presencaNoYouTube(body.querySelector('.vid-player-wrap'), player, mod.id);
         if(isRewatch) return;
-        onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoYouTube(player), { aoReprovar: () => renderModuleBody(mod, false), limite: () => trava.maxSegundos, antesDeResponder: () => enviarProgresso(mod.id, trava.pct, true) });
+        onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoYouTube(player), { aoReprovar: () => renderModuleBody(mod, false), limite: () => trava.maxSegundos, antesDeResponder: () => enviarProgresso(mod.id, trava.pct, true), trechos: detalhe.refazer_trechos, liberar: (seg) => trava.liberarAte(seg), aoConcluir: () => onbMostrarConcluido(mod) });
 
         const trava = criarTravaDeAvanco(false);
+        trava.liberarAte(inicioYt);
         ligarControlesDeRevisao(
           body,
           trava,
@@ -1012,6 +1017,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     const videoEl = document.getElementById(`onb-video-${mod.id}`);
     onbPlayer = videoEl;
+    renovarLinkSeVencer(videoEl, mod.id);
     iniciarSessaoPresenca(mod.id);
     ligarBotaoTelaCheia(body);
     if(detalhe.aviso_presenca !== false) onbPresenca = presencaNoVideo(body.querySelector('.vid-player-wrap'), videoEl, mod.id);
@@ -1020,7 +1026,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       fixarVelocidadeSeNaoAdmin(videoEl);
       return; // controles nativos cuidam de tudo — não precisa rastrear progresso
     }
-    onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoVideo(videoEl), { aoReprovar: () => renderModuleBody(mod, false), limite: () => trava.maxSegundos, antesDeResponder: () => enviarProgresso(mod.id, trava.pct, true) });
+    onbAtividades = ligarAtividadesNoVideo(body.querySelector('.vid-player-wrap'), mod.questions, controlesDoVideo(videoEl), { aoReprovar: () => renderModuleBody(mod, false), limite: () => trava.maxSegundos, antesDeResponder: () => enviarProgresso(mod.id, trava.pct, true), trechos: detalhe.refazer_trechos, liberar: (seg) => trava.liberarAte(seg), aoConcluir: () => onbMostrarConcluido(mod) });
 
     const trava = criarTravaDeAvanco(false);
     ligarControlesDeRevisao(
@@ -1045,6 +1051,15 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     // primeiro — sem o segundo, o salto passava batido em alguns.
     videoEl.addEventListener('seeking', travarBusca);
     videoEl.addEventListener('seeked', travarBusca);
+
+    // Continua de onde parou (ou do trecho a refazer).
+    videoEl.addEventListener('loadedmetadata', () => {
+      const inicio = inicioDoVideo(detalhe, videoEl.duration);
+      if(inicio <= 0) return;
+      trava.definirDuracao(videoEl.duration);
+      trava.liberarAte(inicio);
+      videoEl.currentTime = inicio;
+    }, { once: true });
 
     // Sem controles nativos nesse modo (trava avançar a barra) — um botão
     // de play próprio, e a barra de progresso é só visual (não clicável),
@@ -1078,11 +1093,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // O servidor recusa a resposta do quiz de quem não assistiu 95% do
   // vídeo, e ele só sabe disso pelo que enviamos aqui. Mandar a cada
   // "timeupdate" seriam ~4 requisições por segundo, então só avisamos a
-  // cada 5 pontos percentuais — e sempre no 100%, que é o que libera.
+  // cada ponto percentual: é também até onde a aula continua se a pessoa
+  // atualizar a página (de 5 em 5% ela voltava um bom pedaço).
   let ultimoPctEnviado = -1;
   async function enviarProgresso(courseId, pct, forcar){
     const inteiro = Math.min(Math.round(pct * 100), 100);
-    if(!forcar && (inteiro <= ultimoPctEnviado || (inteiro % 5 !== 0 && inteiro < 100))) return null;
+    if(!forcar && inteiro <= ultimoPctEnviado) return null;
     if(forcar && inteiro <= ultimoPctEnviado) return { ok: true };
     const anterior = ultimoPctEnviado;
     ultimoPctEnviado = inteiro;
@@ -1102,11 +1118,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // aqui o painel e os selos passam a contar na hora, sem recarregar a página.
   function aoConcluirCatalogoAssistindo(courseId, resposta){
     if(resposta && resposta.reprovado){
-      // Fim do vídeo abaixo de 70% de acerto nas atividades: a aula recomeça.
+      // Fim do vídeo abaixo de 70% de acerto: refaz só as erradas.
       const caixa = document.getElementById('catalogBonusQuiz');
       if(caixa && modalState.course){
         caixa.innerHTML = `<div class="quiz-box"><div class="quiz-feedback bad">${textoReprovado(resposta)}
-          <button type="button" class="btn btn-primary quiz-rever-btn">Assistir a aula de novo</button></div></div>`;
+          <button type="button" class="btn btn-primary quiz-rever-btn">Voltar ao trecho que errou</button></div></div>`;
         caixa.querySelector('button').addEventListener('click', () => reabrirAulaCatalogo(modalState.course));
       }
       return;
@@ -1162,6 +1178,14 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         return Math.min((livre ? duracao : maxSeg) / duracao, 1);
       },
       definirDuracao(d){ if(d > 0 && isFinite(d)) duracao = d; },
+
+      /** Libera até esse ponto sem assistir: continuar de onde parou, ou pular pro trecho a refazer. */
+      liberarAte(seg){
+        if(!isFinite(seg) || seg <= maxSeg) return;
+        maxSeg = seg;
+        ultimoTempo = seg;
+        if(duracao > 0 && maxSeg / duracao >= TRAVA_PCT_LIVRE){ maxSeg = duracao; livre = true; }
+      },
 
       /**
        * Posição observada durante a reprodução. Devolve o segundo pra onde
@@ -1397,16 +1421,19 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // Pergunta com momento_seg aparece no meio do vídeo: no segundo marcado o
   // vídeo pausa e a pergunta cobre o player. Cada pergunta é respondida uma
   // vez, e o vídeo segue acertando ou errando (errar não volta o vídeo).
-  // A nota de 70% só é conferida no fim: abaixo disso a aula recomeça
-  // (aoReprovar). Quem confere é o servidor (quiz/submit.php), que também
+  // A nota de 70% só é conferida no fim: abaixo disso a pessoa refaz só as
+  // que errou (aoReprovar reabre a aula no trecho da primeira). Refazendo,
+  // as já respondidas não aparecem de novo e, depois de cada uma, o vídeo
+  // pula pro trecho da próxima errada (trechos, vindos do servidor). Quem confere é o servidor (quiz/submit.php), que também
   // exige que a pessoa tenha chegado àquele ponto do vídeo. A trava de
   // avanço garante que não dá pra pular por cima: o vídeo passa pelo
   // segundo marcado.
-  function ligarAtividadesNoVideo(wrap, perguntas, { posicao, tocando, pausar, tocar, irPara }, { aoReprovar, limite, antesDeResponder } = {}){
+  function ligarAtividadesNoVideo(wrap, perguntas, { posicao, tocando, pausar, tocar, irPara }, { aoReprovar, limite, antesDeResponder, trechos, liberar, aoConcluir } = {}){
     const atividades = (perguntas || [])
       .filter(q => q.momento_seg != null)
       .sort((a, b) => a.momento_seg - b.momento_seg);
-    const resolvidas = new Set();
+    // Já respondidas nesta rodada (o servidor diz): não aparecem de novo.
+    const resolvidas = new Set(atividades.filter(q => q.respondida).map(q => q.id));
     let aberta = null;
     let timer = null; // declarado antes da saída abaixo: parar() usa, e sem atividade ele rodava antes de existir (erro que travava o fechar do vídeo)
     const controle = { pendentes: () => atividades.length - resolvidas.size, parar };
@@ -1480,21 +1507,37 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         }
         fb.hidden = false;
         if(r.reprovado){
-          // Abaixo de 70%: a aula recomeça do início.
+          // Abaixo de 70%: refaz só as erradas (volta ao trecho de cada uma).
           btn.classList.add(r.correct ? 'correct' : 'incorrect');
           fb.className = 'vid-atividade-feedback bad';
           fb.innerHTML = `${textoReprovado(r)}
-            <button type="button" class="btn btn-primary quiz-rever-btn">Assistir a aula de novo</button>`;
+            <button type="button" class="btn btn-primary quiz-rever-btn">Voltar ao trecho que errou</button>`;
           fb.querySelector('button').addEventListener('click', () => { if(aoReprovar) aoReprovar(); });
           return;
         }
         // Uma resposta só por pergunta: acertando ou errando, o vídeo segue.
         resolvidas.add(q.id);
         btn.classList.add(r.correct ? 'correct' : 'incorrect');
+        if(r.concluido){
+          // Refazendo as erradas: a última que faltava fechou a nota em 70% ou mais.
+          fb.className = 'vid-atividade-feedback ok';
+          fb.textContent = 'Aula concluída!';
+          setTimeout(() => {
+            if(aberta === caixa){ caixa.remove(); aberta = null; }
+            if(aoConcluir) aoConcluir(r);
+          }, 1500);
+          return;
+        }
         fb.className = 'vid-atividade-feedback ' + (r.correct ? 'ok' : 'bad');
         fb.textContent = r.correct ? 'Isso aí! Voltando ao vídeo...' : 'Resposta errada. Voltando ao vídeo...';
+        // Refazendo as erradas: o vídeo pula direto pro trecho da próxima.
+        const proximo = (trechos || []).find(t => t.question_id !== q.id && t.de >= q.momento_seg && !resolvidas.has(t.question_id));
         setTimeout(() => {
           if(aberta === caixa){ caixa.remove(); aberta = null; }
+          if(proximo && proximo.de > posicao()){
+            if(liberar) liberar(proximo.de);
+            irPara(proximo.de);
+          }
           tocar();
         }, r.correct ? 1200 : 2000);
       }));
@@ -1517,9 +1560,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
   // Mensagem de quem ficou abaixo dos 70% (resposta reprovado do quiz/submit.php).
   function textoReprovado(r){
-    return `<i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Você errou ${r.erros} de ${r.total} `
-      + `pergunta${r.total === 1 ? '' : 's'} na primeira resposta, e assim não dá para chegar aos ${r.nota_minima || 70}% de acerto exigidos. `
-      + 'A aula recomeça do início: assista de novo e responda com atenção.';
+    return `<i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Você acertou ${r.acertos} de ${r.total} `
+      + `pergunta${r.total === 1 ? '' : 's'} (${r.pct}%), abaixo dos ${r.nota_minima || 70}% exigidos. `
+      + `Refaça só as que errou: o vídeo volta para ${formatarMmSs(r.voltar_seg || 0)}, o trecho antes da primeira delas, `
+      + 'e pula direto para o trecho de cada uma. As que você acertou continuam valendo.';
   }
 
   // Pergunta do fim respondida errado: fica travada até o vídeo terminar de
@@ -1794,6 +1838,39 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // isso o vídeo parava no meio do arrasto e parecia travado). Toda tentativa
   // é corrigida: ignorar as que chegavam durante uma correção deixava passar
   // cliques seguidos na barra, e o vídeo pulava pra frente.
+  // Onde o vídeo começa ao abrir: refazendo as perguntas erradas, no trecho
+  // da primeira delas; senão, até onde a pessoa já tinha assistido (atualizar
+  // a página não volta ao início). Uns segundos antes do fim, pra o vídeo
+  // ainda terminar e liberar a pergunta do fim.
+  function inicioDoVideo(detalhe, duracao){
+    let seg = detalhe.retomar_seg != null ? detalhe.retomar_seg
+      : (duracao > 0 ? (detalhe.retomar_pct || 0) / 100 * duracao : 0);
+    if(duracao > 0) seg = Math.min(seg, duracao - 3);
+    return Math.max(0, seg || 0);
+  }
+
+  // O link do vídeo (S3) vence: no meio da aula a tela ficava preta. Pede um
+  // link novo e continua do mesmo ponto (no máximo 3 vezes por vídeo).
+  function renovarLinkSeVencer(v, courseId){
+    let tentativas = 0;
+    v.addEventListener('error', async () => {
+      if(!v.error || tentativas++ >= 3) return;
+      const pos = v.currentTime || 0;
+      const tocava = !v.paused && !v.ended;
+      try{
+        const d = await carregarDetalheCurso(courseId, true);
+        if(!d.video_url || !v.isConnected) return;
+        v.addEventListener('loadedmetadata', () => {
+          v.currentTime = pos;
+          if(tocava) v.play().catch(() => {});
+        }, { once: true });
+        v.src = d.video_url;
+      }catch(e){
+        console.warn('[vídeo] não consegui renovar o link:', e.message);
+      }
+    });
+  }
+
   function voltarDoPulo(v, seg){
     if(!v._corrigindoPulo){
       const tocava = !v.paused && !v.ended;
@@ -1970,32 +2047,47 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     try {
       const r = await apiPost('api/progress/update.php', { course_id: mod.id, watched_pct: 100 });
       if(r && r.reprovado){
-        // Fim do vídeo abaixo de 70% de acerto nas atividades: a aula recomeça.
+        // Fim do vídeo abaixo de 70% de acerto: refaz só as erradas.
         if(caixa){
           caixa.hidden = false;
           caixa.innerHTML = `<div class="quiz-feedback bad">${textoReprovado(r)}
-            <button type="button" class="btn btn-primary quiz-rever-btn">Assistir o módulo de novo</button></div>`;
+            <button type="button" class="btn btn-primary quiz-rever-btn">Voltar ao trecho que errou</button></div>`;
           caixa.querySelector('button').addEventListener('click', () => renderModuleBody(mod, false));
+        }
+        const controles = onbControles();
+        if(controles) controles.pausar(); // senão o vídeo seguia e o progresso subia de novo
+        return;
+      }
+      if(!r || r.status !== 'concluido'){
+        if(caixa){
+          caixa.hidden = false;
+          caixa.innerHTML = '<div class="quiz-feedback bad"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> Ainda falta responder perguntas deste módulo.</div>';
         }
         return;
       }
-      onbProgress.firstTry[mod.id] = true; // sem pergunta do fim: passou nas atividades (70%) ou não tem nenhuma pergunta
-      if(!onbProgress.completed.includes(mod.id)){
-        onbProgress.completed.push(mod.id);
-        saveOnboardingProgress(onbProgress);
-      }
-      if(caixa){
-        caixa.hidden = false;
-        caixa.innerHTML = '<div class="quiz-feedback ok"><i class="fa-solid fa-check" aria-hidden="true"></i> Módulo concluído. Próxima etapa liberada.</div>';
-      }
-      renderProgressPanel();
-      setTimeout(renderOnboarding, 900);
+      onbMostrarConcluido(mod);
     } catch(e){
       if(caixa){
         caixa.hidden = false;
         caixa.innerHTML = `<div class="quiz-feedback bad"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> ${e.message}</div>`;
       }
     }
+  }
+
+  // Módulo concluído (assistindo, ou na última pergunta refeita): libera a próxima etapa.
+  function onbMostrarConcluido(mod){
+    const caixa = document.getElementById(`quiz-box-${mod.id}`);
+    onbProgress.firstTry[mod.id] = true; // o servidor só conclui com 70% de acerto (ou aula sem pergunta)
+    if(!onbProgress.completed.includes(mod.id)){
+      onbProgress.completed.push(mod.id);
+      saveOnboardingProgress(onbProgress);
+    }
+    if(caixa){
+      caixa.hidden = false;
+      caixa.innerHTML = '<div class="quiz-feedback ok"><i class="fa-solid fa-check" aria-hidden="true"></i> Módulo concluído. Próxima etapa liberada.</div>';
+    }
+    renderProgressPanel();
+    setTimeout(renderOnboarding, 900);
   }
 
   // O que aconteceu nesta "sessão" de quiz — zerado toda vez que as
@@ -2011,11 +2103,15 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     quizEl.hidden = false;
     onbSessaoQuiz = { primeira: {}, respondidas: new Set() }; // nova sessão
 
-    // Só as perguntas do fim: as atividades (momento_seg) já foram
-    // respondidas durante o vídeo.
-    const perguntas = (mod.questions || []).filter(q => q.momento_seg == null);
+    // Só as perguntas do fim que faltam: as atividades (momento_seg) já
+    // foram respondidas durante o vídeo, e refazendo as erradas as certas
+    // continuam valendo.
+    const finais = (mod.questions || []).filter(q => q.momento_seg == null);
+    const perguntas = finais.filter(q => !q.respondida);
     if(!perguntas.length){
       quizEl.hidden = true; // aula sem pergunta cadastrada
+      // Refazendo só atividades: a do fim já vale, quem fecha a nota é o fim do vídeo.
+      if(finais.length) concluirModuloSemPergunta(mod);
       return;
     }
 
@@ -2071,18 +2167,18 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const isCorrect = !!r.correct;
 
     if(r.reprovado){
-      // Abaixo de 70%: o módulo recomeça do início.
+      // Abaixo de 70%: refaz só as erradas (volta ao trecho de cada uma).
       feedbackEl.hidden = false;
       feedbackEl.className = 'quiz-feedback bad';
       feedbackEl.innerHTML = `${textoReprovado(r)}
-        <button type="button" class="btn btn-primary quiz-rever-btn">Assistir o módulo de novo</button>`;
+        <button type="button" class="btn btn-primary quiz-rever-btn">Voltar ao trecho que errou</button>`;
       feedbackEl.querySelector('button').addEventListener('click', () => renderModuleBody(mod, false));
       return;
     }
 
     // Uma resposta só por pergunta, acertando ou errando: errar não trava
     // nem volta o vídeo. A nota de 70% é conferida pelo servidor quando a
-    // última pergunta é respondida (reprovado = a aula recomeça).
+    // última pergunta é respondida (reprovado = refaz só as erradas).
     onbSessaoQuiz.primeira[question.id] = isCorrect;
     onbSessaoQuiz.respondidas.add(question.id);
     const faltam = perguntas.filter(q => !onbSessaoQuiz.respondidas.has(q.id)).length;
@@ -2940,7 +3036,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     // O detalhe traz o vídeo e a pergunta do banco. Curso do catálogo
     // pode ser do YouTube (id) ou um arquivo no S3 (URL assinada), então
     // o player muda conforme o caso.
-    carregarDetalheCurso(course.id).then(detalhe => {
+    carregarDetalheCurso(course.id, true).then(detalhe => {
       course.questions = detalhe.questions || [];
       const wrap = videoModalBodyEl.querySelector('.vid-player-wrap');
       if(!wrap) return;
@@ -2960,6 +3056,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       // trecho não deveria ter que assistir tudo de novo.
       const jaConcluiu = catalogProgress.completed.includes(course.id);
       const trava = criarTravaDeAvanco(jaConcluiu);
+      // Continua de onde parou (ou do trecho a refazer). No YouTube a posição
+      // vai no "start" do player; no vídeo enviado, quando a duração chega.
+      const inicioYt = jaConcluiu ? 0 : inicioDoVideo(detalhe, detalhe.duration_seconds || 0);
 
       if(detalhe.video_url){
         // Tela cheia: o botão do próprio player (embaixo). Ao entrar em tela
@@ -2973,11 +3072,21 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         `;
         ligarBotaoTelaCheia(wrap);
         const v = wrap.querySelector('video');
+        renovarLinkSeVencer(v, course.id);
+        if(!jaConcluiu){
+          v.addEventListener('loadedmetadata', () => {
+            const inicio = inicioDoVideo(detalhe, v.duration);
+            if(inicio <= 0) return;
+            trava.definirDuracao(v.duration);
+            trava.liberarAte(inicio);
+            v.currentTime = inicio;
+          }, { once: true });
+        }
         modalState.controles = controlesDoVideo(v);
         // Velocidade maior só para administrador (ver fixarVelocidadeSeNaoAdmin).
         fixarVelocidadeSeNaoAdmin(v);
         if(detalhe.aviso_presenca !== false) modalState.presenca = presencaNoVideo(wrap, v, course.id);
-        if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoVideo(v), { aoReprovar: () => reabrirAulaCatalogo(course), limite: () => trava.maxSegundos, antesDeResponder: () => enviarProgresso(course.id, trava.pct, true) });
+        if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoVideo(v), { aoReprovar: () => reabrirAulaCatalogo(course), limite: () => trava.maxSegundos, antesDeResponder: () => enviarProgresso(course.id, trava.pct, true), trechos: detalhe.refazer_trechos, liberar: (seg) => trava.liberarAte(seg), aoConcluir: () => aoConcluirCatalogoAssistindo(course.id, { status: 'concluido' }) });
 
         // Os controles nativos ficam visíveis mesmo travado, pra dar pra
         // VOLTAR. O que é bloqueado é só avançar além do que já foi visto —
@@ -2997,7 +3106,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           trava.definirDuracao(v.duration);
           const voltarPara = trava.conferir(v.currentTime);
           if(voltarPara !== null) voltarDoPulo(v, voltarPara);
-          enviarProgresso(course.id, trava.pct);
+          enviarProgresso(course.id, trava.pct).then(r => {
+            // O 100% costuma ir antes do "ended": sem isto a conclusão (ou o refazer) se perdia.
+            if(r && (r.reprovado || r.status === 'concluido')) aoConcluirCatalogoAssistindo(course.id, r);
+          });
         });
         v.addEventListener('ended', () => { sairDaTelaCheiaNoFim(wrap); enviarProgresso(course.id, 1).then(r => aoConcluirCatalogoAssistindo(course.id, r)); encerrarSessaoPresenca(); showBonusQuiz(); });
         return;
@@ -3045,11 +3157,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             // fs:0 tira o botão de tela cheia DO YOUTUBE: em tela cheia do
             // player o YouTube mostra a barra dele de volta, e aí controls:0
             // deixaria de valer.
-            : { controls: 0, disablekb: 1, modestbranding: 1, rel: 0, fs: 0 },
+            : { controls: 0, disablekb: 1, modestbranding: 1, rel: 0, fs: 0, start: Math.floor(inicioYt) },
           events: {
             onPlaybackRateChange: aoMudarVelocidadeYouTube,
             onReady: () => {
               if(jaConcluiu) return;
+              trava.liberarAte(inicioYt);
               const p = modalState.player;
               ligarControlesDeRevisao(
                 wrap,
@@ -3071,7 +3184,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
                 const voltarPara = trava.conferir(pl.getCurrentTime());
                 if(voltarPara !== null) pl.seekTo(voltarPara, true);
                 atualizarBarraDeRevisao('catalog', trava);
-                enviarProgresso(course.id, trava.pct);
+                enviarProgresso(course.id, trava.pct).then(r => {
+                  if(r && (r.reprovado || r.status === 'concluido')) aoConcluirCatalogoAssistindo(course.id, r);
+                });
               }, 500);
             },
             onStateChange: (e) => {
@@ -3081,7 +3196,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         });
         modalState.controles = controlesDoYouTube(modalState.player);
         if(detalhe.aviso_presenca !== false) modalState.presenca = presencaNoYouTube(wrap, modalState.player, course.id);
-        if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoYouTube(modalState.player), { aoReprovar: () => reabrirAulaCatalogo(course), limite: () => trava.maxSegundos, antesDeResponder: () => enviarProgresso(course.id, trava.pct, true) });
+        if(!jaConcluiu) modalState.atividades = ligarAtividadesNoVideo(wrap, course.questions, controlesDoYouTube(modalState.player), { aoReprovar: () => reabrirAulaCatalogo(course), limite: () => trava.maxSegundos, antesDeResponder: () => enviarProgresso(course.id, trava.pct, true), trechos: detalhe.refazer_trechos, liberar: (seg) => trava.liberarAte(seg), aoConcluir: () => aoConcluirCatalogoAssistindo(course.id, { status: 'concluido' }) });
       });
     }).catch(e => {
       const wrap = videoModalBodyEl.querySelector('.vid-player-wrap');
@@ -3105,8 +3220,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(modalState.quizAnswered || catalogProgress.completed.includes(course.id)) return;
     if(!container) return;
 
-    // Só as perguntas do fim: as atividades já apareceram durante o vídeo.
-    const perguntas = (course.questions || []).filter(q => q.momento_seg == null);
+    // Só as perguntas do fim que faltam: as atividades já apareceram durante
+    // o vídeo, e refazendo as erradas as certas continuam valendo.
+    const perguntas = (course.questions || []).filter(q => q.momento_seg == null && !q.respondida);
     if(!perguntas.length) return; // aula sem pergunta do fim
 
     // Uma aula pode ter várias. Antes só a primeira aparecia, e as outras
@@ -3164,10 +3280,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const isCorrect = !!r.correct;
 
     if(r.reprovado){
-      // Abaixo de 70%: a aula recomeça do início.
+      // Abaixo de 70%: refaz só as erradas (volta ao trecho de cada uma).
       const container = document.getElementById('catalogBonusQuiz');
       container.innerHTML = `<div class="quiz-box"><div class="quiz-feedback bad">${textoReprovado(r)}
-        <button type="button" class="btn btn-primary quiz-rever-btn">Assistir a aula de novo</button></div></div>`;
+        <button type="button" class="btn btn-primary quiz-rever-btn">Voltar ao trecho que errou</button></div></div>`;
       container.querySelector('button').addEventListener('click', () => reabrirAulaCatalogo(modalState.course));
       return;
     }

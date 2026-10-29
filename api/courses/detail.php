@@ -45,15 +45,15 @@ if (!mse_course_is_unlocked($pdo, (int) $user['id'], $courseId)) {
     mse_error('Este módulo ainda está bloqueado. Conclua os anteriores primeiro.', 403);
 }
 
-// Vídeo do S3: gera uma URL assinada de curta duração (30 min é de sobra
-// pra assistir um módulo — se a pessoa demorar mais que isso, o
-// front-end pode simplesmente pedir os detalhes do curso de novo pra
-// ganhar um link novo). Nunca devolvemos o "video_key" cru pro
-// navegador — só a URL já pronta e assinada.
+// Vídeo do S3: gera uma URL assinada (4 horas). Com 30 min o link vencia
+// no meio da aula (pausas, perguntas, "Estou aqui") e o vídeo ficava preto;
+// se ainda assim vencer, o player pede os detalhes de novo e continua do
+// mesmo ponto. Nunca devolvemos o "video_key" cru pro navegador — só a
+// URL já pronta e assinada.
 $videoUrl = null;
 if ($course['video_source'] === 's3' && $course['video_key']) {
     try {
-        $videoUrl = mse_s3_presigned_url($course['video_key'], 1800);
+        $videoUrl = mse_s3_presigned_url($course['video_key'], 4 * 3600);
     } catch (Throwable $e) {
         // AWS mal configurado no servidor — não derruba a página toda,
         // só devolve sem vídeo e loga pra alguém do time de infra ver.
@@ -72,6 +72,9 @@ $stmt = $pdo->prepare(
 $stmt->execute([$courseId]);
 $questions = $stmt->fetchAll();
 
+// O que esta pessoa já respondeu (e o que precisa refazer) nesta rodada.
+$situacao = mse_quiz_situacao($pdo, (int) $user['id'], $courseId);
+
 foreach ($questions as &$question) {
     $stmt2 = $pdo->prepare(
         'SELECT id, option_text, order_index FROM quiz_options WHERE question_id = ? ORDER BY order_index ASC'
@@ -79,6 +82,7 @@ foreach ($questions as &$question) {
     $stmt2->execute([$question['id']]);
     $question['id'] = (int) $question['id'];
     $question['momento_seg'] = $question['momento_seg'] !== null ? (int) $question['momento_seg'] : null;
+    $question['respondida'] = $situacao['perguntas'][$question['id']]['respondida'] ?? false;
     $question['options'] = array_map(function ($opt) {
         $opt['id'] = (int) $opt['id'];
         return $opt;
@@ -90,5 +94,15 @@ $course['duration_minutes'] = (int) $course['duration_minutes'];
 $course['aviso_presenca'] = (int) $course['aviso_presenca'] === 1; // "Você ainda está aí?" ligado neste vídeo
 $course['video_url'] = $videoUrl; // preenchido quando video_source='s3'; null quando é youtube_id mesmo
 $course['questions'] = $questions;
+
+// Onde o vídeo continua: refazendo as erradas, os trechos antes de cada uma;
+// senão, até onde a pessoa já assistiu (atualizar a página não volta ao início).
+$stmt = $pdo->prepare('SELECT status, watched_pct FROM user_course_progress WHERE user_id = ? AND course_id = ?');
+$stmt->execute([(int) $user['id'], $courseId]);
+$progresso = $stmt->fetch();
+$emAndamento = $progresso && $progresso['status'] !== 'concluido';
+$course['refazer_trechos'] = $emAndamento ? mse_quiz_trechos_refazer($situacao) : [];
+$course['retomar_pct'] = $emAndamento ? (float) $progresso['watched_pct'] : 0.0;
+$course['retomar_seg'] = $course['refazer_trechos'] ? $course['refazer_trechos'][0]['de'] : null;
 
 mse_json(['course' => $course]);

@@ -249,59 +249,84 @@ function mse_atividades_pendentes(PDO $pdo, int $userId, int $courseId): int
 //   (errar não volta o vídeo nem trava a pergunta).
 // - Só no FIM (depois da última pergunta, ou no fim do vídeo quando a aula
 //   só tem atividades no meio) a nota é conferida: a aula só conclui com
-//   pelo menos 70% de acerto. Abaixo disso a aula recomeça do início (o %
-//   assistido volta a zero e as respostas anteriores deixam de contar).
+//   pelo menos 70% de acerto. Abaixo disso a pessoa refaz SÓ as perguntas
+//   que errou: o vídeo volta ao trecho antes de cada uma delas (as certas
+//   continuam valendo). Ao responder a última que faltava, a nota é
+//   conferida de novo.
 // - Rodada = tentativas com id maior que user_course_progress.quiz_rodada_desde.
+// - Vale a ÚLTIMA resposta de cada pergunta na rodada. Errada respondida
+//   antes de quiz_refazer_desde volta a ficar pendente (precisa refazer).
 const MSE_QUIZ_NOTA_MINIMA = 0.70;
 
-/** Cria a coluna da rodada se a migração 050 ainda não rodou. Devolve false se não deu. */
-function mse_garantir_rodada_quiz(PDO $pdo): bool
+/** Cria a coluna se a migração ainda não rodou. Devolve false se não deu. */
+function mse_garantir_coluna_quiz(PDO $pdo, string $coluna): bool
 {
-    static $ok = null;
-    if ($ok !== null) {
-        return $ok;
+    static $ok = [];
+    if (isset($ok[$coluna])) {
+        return $ok[$coluna];
     }
-    $stmt = $pdo->query(
+    $stmt = $pdo->prepare(
         "SELECT 1 FROM information_schema.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_course_progress' AND COLUMN_NAME = 'quiz_rodada_desde'"
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_course_progress' AND COLUMN_NAME = ?"
     );
+    $stmt->execute([$coluna]);
     if ($stmt->fetchColumn() === false) {
         try {
-            $pdo->exec('ALTER TABLE user_course_progress ADD COLUMN quiz_rodada_desde BIGINT UNSIGNED NOT NULL DEFAULT 0');
+            $pdo->exec("ALTER TABLE user_course_progress ADD COLUMN {$coluna} BIGINT UNSIGNED NOT NULL DEFAULT 0");
         } catch (Throwable $e) {
-            return $ok = false;
+            return $ok[$coluna] = false;
         }
     }
-    return $ok = true;
+    return $ok[$coluna] = true;
+}
+
+/** Coluna da rodada (migração 050). */
+function mse_garantir_rodada_quiz(PDO $pdo): bool
+{
+    return mse_garantir_coluna_quiz($pdo, 'quiz_rodada_desde');
+}
+
+/** Coluna do "refazer as erradas" (migração 052). */
+function mse_garantir_refazer_quiz(PDO $pdo): bool
+{
+    return mse_garantir_coluna_quiz($pdo, 'quiz_refazer_desde');
+}
+
+/** [rodada, refazer]: ids de tentativa que marcam o início da rodada e o último "refazer" (0 = nenhum). */
+function mse_quiz_marcos(PDO $pdo, int $userId, int $courseId): array
+{
+    $rodada = mse_garantir_rodada_quiz($pdo) ? 'quiz_rodada_desde' : '0';
+    $refazer = mse_garantir_refazer_quiz($pdo) ? 'quiz_refazer_desde' : '0';
+    $stmt = $pdo->prepare("SELECT {$rodada} AS rodada, {$refazer} AS refazer FROM user_course_progress WHERE user_id = ? AND course_id = ?");
+    $stmt->execute([$userId, $courseId]);
+    $l = $stmt->fetch();
+    return $l ? [(int) $l['rodada'], (int) $l['refazer']] : [0, 0];
 }
 
 /** Id da última tentativa que NÃO conta mais (0 = todas contam). */
 function mse_quiz_rodada_desde(PDO $pdo, int $userId, int $courseId): int
 {
-    if (!mse_garantir_rodada_quiz($pdo)) {
-        return 0;
-    }
-    $stmt = $pdo->prepare('SELECT quiz_rodada_desde FROM user_course_progress WHERE user_id = ? AND course_id = ?');
-    $stmt->execute([$userId, $courseId]);
-    return (int) $stmt->fetchColumn();
+    return mse_quiz_marcos($pdo, $userId, $courseId)[0];
 }
 
 /**
- * Como estão as perguntas da aula nesta rodada.
+ * Como estão as perguntas da aula nesta rodada. "valendo" é a última
+ * resposta (true certa, false errada, null sem resposta); errada dada antes
+ * do último "refazer" fica pendente até ser respondida de novo.
  *
- * @return array{perguntas: array<int, array{id:int, momento_seg:?int, primeira:?bool, acertou:bool, seg_desde_erro:?int}>,
- *               total:int, acertos_primeira:int, erros_primeira:int, pendentes:int}
+ * @return array{perguntas: array<int, array{id:int, momento_seg:?int, valendo:?bool, respondida:bool, seg_desde_erro:?int}>,
+ *               total:int, acertos_primeira:int, erros_primeira:int, pendentes:int, refazendo:bool}
  */
 function mse_quiz_situacao(PDO $pdo, int $userId, int $courseId): array
 {
-    $desde = mse_quiz_rodada_desde($pdo, $userId, $courseId);
+    [$desde, $refazer] = mse_quiz_marcos($pdo, $userId, $courseId);
     $momento = mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg') ? 'q.momento_seg' : 'NULL';
     $stmt = $pdo->prepare(
         "SELECT q.id, $momento AS momento_seg,
                 (SELECT t.is_correct FROM quiz_attempts t
-                  WHERE t.question_id = q.id AND t.user_id = :u1 AND t.id > :d1 ORDER BY t.id LIMIT 1) AS primeira,
-                (SELECT MAX(t.is_correct) FROM quiz_attempts t
-                  WHERE t.question_id = q.id AND t.user_id = :u2 AND t.id > :d2) AS acertou,
+                  WHERE t.question_id = q.id AND t.user_id = :u1 AND t.id > :d1 ORDER BY t.id DESC LIMIT 1) AS valendo,
+                (SELECT MAX(t.id) FROM quiz_attempts t
+                  WHERE t.question_id = q.id AND t.user_id = :u2 AND t.id > :d2) AS ultima_id,
                 (SELECT TIMESTAMPDIFF(SECOND, MAX(t.attempted_at), NOW()) FROM quiz_attempts t
                   WHERE t.question_id = q.id AND t.user_id = :u3 AND t.id > :d3 AND t.is_correct = 0) AS seg_desde_erro
          FROM quiz_questions q
@@ -315,20 +340,22 @@ function mse_quiz_situacao(PDO $pdo, int $userId, int $courseId): array
     $erros = 0;
     $pendentes = 0;
     foreach ($stmt->fetchAll() as $l) {
+        $valendo = $l['valendo'] === null ? null : (bool) $l['valendo'];
         $p = [
             'id' => (int) $l['id'],
             'momento_seg' => $l['momento_seg'] === null ? null : (int) $l['momento_seg'],
-            'primeira' => $l['primeira'] === null ? null : (bool) $l['primeira'],
-            'acertou' => (bool) $l['acertou'],
-            'respondida' => $l['primeira'] !== null,
+            'valendo' => $valendo,
+            // Errada de antes do "refazer": precisa responder de novo.
+            'respondida' => $valendo !== null && !($valendo === false && (int) $l['ultima_id'] <= $refazer),
             'seg_desde_erro' => $l['seg_desde_erro'] === null ? null : (int) $l['seg_desde_erro'],
         ];
-        if ($p['primeira'] === true) {
-            $acertos++;
-        } elseif ($p['primeira'] === false) {
-            $erros++;
-        }
-        if (!$p['respondida']) {
+        if ($p['respondida']) {
+            if ($valendo) {
+                $acertos++;
+            } else {
+                $erros++;
+            }
+        } else {
             $pendentes++;
         }
         $perguntas[$p['id']] = $p;
@@ -339,10 +366,13 @@ function mse_quiz_situacao(PDO $pdo, int $userId, int $courseId): array
         'acertos_primeira' => $acertos,
         'erros_primeira' => $erros,
         'pendentes' => $pendentes,
+        // Refazendo as erradas: a nota fecha quando responde a última que faltava,
+        // sem precisar chegar ao fim do vídeo.
+        'refazendo' => $refazer > $desde,
     ];
 }
 
-/** true se a nota de primeira da rodada chega nos 70% (aula sem pergunta: sempre). */
+/** true se a nota da rodada (última resposta de cada pergunta) chega nos 70% (aula sem pergunta: sempre). */
 function mse_quiz_aprovado(array $situacao): bool
 {
     return $situacao['total'] === 0
@@ -377,10 +407,60 @@ function mse_quiz_trecho(array $situacao, int $questionId): array
 }
 
 /**
- * Reprovou (abaixo de 70%): a aula recomeça. As respostas desta rodada
- * deixam de contar e o % assistido volta a zero, então a pergunta do fim
- * só libera depois de assistir tudo de novo.
+ * Trechos a assistir de novo para refazer as perguntas pendentes que estavam
+ * erradas, na ordem do vídeo (a do fim por último).
+ *
+ * @return list<array{question_id:int, de:int, ate:?int}>
  */
+function mse_quiz_trechos_refazer(array $situacao): array
+{
+    $trechos = [];
+    foreach ($situacao['perguntas'] as $q) {
+        if ($q['valendo'] === false && !$q['respondida']) {
+            $trechos[] = ['question_id' => $q['id']] + mse_quiz_trecho($situacao, $q['id']);
+        }
+    }
+    usort($trechos, static fn($a, $b) => ($a['ate'] ?? PHP_INT_MAX) <=> ($b['ate'] ?? PHP_INT_MAX));
+    return $trechos;
+}
+
+/**
+ * Reprovou (abaixo de 70%): as erradas voltam a ficar pendentes e o %
+ * assistido volta ao trecho da primeira delas. As certas continuam valendo.
+ * Devolve o segundo em que o vídeo recomeça.
+ */
+function mse_quiz_refazer_erradas(PDO $pdo, int $userId, int $courseId): int
+{
+    if (!mse_garantir_refazer_quiz($pdo)) {
+        // Sem a coluna nova: o jeito antigo, a aula recomeça do início.
+        mse_quiz_reiniciar_rodada($pdo, $userId, $courseId);
+        return 0;
+    }
+    $ultimo = (int) $pdo->query('SELECT COALESCE(MAX(id), 0) FROM quiz_attempts')->fetchColumn();
+    $stmt = $pdo->prepare(
+        "UPDATE user_course_progress SET quiz_refazer_desde = ?
+         WHERE user_id = ? AND course_id = ? AND status <> 'concluido'"
+    );
+    $stmt->execute([$ultimo, $userId, $courseId]);
+
+    $trechos = mse_quiz_trechos_refazer(mse_quiz_situacao($pdo, $userId, $courseId));
+    $voltar = $trechos ? $trechos[0]['de'] : 0;
+    $duracao = 0;
+    if (mse_tem_coluna($pdo, 'courses', 'duration_seconds')) {
+        $st = $pdo->prepare('SELECT duration_seconds FROM courses WHERE id = ?');
+        $st->execute([$courseId]);
+        $duracao = (int) $st->fetchColumn();
+    }
+    $pct = $duracao > 0 ? max(0, min(100, (int) floor($voltar / $duracao * 100))) : 0;
+    $stmt = $pdo->prepare(
+        "UPDATE user_course_progress SET watched_pct = ?, status = 'em_andamento'
+         WHERE user_id = ? AND course_id = ? AND status <> 'concluido'"
+    );
+    $stmt->execute([$pct, $userId, $courseId]);
+    return $voltar;
+}
+
+/** O jeito antigo de reprovar: a aula recomeça do início (nenhuma resposta conta mais). */
 function mse_quiz_reiniciar_rodada(PDO $pdo, int $userId, int $courseId): void
 {
     if (!mse_garantir_rodada_quiz($pdo)) {

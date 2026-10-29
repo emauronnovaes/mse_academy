@@ -144,7 +144,7 @@ function mse_lista_presenca(PDO $pdo, int $courseId, array $filtros = []): array
                    (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = p.course_id
                       AND (SELECT t.is_correct FROM quiz_attempts t
                             WHERE t.question_id = qq.id AND t.user_id = p.user_id AND t.id > {$desdeRodada}
-                            ORDER BY t.id LIMIT 1) = 1) AS acertos_primeira,
+                            ORDER BY t.id DESC LIMIT 1) = 1) AS acertos_primeira,
                    (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = p.course_id
                       AND (SELECT t.id FROM quiz_attempts t
                             WHERE t.question_id = qq.id AND t.user_id = p.user_id AND t.id > {$desdeRodada}
@@ -399,7 +399,7 @@ function mse_treinamentos_da_pessoa(PDO $pdo, int $userId, array $filtros): arra
                    (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = c.id
                       AND (SELECT t.is_correct FROM quiz_attempts t
                             WHERE t.question_id = qq.id AND t.user_id = p.user_id AND t.id > {$desdeRodada}
-                            ORDER BY t.id LIMIT 1) = 1) AS acertos_primeira,
+                            ORDER BY t.id DESC LIMIT 1) = 1) AS acertos_primeira,
                    (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.course_id = c.id
                       AND (SELECT t.id FROM quiz_attempts t
                             WHERE t.question_id = qq.id AND t.user_id = p.user_id AND t.id > {$desdeRodada}
