@@ -5573,19 +5573,41 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const f = trnFiltros();
     try{
       const r = tipo === 'pessoa' ? await montarRehPessoa(alvo.user_id, f) : await montarRehTreinamento(alvo, f);
+      // Por pessoa: o admin marca as aulas que vão na ficha (começa sem nenhuma).
+      const escolher = tipo === 'pessoa' && r.lista.length > 0;
+      if(escolher) r.html = null;
+      const folhasHtml = (html) => html
+        ? [].concat(html).map(folha => `<div class="rel-pdf rel-formulario reh-folha">${folha}</div>`).join('')
+        : '<p class="trn-vazio-lista">Marque acima as aulas que vão na ficha.</p>';
       body.innerHTML = `
         <div class="reh-barra">
           <button type="button" class="admin-modal-submit" id="rehBaixar" ${r.html ? '' : 'disabled'}>Baixar PDF</button>
           <button type="button" class="trn-link" id="rehDetalhes" aria-expanded="false">Detalhes e log</button>
         </div>
         <div id="rehDetalhesCorpo" class="reh-detalhes" hidden></div>
-        ${r.html
-          ? `<div class="reh-preview">${[].concat(r.html).map(folha => `<div class="rel-pdf rel-formulario reh-folha">${folha}</div>`).join('')}</div>`
+        ${escolher ? rehAulasHtml(r.metas) : ''}
+        ${escolher || r.html
+          ? `<div class="reh-preview" id="rehPreview">${folhasHtml(r.html)}</div>`
           : `<p class="trn-vazio-lista">${esc(alvo.nome)} ainda não tem treinamento${f.data_de || f.data_ate ? ' nesse período' : ''}.</p>`}
       `;
       const btnBaixar = document.getElementById('rehBaixar');
       btnBaixar.addEventListener('click', () => trnComBotao(btnBaixar, () =>
         trnBaixarPdf(r.html, r.nomeArquivo, { retrato: true, classe: 'rel-formulario' })));
+      if(escolher){
+        const caixas = Array.from(body.querySelectorAll('#rehAulas input[type="checkbox"]'));
+        const atualizar = () => {
+          const marcadas = new Set(caixas.filter(c => c.checked).map(c => Number(c.value)));
+          r.html = lpFolhasPessoa(r.pessoa, r.metas.filter(m => marcadas.has(m.id)));
+          document.getElementById('rehPreview').innerHTML = folhasHtml(r.html);
+          document.getElementById('rehAulasConta').textContent = `${marcadas.size} de ${caixas.length} marcadas`;
+          btnBaixar.disabled = !r.html;
+        };
+        caixas.forEach(c => c.addEventListener('change', atualizar));
+        body.querySelectorAll('[data-reh-marcar]').forEach(b => b.addEventListener('click', () => {
+          caixas.forEach(c => { c.checked = b.dataset.rehMarcar === 'todas'; });
+          atualizar();
+        }));
+      }
 
       const detalhes = document.getElementById('rehDetalhesCorpo');
       document.getElementById('rehDetalhes').addEventListener('click', (e) => {
@@ -5608,6 +5630,28 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }catch(e){
       body.innerHTML = `<p>Não foi possível carregar: ${esc(e.message)}</p>`;
     }
+  }
+
+  // Lista das aulas que a pessoa assistiu, para marcar as que vão na
+  // ficha. As da integração aparecem primeiro.
+  function rehAulasHtml(metas){
+    const ordem = metas.filter(m => m.trilha).concat(metas.filter(m => !m.trilha));
+    return `
+      <fieldset class="reh-aulas" id="rehAulas">
+        <legend>Aulas que a pessoa assistiu</legend>
+        <div class="reh-aulas-acoes">
+          <span class="trn-sub" id="rehAulasConta">0 de ${ordem.length} marcadas</span>
+          <button type="button" class="trn-link" data-reh-marcar="todas">Marcar todas</button>
+          <button type="button" class="trn-link" data-reh-marcar="nenhuma">Desmarcar todas</button>
+        </div>
+        ${ordem.map(m => `
+          <label class="reh-aula">
+            <input type="checkbox" value="${m.id}">
+            <span><strong>${esc(m.tema)}</strong>${m.trilha ? ' <span class="aulas-badge">Integração</span>' : ''}
+              <span class="trn-sub">${esc(trnStatus(m.status))}${m.checkin_em ? ' · check-in ' + esc(trnFmtDataHora(m.checkin_em)) : ''}</span></span>
+          </label>`).join('')}
+        <p class="admin-field-hint">Cada aula sai num formulário próprio; as da integração saem juntas num só.</p>
+      </fieldset>`;
   }
 
   function abrirFichaPessoa(p){
@@ -7339,8 +7383,13 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const pessoa = d.pessoa;
     const lista = d.treinamentos || [];
     const nomeArquivo = trnNomePdf(`lista-presenca-REH-002-F1-${trnSlug(pessoa.nome) || pessoa.user_id}`);
-    if(!lista.length) return { html: null, nomeArquivo, pessoa, lista };
     const metas = lista.map(t => Object.assign({}, t, lpEstado.treinamentos.find(x => x.id === t.id) || {}));
+    return { html: lpFolhasPessoa(pessoa, metas), nomeArquivo, pessoa, lista, metas };
+  }
+
+  // As folhas da ficha de uma pessoa para as aulas dadas. Nenhuma = null.
+  function lpFolhasPessoa(pessoa, metas){
+    if(!metas.length) return null;
     const unicos = (valores) => [...new Set(valores.filter(Boolean))];
     const linha = (m) => ({
       departamento: pessoa.departamento, setorTreinamento: lpSetorDoTreinamento(m),
@@ -7362,7 +7411,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       folhas.push(lpFormularioHtml(resumo, integracao.map(linha), null, { porPessoa: true }));
     }
     metas.filter(m => !m.trilha).forEach(m => folhas.push(lpFormularioHtml(m, [linha(m)])));
-    return { html: folhas, nomeArquivo, pessoa, lista };
+    return folhas;
   }
 
   async function baixarRehPessoa(userId, filtros){

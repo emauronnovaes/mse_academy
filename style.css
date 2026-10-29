@@ -2004,6 +2004,11 @@
   .reh-preview{ background:#E9E8E4; border-radius:10px; padding:24px 16px; overflow:auto; }
   .reh-folha{ width:700px; margin:0 auto; padding:28px 24px; box-shadow:0 4px 18px rgba(0,0,0,0.12); }
   .reh-folha + .reh-folha{ margin-top:24px; }
+  .reh-aulas{ border:1.5px solid var(--line); border-radius:10px; padding:10px 16px 12px; margin:0 0 16px; }
+  .reh-aulas legend{ font-weight:700; padding:0 6px; }
+  .reh-aulas-acoes{ display:flex; align-items:center; flex-wrap:wrap; gap:16px; margin-bottom:6px; }
+  .reh-aula{ display:flex; align-items:flex-start; gap:10px; padding:7px 0; border-top:1px solid var(--line); cursor:pointer; }
+  .reh-aula input{ margin-top:3px; flex:none; }
 
   /* Adicionar vídeo: mais largo, com a prévia do vídeo e as perguntas */
   #videoModalOverlay .admin-modal-wide{ max-width:880px; }
