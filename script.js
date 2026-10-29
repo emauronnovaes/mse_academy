@@ -5662,6 +5662,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             <th title="Percentual de acerto na primeira resposta da rodada. O crachá exige 70% em NR-06 e NR-12.">Nota</th>
             <th>Situação</th>
             <th title="Vezes que entrou no vídeo (check-ins do log)">Sessões</th>
+            ${userId ? '<th>Ação</th>' : ''}
           </tr></thead>
           <tbody>
             ${treinamentos.map(t => `
@@ -5677,6 +5678,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
                 <td class="trn-nowrap">${t.nota_pct == null ? (t.total_perguntas ? '<span class="trn-sub">em andamento</span>' : vazio) : `${t.nota_pct}%`}</td>
                 <td><span class="watchers-status ${esc(t.status)}">${esc(trnStatus(t.status))}</span></td>
                 <td class="trn-nowrap">${trnSessoesHtml(t, userId, t.id)}</td>
+                ${userId ? `<td><button type="button" class="aulas-btn trn-resetar-aula" data-user="${userId}" data-course="${t.id}" data-tema="${esc(t.tema)}" title="A pessoa volta a assistir essa aula do começo">Resetar aula</button></td>` : ''}
               </tr>
             `).join('')}
           </tbody>
@@ -5744,6 +5746,20 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <button type="button" class="trn-btn" id="rehCsv">Exportar CSV</button>
         `;
         ligarBotoesLog(detalhes);
+        detalhes.addEventListener('click', async (e) => {
+          const btn = e.target.closest('.trn-resetar-aula');
+          if(!btn) return;
+          if(!confirm(`Resetar "${btn.dataset.tema}" de ${alvo.nome}?\n\n⚠️ Ação irreversível: o % assistido volta a zero, a conclusão e a nota atuais deixam de valer e a pessoa assiste do começo.`)) return;
+          btn.disabled = true;
+          try{
+            await apiPost('api/admin/treinamentos/resetar_aula.php', { user_id: Number(btn.dataset.user), course_id: Number(btn.dataset.course) });
+            carregarTreinamentos();
+            abrirListaReh(tipo, alvo); // recarrega a janela com os dados novos
+          }catch(err){
+            btn.disabled = false;
+            alert('Não foi possível resetar: ' + err.message);
+          }
+        });
         document.getElementById('rehCsv').addEventListener('click', () => trnBaixarCsv(
           r.nomeArquivo.replace(/\.pdf$/, '.csv'),
           tipo === 'pessoa'
