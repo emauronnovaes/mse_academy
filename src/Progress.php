@@ -157,7 +157,8 @@ function mse_aulas_da_trilha(PDO $pdo, int $userId): array
  * regra de mse_aulas_da_trilha: "só para obra", sorteio e obrigatórias),
  * sem sortear nada nem fazer uma consulta por pessoa.
  *
- * @return array<int, array{total:int, concluidas:int}>  por user_id
+ * @return array<int, array{total:int, concluidas:int, concluiu_em:?string}>  por user_id
+ *         (concluiu_em: quando terminou a última aula, só se terminou todas)
  */
 function mse_integracao_por_pessoa(PDO $pdo): array
 {
@@ -188,16 +189,17 @@ function mse_integracao_por_pessoa(PDO $pdo): array
     }
     $feitas = [];
     foreach ($pdo->query(
-        "SELECT p.user_id, p.course_id FROM user_course_progress p JOIN courses c ON c.id = p.course_id
+        "SELECT p.user_id, p.course_id, p.completed_at FROM user_course_progress p JOIN courses c ON c.id = p.course_id
          WHERE c.type = 'onboarding' AND p.status = 'concluido'"
     ) as $p) {
-        $feitas[(int) $p['user_id']][(int) $p['course_id']] = true;
+        $feitas[(int) $p['user_id']][(int) $p['course_id']] = (string) $p['completed_at'];
     }
 
     $calc = static function (int $uid) use ($aulas, $ehObra, $sorteio, $feitas): array {
         $obra = isset($ehObra[$uid]);
         $total = 0;
         $concluidas = 0;
+        $ultima = '';
         $grupos = [];
         foreach ($aulas as $a) {
             if ((int) $a['somente_obra'] === 1 && !$obra) {
@@ -207,7 +209,10 @@ function mse_integracao_por_pessoa(PDO $pdo): array
             $g = $a['grupo_sorteio'];
             if ($g === null || $g === '') {
                 $total++;
-                $concluidas += isset($feitas[$uid][$id]) ? 1 : 0;
+                if (isset($feitas[$uid][$id])) {
+                    $concluidas++;
+                    $ultima = max($ultima, $feitas[$uid][$id]);
+                }
                 continue;
             }
             // Grupo sorteado conta uma aula só: a sorteada (ou, sem sorteio
@@ -221,11 +226,13 @@ function mse_integracao_por_pessoa(PDO $pdo): array
             foreach ($alvo as $id) {
                 if (isset($feitas[$uid][$id])) {
                     $concluidas++;
+                    $ultima = max($ultima, $feitas[$uid][$id]);
                     break;
                 }
             }
         }
-        return ['total' => $total, 'concluidas' => $concluidas];
+        return ['total' => $total, 'concluidas' => $concluidas,
+            'concluiu_em' => $total > 0 && $concluidas >= $total && $ultima !== '' ? $ultima : null];
     };
 
     $r = [];

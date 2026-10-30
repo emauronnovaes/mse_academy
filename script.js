@@ -5143,8 +5143,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       lista = lista.filter(p => p.situacao !== 'concluiu' && !p.dispensado)
         .sort((a, b) => b.dias_desde_admissao - a.dias_desde_admissao || a.nome.localeCompare(b.nome));
     } else if(trnEstado.visao === 'concluiram'){
-      // Quem terminou mais recentemente aparece primeiro.
-      lista = lista.filter(p => p.situacao === 'concluiu' && !p.dispensado)
+      // Quem terminou mais recentemente aparece primeiro. Entra também quem
+      // terminou a trilha na Academy no período mas não foi ligado a ninguém
+      // da lista do RH (nome diferente, admissão fora do período...).
+      const ligados = new Set(lista.filter(p => p.user_id).map(p => p.user_id));
+      const extras = ((admDados && admDados.concluintes) || []).filter(c => !ligados.has(c.user_id));
+      lista = lista.filter(p => p.situacao === 'concluiu' && !p.dispensado).concat(extras)
         .sort((a, b) => String(b.concluiu_em || '').localeCompare(String(a.concluiu_em || '')) || a.nome.localeCompare(b.nome));
     } else if(trnEstado.visao === 'dispensados'){
       lista = lista.filter(p => p.dispensado)
@@ -5178,12 +5182,20 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       + (sub ? `<span class="trn-sub">${esc(sub)}</span>` : '');
   }
 
+  // Admissão; quem só veio da Academy (não ligado à lista do RH) não tem.
+  function admAdmissaoHtml(p){
+    if(!p.data_admissao) return '<span class="trn-vazio">—</span><span class="trn-sub">não ligado à lista de admitidos do RH</span>';
+    return `${esc(trnFmtData(p.data_admissao))}<span class="trn-sub">há ${p.dias_desde_admissao} ${p.dias_desde_admissao === 1 ? 'dia' : 'dias'}</span>`;
+  }
+
   function admResumoTexto(lista){
     if(trnEstado.visao === 'pendentes'){
       return `${lista.length} ${lista.length === 1 ? 'novo contratado pendente' : 'novos contratados pendentes'} (sem a integração completa)`;
     }
     if(trnEstado.visao === 'concluiram'){
-      return `${lista.length} ${lista.length === 1 ? 'admitido concluiu' : 'admitidos concluíram'} a integração`;
+      const foraRh = lista.filter(p => p.fora_rh).length;
+      return `${lista.length} ${lista.length === 1 ? 'pessoa concluiu' : 'pessoas concluíram'} a integração`
+        + (foraRh ? ` (${foraRh} sem ligação com a lista do RH)` : '');
     }
     if(trnEstado.visao === 'dispensados'){
       return `${lista.length} ${lista.length === 1 ? 'pessoa dispensada' : 'pessoas dispensadas'} da integração`;
@@ -5197,7 +5209,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const lista = admFiltrados();
     const periodo = admDados ? admDados.periodo : null;
     document.getElementById('trnContagem').textContent = admResumoTexto(lista)
-      + (periodo ? ` · admissão de ${trnFmtData(periodo.de)} a ${trnFmtData(periodo.ate)}` : '')
+      + (periodo ? ` · ${trnEstado.visao === 'concluiram' ? 'admissão ou conclusão' : 'admissão'} de ${trnFmtData(periodo.de)} a ${trnFmtData(periodo.ate)}` : '')
       + (admDados && admDados.aviso ? ` · ⚠ ${admDados.aviso}` : '')
       + (admDados && admDados.ficha_erro ? ` · sem os dados da ficha (${admDados.ficha_erro})` : '');
     const corpo = document.getElementById('trnCorpoAdmitidos');
@@ -5218,16 +5230,17 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <td>${p.funcao ? esc(p.funcao) : vazio}${p.departamento ? `<span class="trn-sub">${esc(p.departamento)}</span>` : ''}</td>
         <td>${p.obra ? esc(p.obra) : vazio}${p.empresa ? `<span class="trn-sub">${esc(p.empresa)}</span>` : ''}</td>
         <td>${p.gerente_nome ? esc(p.gerente_nome) : vazio}${p.gerente_email ? `<span class="trn-sub">${esc(p.gerente_email)}</span>` : ''}</td>
-        <td class="trn-nowrap">${esc(trnFmtData(p.data_admissao))}<span class="trn-sub">há ${p.dias_desde_admissao} ${p.dias_desde_admissao === 1 ? 'dia' : 'dias'}</span></td>
+        <td class="trn-nowrap">${admAdmissaoHtml(p)}</td>
         <td>${admSituacaoHtml(p)}</td>
-        <td class="trn-acoes"><div class="trn-acoes-grade">
+        <td class="trn-acoes">${p.fora_rh ? '' : `<div class="trn-acoes-grade">
           <button type="button" class="aulas-btn" data-adm="dados">${p.ficha_pendente ? 'Ver dados...' : 'Ver dados'}</button>
           ${p.dispensado
             ? '<button type="button" class="aulas-btn" data-adm="reativar" title="Volta a cobrar a integração dessa pessoa">Reativar</button>'
             : (p.situacao === 'concluiu' ? '' : '<button type="button" class="aulas-btn" data-adm="dispensar" title="Tira da lista: essa pessoa não precisa fazer a integração">Dispensar</button>')}
-        </div></td>
+        </div>`}</td>
       `;
-      tr.querySelector('[data-adm="dados"]').addEventListener('click', () => admVerDados(p));
+      const bDados = tr.querySelector('[data-adm="dados"]');
+      if(bDados) bDados.addEventListener('click', () => admVerDados(p));
       const bDisp = tr.querySelector('[data-adm="dispensar"]');
       if(bDisp) bDisp.addEventListener('click', () => admDispensar(p, true));
       const bReat = tr.querySelector('[data-adm="reativar"]');
@@ -5443,7 +5456,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
               <td>${esc(p.funcao || '—')}<span class="trn-sub">${esc(p.departamento || '')}</span></td>
               <td>${esc(p.obra || '—')}<span class="trn-sub">${esc(p.empresa || '')}</span></td>
               <td>${esc(p.gerente_nome || '—')}<span class="trn-sub">${esc(p.gerente_email || '')}</span></td>
-              <td>${esc(trnFmtData(p.data_admissao))}<span class="trn-sub">há ${p.dias_desde_admissao} dias</span></td>
+              <td>${admAdmissaoHtml(p)}</td>
               <td>${admSituacaoHtml(p)}</td>
             </tr>`).join('') || `<tr><td colspan="6" class="trn-vazio-lista">${pendentes ? 'Nenhum novo contratado pendente.' : concluiram ? 'Ninguém concluiu a integração nesse período.' : 'Nenhum admitido nesse período.'}</td></tr>`}
           </tbody>

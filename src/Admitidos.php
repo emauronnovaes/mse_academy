@@ -19,6 +19,37 @@ function mse_integracao_chaves(?string $cpf, string $nome, string $dataAdmissao)
     ];
 }
 
+/**
+ * Dois nomes são da mesma pessoa escritos de jeitos diferentes? Mesmo primeiro
+ * e último nome, e as palavras do nome menor todas presentes no maior
+ * (ignora "de", "da", "dos"...). Abreviação ("N.") conta pela inicial.
+ */
+function mse_nomes_compativeis(string $a, string $b): bool
+{
+    $partes = static function (string $n): array {
+        return array_values(array_filter(explode(' ', mse_normalize_text($n)),
+            static fn($p) => $p !== '' && !in_array($p, ['de', 'da', 'do', 'das', 'dos', 'e'], true)));
+    };
+    $pa = $partes($a);
+    $pb = $partes($b);
+    if (count($pa) < 2 || count($pb) < 2 || $pa[0] !== $pb[0] || end($pa) !== end($pb)) {
+        return false;
+    }
+    [$menor, $maior] = count($pa) <= count($pb) ? [$pa, $pb] : [$pb, $pa];
+    foreach ($menor as $p) {
+        $ok = in_array($p, $maior, true);
+        if (!$ok && strlen($p) === 1) {
+            foreach ($maior as $m) {
+                if ($m[0] === $p) { $ok = true; break; }
+            }
+        }
+        if (!$ok) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /** Garante a tabela integracao_dispensados (migração 028). */
 function mse_garantir_tabela_dispensados(PDO $pdo): bool
 {
@@ -126,6 +157,15 @@ foreach ($admitidos as $i => $a) {
         if (count($mesmos) === 1) { // homônimo: melhor não chutar
             $usuario = $mesmos[0];
             $cruzouPor = 'nome';
+        } elseif (!$mesmos) {
+            // Nome escrito diferente no RH e na Academy ("Julia N. Watanabe",
+            // sobrenome a mais ou a menos): mesmo primeiro e último nome e
+            // um contido no outro. Só vale se for uma pessoa só.
+            $parecidos = array_values(array_filter($porNome, static fn($us, $n) => count($us) === 1 && mse_nomes_compativeis($a['nome'], (string) $n), ARRAY_FILTER_USE_BOTH));
+            if (count($parecidos) === 1) {
+                $usuario = $parecidos[0][0];
+                $cruzouPor = 'nome_parecido';
+            }
         }
     }
 

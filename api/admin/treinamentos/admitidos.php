@@ -97,9 +97,39 @@ try {
 
 $r = mse_admitidos_montar($pdo, $admitidos, [], $hoje);
 
+// Quem terminou a trilha de integração na Academy dentro do período, venha
+// ou não na lista do RH: a aba "Concluíram" não pode deixar ninguém de fora
+// (a tela tira quem já está ligado a um admitido).
+$concluintes = [];
+$fim = [];
+foreach (mse_integracao_por_pessoa($pdo) as $uid => $i) {
+    if ($i['concluiu_em'] !== null && substr($i['concluiu_em'], 0, 10) >= $de && substr($i['concluiu_em'], 0, 10) <= $ate) {
+        $fim[$uid] = $i;
+    }
+}
+if ($fim) {
+    $depto = mse_tem_coluna($pdo, 'users', 'setor_portal') ? "COALESCE(NULLIF(u.setor_portal, ''), a.name)" : 'a.name';
+    $st = $pdo->query(
+        "SELECT u.id, u.name, u.email, u.cpf, u.cargo, {$depto} AS departamento, u.last_access_date
+         FROM users u LEFT JOIN areas a ON a.id = u.area_id
+         WHERE u.id IN (" . implode(',', array_map('intval', array_keys($fim))) . ')'
+    );
+    foreach ($st->fetchAll() as $u) {
+        $i = $fim[(int) $u['id']];
+        $concluintes[] = [
+            'nome' => $u['name'], 'cpf' => preg_replace('/\D/', '', (string) $u['cpf']) ?: null, 'email' => $u['email'],
+            'funcao' => $u['cargo'], 'departamento' => $u['departamento'], 'obra' => null, 'empresa' => null, 'vinculo' => null,
+            'data_admissao' => null, 'dias_desde_admissao' => null, 'user_id' => (int) $u['id'],
+            'ultimo_acesso' => $u['last_access_date'], 'situacao' => 'concluiu', 'concluiu_em' => $i['concluiu_em'],
+            'obrigatorias' => $i['total'], 'concluidas' => $i['concluidas'], 'dispensado' => false, 'fora_rh' => true,
+        ];
+    }
+}
+
 mse_json([
     'periodo' => ['de' => $de, 'ate' => $ate],
     'resumo' => $r['resumo'],
     'pessoas' => $r['pessoas'],
+    'concluintes' => $concluintes,
     'aviso' => $aviso,
 ]);
