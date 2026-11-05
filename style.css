@@ -1959,7 +1959,7 @@
 
   /* Log de presença (linha aberta pelo "Ver log") */
   .trn-ver-log{ display:block; margin-top:3px; font-size:12px; font-weight:600; }
-  .trn-log-linha > td{ background:#FAFAF8; padding:8px 12px 12px; }
+  .trn-log-linha > td, .trn-resp-linha > td{ background:#FAFAF8; padding:8px 12px 12px; }
   .trn-tabela-log{ font-size:12.5px; }
   .trn-tabela-log th{ background:#F1F0EC; }
   .trn-navegador{ color:var(--steel); }

@@ -5627,8 +5627,63 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     return so ? `${nav} · ${so}` : nav;
   }
 
+  const TRN_RESP_SITUACAO = { acertou: 'Acertou', errou: 'Errou', nao_respondeu: 'Não respondeu' };
+
+  // Pergunta por pergunta: tentativas, o que respondeu em cada uma e se acertou.
+  function trnRespostasHtml(perguntas){
+    if(!perguntas.length) return '<p class="trn-vazio-lista">Esse vídeo não tem perguntas.</p>';
+    return `
+      <table class="trn-tabela trn-tabela-log">
+        <thead><tr><th>Pergunta</th><th>Tentativas</th><th>1ª tentativa</th><th>Situação</th><th>Respostas dadas</th></tr></thead>
+        <tbody>
+          ${perguntas.map(q => `
+            <tr>
+              <td>${esc(q.pergunta)}${q.momento_seg != null ? `<span class="trn-sub">no vídeo, em ${esc(formatarMmSs(q.momento_seg))}</span>` : '<span class="trn-sub">no fim do vídeo</span>'}${q.resposta_certa ? `<span class="trn-sub">certa: ${esc(q.resposta_certa)}</span>` : ''}</td>
+              <td class="trn-nowrap">${q.tentativas}</td>
+              <td class="trn-nowrap">${q.acertou_de_primeira === null ? '—' : q.acertou_de_primeira ? 'Acertou' : 'Errou'}</td>
+              <td class="trn-nowrap"><strong>${esc(TRN_RESP_SITUACAO[q.situacao] || q.situacao)}</strong></td>
+              <td>${q.respostas.map((t, i) => `<span class="trn-sub">${i + 1}ª: ${esc(t.resposta || '(opção apagada)')} — ${t.correta ? 'certa' : 'errada'}${t.em ? ' · ' + esc(trnFmtDataHora(t.em)) : ''}</span>`).join('') || '—'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  function trnLinhasCsvRespostas(pessoa, cursos){
+    const linhas = [['Nome', 'E-mail', 'Vídeo', 'Pergunta', 'Momento no vídeo', 'Resposta certa', 'Tentativas', '1ª tentativa', 'Situação', 'Respostas dadas']];
+    cursos.forEach(c => c.perguntas.forEach(q => linhas.push([
+      pessoa.nome, pessoa.email || '', c.titulo, q.pergunta,
+      q.momento_seg != null ? formatarMmSs(q.momento_seg) : 'fim do vídeo', q.resposta_certa || '',
+      q.tentativas, q.acertou_de_primeira === null ? '' : q.acertou_de_primeira ? 'Acertou' : 'Errou',
+      TRN_RESP_SITUACAO[q.situacao] || q.situacao,
+      q.respostas.map((t, i) => `${i + 1}ª: ${t.resposta || '(opção apagada)'} (${t.correta ? 'certa' : 'errada'})`).join(' | '),
+    ])));
+    return linhas;
+  }
+
   // Clique em "Ver log": abre (ou fecha) a linha com o log logo abaixo.
   function ligarBotoesLog(escopo){
+    escopo.addEventListener('click', async (e) => {
+      const br = e.target.closest('.trn-ver-respostas');
+      if(!br) return;
+      const tr = br.closest('tr');
+      const aberta = tr.nextElementSibling && tr.nextElementSibling.classList.contains('trn-resp-linha');
+      if(aberta){
+        tr.nextElementSibling.remove();
+        br.textContent = 'Ver respostas';
+        return;
+      }
+      const linha = document.createElement('tr');
+      linha.className = 'trn-resp-linha';
+      linha.innerHTML = `<td colspan="${tr.children.length}"><p>Carregando respostas...</p></td>`;
+      tr.insertAdjacentElement('afterend', linha);
+      br.textContent = 'Fechar respostas';
+      try{
+        const d = await apiFetch(`api/admin/treinamentos/respostas.php?user_id=${encodeURIComponent(br.dataset.user)}&course_id=${encodeURIComponent(br.dataset.course)}`);
+        linha.firstElementChild.innerHTML = trnRespostasHtml(((d.cursos || [])[0] || {}).perguntas || []);
+      }catch(err){
+        linha.firstElementChild.innerHTML = `<p>Não foi possível carregar as respostas: ${esc(err.message)}</p>`;
+      }
+    });
     escopo.addEventListener('click', async (e) => {
       const btn = e.target.closest('.trn-ver-log');
       if(!btn) return;
@@ -5680,7 +5735,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
                 <td class="trn-nowrap">${t.checkout_em ? esc(trnFmtDataHora(t.checkout_em)) : vazio}</td>
                 <td class="trn-nowrap">${Math.round(t.watched_pct)}%${t.tempo_assistido_seg != null ? `<span class="trn-sub">≈ ${esc(trnFmtTempo(t.tempo_assistido_seg))}</span>` : ''}</td>
                 <td class="trn-nowrap">${t.confirmacoes_presenca}×${t.ultima_confirmacao_em ? `<span class="trn-sub">última ${esc(trnFmtDataHora(t.ultima_confirmacao_em))}</span>` : ''}</td>
-                <td class="trn-nowrap">${t.total_perguntas ? `${t.acertos}/${t.total_perguntas}` : vazio}${t.tentativas > t.acertos ? `<span class="trn-sub">${t.tentativas} tentativas</span>` : ''}</td>
+                <td class="trn-nowrap">${t.total_perguntas ? `${t.acertos}/${t.total_perguntas}` : vazio}${t.tentativas > t.acertos ? `<span class="trn-sub">${t.tentativas} tentativas</span>` : ''}${userId && t.tentativas ? `<button type="button" class="trn-link trn-ver-respostas" data-user="${userId}" data-course="${t.id}">Ver respostas</button>` : ''}</td>
                 <td class="trn-nowrap">${t.nota_pct == null ? (t.total_perguntas ? '<span class="trn-sub">em andamento</span>' : vazio) : `${t.nota_pct}%`}</td>
                 <td><span class="watchers-status ${esc(t.status)}">${esc(trnStatus(t.status))}</span></td>
                 <td class="trn-nowrap">${trnSessoesHtml(t, userId, t.id)}</td>
@@ -5750,6 +5805,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <p class="admin-field-hint">Check-in: primeira vez que abriu o vídeo. Check-out: conclusão. Sessões: quantas vezes entrou — "Ver log" mostra cada entrada e saída.</p>
           ${tipo === 'pessoa' ? trnTabelaFichaHtml(r.lista, alvo.user_id) : trnTabelaPresencaHtml(r.participantes, alvo.id)}
           <button type="button" class="trn-btn" id="rehCsv">Exportar CSV</button>
+          ${tipo === 'pessoa' ? '<button type="button" class="trn-btn" id="rehRespostasCsv" title="Cada pergunta de cada vídeo: tentativas, o que respondeu e se acertou">Baixar respostas (planilha)</button>' : ''}
         `;
         ligarBotoesLog(detalhes);
         detalhes.addEventListener('click', async (e) => {
@@ -5766,6 +5822,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
             alert('Não foi possível resetar: ' + err.message);
           }
         });
+        const btnResp = document.getElementById('rehRespostasCsv');
+        if(btnResp) btnResp.addEventListener('click', () => trnComBotao(btnResp, async () => {
+          const d = await apiFetch(`api/admin/treinamentos/respostas.php?user_id=${encodeURIComponent(alvo.user_id)}`);
+          trnBaixarCsv(r.nomeArquivo.replace(/\.pdf$/, '') + '-respostas.csv', trnLinhasCsvRespostas(alvo, d.cursos || []));
+        }));
         document.getElementById('rehCsv').addEventListener('click', () => trnBaixarCsv(
           r.nomeArquivo.replace(/\.pdf$/, '.csv'),
           tipo === 'pessoa'
@@ -5829,6 +5890,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         t.total_perguntas === 0 ? '<span class="aulas-sem-pergunta">sem pergunta</span>' : '',
         t.aviso_presenca === false ? 'sem aviso de presença' : '',
         t.codigo_nr === 'NR-06' || t.codigo_nr === 'NR-12' ? `<span class="trn-classif trn-classif-obrig">Prova ${esc(t.codigo_nr)}</span>` : '',
+        t.publico === 'obra' ? '<span class="trn-classif trn-classif-recom">Só obra</span>' : t.publico === 'sede' ? '<span class="trn-classif trn-classif-recom">Só sede</span>' : '',
         t.trilha ? '' : ({
           todos: '<span class="trn-classif trn-classif-obrig">Obrigatória para todos</span>',
           departamentos: '<span class="trn-classif trn-classif-obrig">Obrigatória (departamentos)</span>',
@@ -5862,6 +5924,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <button type="button" class="aulas-btn" data-acao="editar">Editar</button>
           <button type="button" class="aulas-btn" data-acao="atividades" title="Perguntas do fim e atividades durante o vídeo">Atividades</button>
           <button type="button" class="aulas-btn" data-acao="areas">Áreas</button>
+          ${t.trilha ? '' : '<button type="button" class="aulas-btn" data-acao="integracao" title="Coloca uma cópia deste vídeo na trilha de Integração (ex.: só para obra)">Pôr na integração</button>'}
           <button type="button" class="aulas-btn" data-acao="arquivar">${t.arquivado ? 'Republicar' : 'Arquivar'}</button>
           <button type="button" class="aulas-btn aulas-btn-excluir" data-acao="excluir">Excluir</button>
         `}
@@ -5874,10 +5937,41 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         if(acao === 'editar') abrirEditarTreinamento(t);
         if(acao === 'atividades') abrirPerguntaDaAula(t.id, t.tema);
         if(acao === 'areas') abrirAreasDaAula(t.id, t.tema);
+        if(acao === 'integracao') abrirCopiarParaIntegracao(t);
         if(acao === 'arquivar') arquivarAula(t.id, t.arquivado);
         if(acao === 'excluir') excluirAula(t.id);
       }));
       corpo.appendChild(tr);
+    });
+  }
+
+  // Cópia de um vídeo de Cursos na trilha de Integração, para quem escolher.
+  function abrirCopiarParaIntegracao(t){
+    const corpo = abrirDialogoAula('Pôr na integração', t.tema);
+    corpo.innerHTML = `
+      <p>Cria uma cópia deste vídeo (mesmo vídeo, mesmas perguntas e atividades) na trilha de <strong>Integração</strong>. O curso continua no catálogo como está.</p>
+      <label class="admin-field-label" for="cpiPublico">Para quem, na integração</label>
+      <select id="cpiPublico">
+        <option value="obra" selected>Só para quem é de obra</option>
+        <option value="sede">Só para quem é da sede</option>
+        <option value="todos">Todos (sede e obra)</option>
+      </select>
+      <p class="admin-field-hint">O progresso é separado: assistir na integração não conclui o curso, e vice-versa. A aula entra no fim da trilha (a ordem dá para mudar depois).</p>
+      <button type="button" class="admin-modal-submit" id="cpiOk">Pôr na integração</button>
+      <div class="admin-modal-feedback" id="cpiFb" hidden></div>`;
+    const ok = document.getElementById('cpiOk');
+    ok.addEventListener('click', async () => {
+      const fb = document.getElementById('cpiFb');
+      ok.disabled = true;
+      try{
+        const r = await apiPost('api/admin/courses/copiar_para_integracao.php', { course_id: t.id, publico: document.getElementById('cpiPublico').value });
+        fb.hidden = false; fb.className = 'admin-modal-feedback ok';
+        fb.textContent = `Pronto: o vídeo entrou na integração${r.perguntas ? ` com ${r.perguntas} ${r.perguntas === 1 ? 'pergunta' : 'perguntas'}` : ''}.`;
+        carregarTreinamentos();
+      }catch(e){
+        ok.disabled = false;
+        fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = e.message;
+      }
     });
   }
 
