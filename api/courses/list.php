@@ -94,6 +94,12 @@ if (!$areaSlug && $scope === 'recommended' && $type !== 'onboarding') {
     }));
 }
 
+// Curso cujo vídeo essa pessoa já tem na integração não aparece em Cursos.
+$cobertos = array_flip(mse_cursos_cobertos_pela_trilha($pdo, (int) $user['id']));
+if ($cobertos) {
+    $courses = array_values(array_filter($courses, static fn($c) => $c['type'] !== 'curso' || !isset($cobertos[(int) $c['id']])));
+}
+
 // Trilha: cada pessoa vê só a alternativa que lhe foi sorteada dentro
 // de cada grupo. Sem esse filtro ela veria todas as variações do mesmo
 // vídeo, uma atrás da outra.

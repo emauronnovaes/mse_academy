@@ -174,6 +174,11 @@ function mse_vini_aulas_do_departamento(PDO $pdo, ?int $userId, ?string $deptoFi
     }
     $temClassif = mse_tem_coluna($pdo, 'courses', 'obrigatoriedade');
     $publico = $userId ? mse_sql_publico($pdo, mse_usuario_eh_obra($pdo, $userId)) : ''; // só sede / só obra
+    // Curso que ela já faz na integração (mesmo vídeo) não é pendência de curso.
+    $cobertos = $userId ? mse_cursos_cobertos_pela_trilha($pdo, $userId) : [];
+    if ($cobertos) {
+        $publico .= ' AND c.id NOT IN (' . implode(',', $cobertos) . ')';
+    }
     $marc = $chaves ? implode(',', array_fill(0, count($chaves), '?')) : "''";
     if ($recomendadas) {
         // Recomendadas: marcadas "apenas recomendado", para os departamentos relacionados (ou para todos, se nenhum foi marcado).

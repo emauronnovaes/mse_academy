@@ -96,6 +96,32 @@ function mse_sql_publico(PDO $pdo, bool $ehObra, string $alias = 'c'): string
     return mse_tem_coluna($pdo, 'courses', 'somente_obra') ? " AND {$col}somente_obra = 0" : '';
 }
 
+/**
+ * Cursos do catálogo que essa pessoa já tem na trilha de Integração: o mesmo
+ * vídeo (mesmo link do YouTube ou mesmo arquivo) está numa aula de integração
+ * dela. Esses cursos não aparecem em Cursos para ela (nem contam como
+ * pendência), para não ver o mesmo vídeo duas vezes.
+ *
+ * @return int[]
+ */
+function mse_cursos_cobertos_pela_trilha(PDO $pdo, int $userId): array
+{
+    $trilha = array_column(mse_aulas_da_trilha($pdo, $userId), 'id');
+    if (!$trilha) {
+        return [];
+    }
+    $st = $pdo->prepare(
+        "SELECT DISTINCT c.id FROM courses c
+         JOIN courses i ON i.id IN (" . implode(',', array_map('intval', $trilha)) . ")
+              AND i.video_source = c.video_source
+              AND ((c.video_source = 'youtube' AND c.youtube_id <> '' AND c.youtube_id = i.youtube_id)
+                OR (c.video_source <> 'youtube' AND c.video_key <> '' AND c.video_key = i.video_key))
+         WHERE c.type = 'curso'"
+    );
+    $st->execute();
+    return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+}
+
 function mse_aulas_da_trilha(PDO $pdo, int $userId): array
 {
     // O código chega pelo Git antes da migração ser rodada à mão no

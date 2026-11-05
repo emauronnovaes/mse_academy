@@ -6020,7 +6020,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <option value="sede">Só para quem é da sede</option>
         <option value="todos">Todos (sede e obra)</option>
       </select>
-      <p class="admin-field-hint">O progresso é separado: assistir na integração não conclui o curso, e vice-versa. A aula entra no fim da trilha (a ordem dá para mudar depois).</p>
+      <p class="admin-field-hint">Quem tiver o vídeo na integração deixa de vê-lo em Cursos; os outros continuam vendo o curso normalmente. A aula entra no fim da trilha (a ordem dá para mudar em "Ordem da integração").</p>
       <button type="button" class="admin-modal-submit" id="cpiOk">Pôr na integração</button>
       <div class="admin-modal-feedback" id="cpiFb" hidden></div>`;
     const ok = document.getElementById('cpiOk');
@@ -6098,6 +6098,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       <input type="text" id="trnEdTitulo" maxlength="200" value="${esc(t.tema)}">
       <label class="admin-field-label" for="trnEdDescricao">Descrição</label>
       <input type="text" id="trnEdDescricao" value="${esc(t.descricao || '')}">
+      <label class="admin-field-label" for="trnEdPublico">Para quem</label>
+      <select id="trnEdPublico">${[['todos', 'Todos (sede e obra)'], ['sede', 'Só para quem é da sede'], ['obra', 'Só para quem é de obra']].map(([val, txt]) => `<option value="${val}" ${(t.publico || 'todos') === val ? 'selected' : ''}>${txt}</option>`).join('')}</select>
+      <p class="admin-field-hint">Obra = quem entra pelo CPF e é de obra (não alocado na sede). Quem não é para o vídeo não o vê ${t.trilha ? 'na trilha de integração' : 'em Cursos'}.</p>
       ${t.trilha ? '' : `
       <label class="admin-field-label" for="trnEdObrig">É obrigatório?</label>
       <select id="trnEdObrig">
@@ -6156,6 +6159,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         course_id: t.id,
         title: titulo,
         description: document.getElementById('trnEdDescricao').value.trim(),
+        publico: document.getElementById('trnEdPublico').value, // todos / só sede / só obra
       };
       if(trnEstado.avisoOpcional !== false) corpo.aviso_presenca = document.getElementById('trnEdAviso').checked;
       if(!t.trilha){
