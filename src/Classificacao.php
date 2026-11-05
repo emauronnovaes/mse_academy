@@ -29,7 +29,32 @@ const MSE_COLUNAS_CLASSIFICACAO = [
     'tema_status' => 'VARCHAR(10) NULL',
     // Vídeo de integração só para quem é de obra (não alocado na sede).
     'somente_obra' => 'TINYINT(1) NOT NULL DEFAULT 0',
+    // Vídeo (integração ou curso) só para quem é da sede (migração 053).
+    'somente_sede' => 'TINYINT(1) NOT NULL DEFAULT 0',
 ];
+
+const MSE_PUBLICOS = ['todos', 'sede', 'obra'];
+
+/**
+ * Para quem é o vídeo: 'todos', 'sede' ou 'obra', do corpo ("publico", ou o
+ * antigo "somente_obra"). null = não veio.
+ *
+ * @return array{somente_obra:int, somente_sede:int}|null
+ */
+function mse_ler_publico(array $input): ?array
+{
+    if (array_key_exists('publico', $input)) {
+        $p = (string) $input['publico'];
+        if (!in_array($p, MSE_PUBLICOS, true)) {
+            mse_error('publico precisa ser "todos", "sede" ou "obra".', 422);
+        }
+    } elseif (array_key_exists('somente_obra', $input)) {
+        $p = !empty($input['somente_obra']) ? 'obra' : 'todos';
+    } else {
+        return null;
+    }
+    return ['somente_obra' => $p === 'obra' ? 1 : 0, 'somente_sede' => $p === 'sede' ? 1 : 0];
+}
 
 const MSE_OBRIGATORIEDADES = ['recomendado', 'departamentos', 'todos'];
 

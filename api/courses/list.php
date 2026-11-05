@@ -47,7 +47,7 @@ $sql = "SELECT c.id, c.title, c.description, c.youtube_id, c.video_source, c.dur
                    . (mse_tem_coluna($pdo, 'quiz_questions', 'momento_seg') ? ' AND q.momento_seg IS NULL' : '') . ") AS tem_quiz
         FROM courses c
         LEFT JOIN areas a ON a.id = c.area_id
-        WHERE c.is_published = 1";
+        WHERE c.is_published = 1" . mse_sql_publico($pdo, mse_usuario_eh_obra($pdo, (int) $user['id'])); // só sede / só obra
 $params = [];
 
 if ($type === 'onboarding' || $type === 'curso') {

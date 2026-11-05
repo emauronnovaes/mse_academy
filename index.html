@@ -119,10 +119,15 @@
         <option value="onboarding">Integração (trilha obrigatória)</option>
       </select>
       <p class="admin-field-hint" id="videoModalOndeAparece"></p>
-      <label class="admin-check" id="videoModalSoObraWrap" hidden>
-        <input type="checkbox" id="videoModalSoObra">
-        Só para quem é de obra e entra pelo CPF (não aparece para quem entra por e-mail nem para quem é alocado na sede)
-      </label>
+      <div id="videoModalPublicoWrap">
+        <label class="admin-field-label" for="videoModalPublico">Para quem</label>
+        <select id="videoModalPublico">
+          <option value="todos">Todos (sede e obra)</option>
+          <option value="sede">Só para quem é da sede</option>
+          <option value="obra">Só para quem é de obra</option>
+        </select>
+        <p class="admin-field-hint">Obra = quem entra pelo CPF e é de obra (não alocado na sede). Os outros são da sede.</p>
+      </div>
     </div>
 
     <label class="admin-field-label" for="videoModalTitulo">Título</label>
@@ -736,7 +741,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261030a"></script>
+<script src="script.js?v=20261105a"></script>
 
 </body>
 </html>

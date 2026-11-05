@@ -87,6 +87,7 @@ $stmt = $pdo->prepare(
             ' . ($temClassif ? 'c.palavras_chave, c.obrigatoriedade, c.tema_sugerido, c.tema_status'
                              : 'NULL AS palavras_chave, NULL AS obrigatoriedade, NULL AS tema_sugerido, NULL AS tema_status') . ',
             ' . (mse_tem_coluna($pdo, 'courses', 'somente_obra') ? 'c.somente_obra' : '0 AS somente_obra') . ',
+            ' . (mse_tem_coluna($pdo, 'courses', 'somente_sede') ? 'c.somente_sede' : '0 AS somente_sede') . ',
             u.name AS autor_nome, u.email AS autor_email, u.cargo AS autor_cargo,
             d.name AS decidido_por_nome
      FROM courses c
@@ -176,5 +177,7 @@ $resposta['video'] = [
     'tema_sugerido' => $c['tema_sugerido'],
     'tema_status' => $c['tema_status'],
     'somente_obra' => (bool) $c['somente_obra'],
+    'somente_sede' => (bool) $c['somente_sede'],
+    'publico' => $c['somente_obra'] ? 'obra' : ($c['somente_sede'] ? 'sede' : 'todos'),
 ];
 mse_json($resposta);

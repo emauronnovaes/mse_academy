@@ -61,6 +61,41 @@ function mse_cargo_matches_course(PDO $pdo, string $cargo, int $courseId): bool
  *
  * @return array<int, array{id:int, obrigatorio:int, order_index:int}>
  */
+/**
+ * A pessoa é de OBRA (senão, é da sede)? Só quem ENTRA PELO CPF (não por
+ * e-mail), é de obra e NÃO está alocado na sede. users.eh_obra vem da ficha;
+ * users.login_por_cpf, do login (para quem ainda não tem essa marca, vale o
+ * e-mail interno de quem não tem e-mail).
+ */
+function mse_usuario_eh_obra(PDO $pdo, int $userId): bool
+{
+    if (!mse_tem_coluna($pdo, 'users', 'eh_obra')) {
+        return false;
+    }
+    $temLoginCpf = mse_tem_coluna($pdo, 'users', 'login_por_cpf');
+    $st = $pdo->prepare(
+        'SELECT eh_obra, ' . ($temLoginCpf ? "COALESCE(login_por_cpf, email LIKE '%@sem-email.mse.local')" : "email LIKE '%@sem-email.mse.local'")
+        . ' AS por_cpf FROM users WHERE id = ?'
+    );
+    $st->execute([$userId]);
+    $u = $st->fetch() ?: ['eh_obra' => 0, 'por_cpf' => 0];
+    return (int) $u['eh_obra'] === 1 && (int) $u['por_cpf'] === 1;
+}
+
+/**
+ * Trecho de WHERE que tira os vídeos que não são para essa pessoa: quem é de
+ * obra não vê os "só para sede"; quem é da sede não vê os "só para obra".
+ * Vale para integração e cursos. $alias: 'c' -> "c.somente_obra"; '' -> "somente_obra".
+ */
+function mse_sql_publico(PDO $pdo, bool $ehObra, string $alias = 'c'): string
+{
+    $col = $alias !== '' ? $alias . '.' : '';
+    if ($ehObra) {
+        return mse_tem_coluna($pdo, 'courses', 'somente_sede') ? " AND {$col}somente_sede = 0" : '';
+    }
+    return mse_tem_coluna($pdo, 'courses', 'somente_obra') ? " AND {$col}somente_obra = 0" : '';
+}
+
 function mse_aulas_da_trilha(PDO $pdo, int $userId): array
 {
     // O código chega pelo Git antes da migração ser rodada à mão no
@@ -75,30 +110,15 @@ function mse_aulas_da_trilha(PDO $pdo, int $userId): array
     $temSorteio = isset($colunas['grupo_sorteio'])
         && $pdo->query("SHOW TABLES LIKE 'user_sorteio_aula'")->fetch() !== false;
     $temObrigatorio = isset($colunas['obrigatorio']);
-    // Vídeo marcado "só para obra": só entra na trilha de quem ENTRA PELO CPF
-    // (não por e-mail), é de obra e NÃO está alocado na sede. users.eh_obra
-    // vem da ficha; users.login_por_cpf, do login (para quem ainda não tem
-    // essa marca, vale o e-mail interno de quem não tem e-mail).
-    $temObra = isset($colunas['somente_obra']);
-    $ehObra = false;
-    if ($temObra && mse_tem_coluna($pdo, 'users', 'eh_obra')) {
-        $temLoginCpf = mse_tem_coluna($pdo, 'users', 'login_por_cpf');
-        $st = $pdo->prepare(
-            'SELECT eh_obra, ' . ($temLoginCpf ? "COALESCE(login_por_cpf, email LIKE '%@sem-email.mse.local')" : "email LIKE '%@sem-email.mse.local'")
-            . ' AS por_cpf FROM users WHERE id = ?'
-        );
-        $st->execute([$userId]);
-        $u = $st->fetch() ?: ['eh_obra' => 0, 'por_cpf' => 0];
-        $ehObra = (int) $u['eh_obra'] === 1 && (int) $u['por_cpf'] === 1;
-    }
+    // Vídeo "só para obra" / "só para sede" (ver mse_usuario_eh_obra).
+    $ehObra = mse_usuario_eh_obra($pdo, $userId);
 
     $stmt = $pdo->query(
         "SELECT id, order_index,
                 " . ($temSorteio ? 'grupo_sorteio' : 'NULL AS grupo_sorteio') . ",
                 " . ($temObrigatorio ? 'obrigatorio' : '1 AS obrigatorio') . "
          FROM courses
-         WHERE type = 'onboarding' AND is_published = 1"
-         . ($temObra && !$ehObra ? ' AND somente_obra = 0' : '') . "
+         WHERE type = 'onboarding' AND is_published = 1" . mse_sql_publico($pdo, $ehObra, '') . "
          ORDER BY order_index ASC, id ASC"
     );
     $todas = $stmt->fetchAll();
@@ -165,16 +185,18 @@ function mse_integracao_por_pessoa(PDO $pdo): array
     $temSorteio = mse_tem_coluna($pdo, 'courses', 'grupo_sorteio') && mse_tem_tabela($pdo, 'user_sorteio_aula');
     $temObrigatorio = mse_tem_coluna($pdo, 'courses', 'obrigatorio');
     $temObra = mse_tem_coluna($pdo, 'courses', 'somente_obra') && mse_tem_coluna($pdo, 'users', 'eh_obra');
+    $temSede = mse_tem_coluna($pdo, 'courses', 'somente_sede') && mse_tem_coluna($pdo, 'users', 'eh_obra');
 
     $aulas = $pdo->query(
         'SELECT id, ' . ($temSorteio ? 'grupo_sorteio' : 'NULL AS grupo_sorteio') . ', '
-        . ($temObra ? 'somente_obra' : '0 AS somente_obra')
+        . ($temObra ? 'somente_obra' : '0 AS somente_obra') . ', '
+        . ($temSede ? 'somente_sede' : '0 AS somente_sede')
         . " FROM courses WHERE type = 'onboarding' AND is_published = 1"
         . ($temObrigatorio ? ' AND obrigatorio = 1' : '')
     )->fetchAll();
 
     $ehObra = [];
-    if ($temObra) {
+    if ($temObra || $temSede) {
         $porCpf = mse_tem_coluna($pdo, 'users', 'login_por_cpf')
             ? "COALESCE(login_por_cpf, email LIKE '%@sem-email.mse.local')" : "email LIKE '%@sem-email.mse.local'";
         foreach ($pdo->query("SELECT id FROM users WHERE eh_obra = 1 AND {$porCpf} = 1") as $u) {
@@ -202,7 +224,7 @@ function mse_integracao_por_pessoa(PDO $pdo): array
         $ultima = '';
         $grupos = [];
         foreach ($aulas as $a) {
-            if ((int) $a['somente_obra'] === 1 && !$obra) {
+            if (((int) $a['somente_obra'] === 1 && !$obra) || ((int) $a['somente_sede'] === 1 && $obra)) {
                 continue;
             }
             $id = (int) $a['id'];

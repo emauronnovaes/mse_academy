@@ -173,6 +173,7 @@ function mse_vini_aulas_do_departamento(PDO $pdo, ?int $userId, ?string $deptoFi
         }
     }
     $temClassif = mse_tem_coluna($pdo, 'courses', 'obrigatoriedade');
+    $publico = $userId ? mse_sql_publico($pdo, mse_usuario_eh_obra($pdo, $userId)) : ''; // só sede / só obra
     $marc = $chaves ? implode(',', array_fill(0, count($chaves), '?')) : "''";
     if ($recomendadas) {
         // Recomendadas: marcadas "apenas recomendado", para os departamentos relacionados (ou para todos, se nenhum foi marcado).
@@ -185,7 +186,7 @@ function mse_vini_aulas_do_departamento(PDO $pdo, ?int $userId, ?string $deptoFi
             : '1 = 1';
         $st = $pdo->prepare(
             "SELECT c.id FROM courses c
-             WHERE c.is_published = 1 AND c.type <> 'onboarding' AND c.obrigatoriedade = 'recomendado' AND {$existeDeptos}
+             WHERE c.is_published = 1 AND c.type <> 'onboarding' AND c.obrigatoriedade = 'recomendado' AND {$existeDeptos}{$publico}
              ORDER BY c.order_index ASC, c.id ASC"
         );
         $st->execute($temTabelaDeptos ? array_keys($chaves) : []);
@@ -194,7 +195,7 @@ function mse_vini_aulas_do_departamento(PDO $pdo, ?int $userId, ?string $deptoFi
     // Obrigatórias: as do departamento e as "obrigatório para todos". Recomendadas ficam de fora daqui.
     $st = $pdo->prepare(
         "SELECT c.id FROM courses c
-         WHERE c.is_published = 1 AND c.type <> 'onboarding' AND (
+         WHERE c.is_published = 1 AND c.type <> 'onboarding'{$publico} AND (
                (EXISTS (SELECT 1 FROM course_departamentos d WHERE d.course_id = c.id AND d.departamento_norm IN ({$marc}))"
         . ($temClassif ? " AND (c.obrigatoriedade IS NULL OR c.obrigatoriedade = 'departamentos'))
                OR c.obrigatoriedade = 'todos'" : ')') . "
