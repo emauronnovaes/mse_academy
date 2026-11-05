@@ -4952,6 +4952,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     // Em Pendentes e Concluíram o status já está decidido pela aba.
     document.getElementById('trnCampoStatus').hidden = visao !== 'admitidos';
     document.getElementById('trnNovoVideo').hidden = porPessoa || admitidos || trnEstado.modo === 'relatorios';
+    document.getElementById('trnOrdemIntegracao').hidden = document.getElementById('trnNovoVideo').hidden;
     const dica = document.querySelector('#treinamentosTela .trn-dica');
     if(dica) dica.textContent = admitidos
       ? 'Aqui as datas filtram pela data de admissão (sem datas: últimos 30 dias). A busca filtra por nome, CPF, e-mail, cargo, departamento, obra ou gerente.'
@@ -5945,6 +5946,69 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     });
   }
 
+  // Ordem dos vídeos da trilha de Integração: setas para subir/descer e salvar.
+  async function abrirOrdemIntegracao(){
+    const corpo = abrirDialogoAula('Ordem da integração', 'A pessoa assiste nesta ordem; cada vídeo só abre depois dos obrigatórios de cima', true);
+    corpo.innerHTML = '<p>Carregando...</p>';
+    let aulas;
+    try{
+      aulas = (await apiFetch('api/admin/courses/ordem_integracao.php')).aulas || [];
+    }catch(e){
+      corpo.innerHTML = `<p class="trn-vazio-lista">Não foi possível carregar: ${esc(e.message)}</p>`;
+      return;
+    }
+    if(!aulas.length){
+      corpo.innerHTML = '<p class="trn-vazio-lista">Nenhum vídeo na integração.</p>';
+      return;
+    }
+    const original = aulas.map(a => a.id).join(',');
+    const movidos = new Set();
+    const desenhar = () => {
+      const mudou = aulas.map(a => a.id).join(',') !== original;
+      corpo.innerHTML = `
+        <ol class="oi-lista">${aulas.map((a, i) => `
+          <li class="oi-item${movidos.has(a.id) ? ' is-movido' : ''}">
+            <span class="oi-num">${i + 1}</span>
+            <span class="oi-titulo"><strong>${esc(a.titulo)}</strong>
+              ${a.publicada ? '' : ' <span class="aulas-badge">arquivada</span>'}
+              ${a.publico === 'obra' ? ' <span class="trn-classif trn-classif-recom">Só obra</span>' : a.publico === 'sede' ? ' <span class="trn-classif trn-classif-recom">Só sede</span>' : ''}
+              ${a.obrigatorio ? '' : ' <span class="trn-classif trn-classif-sem">Opcional</span>'}
+              ${a.grupo_sorteio ? `<span class="trn-sub">sorteio: ${esc(a.grupo_sorteio)}</span>` : ''}</span>
+            <span class="oi-setas">
+              <button type="button" data-oi="subir" data-i="${i}" ${i === 0 ? 'disabled' : ''} title="Subir" aria-label="Subir ${esc(a.titulo)}">↑</button>
+              <button type="button" data-oi="descer" data-i="${i}" ${i === aulas.length - 1 ? 'disabled' : ''} title="Descer" aria-label="Descer ${esc(a.titulo)}">↓</button>
+            </span>
+          </li>`).join('')}
+        </ol>
+        <p class="admin-field-hint">Quem já concluiu um vídeo continua com ele concluído. Mudar a ordem pode travar, para quem está no meio da trilha, um vídeo que agora ficou depois de outro que ela ainda não fez.</p>
+        <button type="button" class="admin-modal-submit" id="oiSalvar" ${mudou ? '' : 'disabled'}>Salvar ordem</button>
+        <div class="admin-modal-feedback" id="oiFb" hidden></div>`;
+      corpo.querySelectorAll('[data-oi]').forEach(b => b.addEventListener('click', () => {
+        const i = Number(b.dataset.i);
+        const j = b.dataset.oi === 'subir' ? i - 1 : i + 1;
+        [aulas[i], aulas[j]] = [aulas[j], aulas[i]];
+        movidos.add(aulas[j].id);
+        desenhar();
+        const foco = corpo.querySelector(`[data-oi="${b.dataset.oi}"][data-i="${j}"]`);
+        if(foco && !foco.disabled) foco.focus();
+      }));
+      const salvar = document.getElementById('oiSalvar');
+      salvar.addEventListener('click', async () => {
+        const fb = document.getElementById('oiFb');
+        salvar.disabled = true;
+        try{
+          await apiPost('api/admin/courses/ordem_integracao.php', { ids: aulas.map(a => a.id) });
+          fb.hidden = false; fb.className = 'admin-modal-feedback ok'; fb.textContent = 'Ordem salva.';
+          carregarTreinamentos();
+        }catch(e){
+          salvar.disabled = false;
+          fb.hidden = false; fb.className = 'admin-modal-feedback erro'; fb.textContent = e.message;
+        }
+      });
+    };
+    desenhar();
+  }
+
   // Cópia de um vídeo de Cursos na trilha de Integração, para quem escolher.
   function abrirCopiarParaIntegracao(t){
     const corpo = abrirDialogoAula('Pôr na integração', t.tema);
@@ -6365,6 +6429,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       carregarTreinamentos();
     }));
     document.getElementById('trnNovoVideo').addEventListener('click', openVideoModal);
+    document.getElementById('trnOrdemIntegracao').addEventListener('click', abrirOrdemIntegracao);
     document.getElementById('trnAdmCsv').addEventListener('click', admBaixarCsv);
     document.getElementById('trnAdmSync').addEventListener('click', admAtualizarBanco);
     document.getElementById('trnConsultarFicha').addEventListener('click', abrirConsultaFicha);

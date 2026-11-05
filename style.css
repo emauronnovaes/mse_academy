@@ -2010,6 +2010,15 @@
   .reh-aula{ display:flex; align-items:flex-start; gap:10px; padding:7px 0; border-top:1px solid var(--line); cursor:pointer; }
   .reh-aulas .reh-aula input{ width:auto; padding:0; margin:3px 0 0; border:0; flex:none; }
   .reh-aula > span{ flex:1; min-width:0; }
+  .oi-lista{ list-style:none; margin:0 0 14px; padding:0; border:1.5px solid var(--line); border-radius:10px; }
+  .oi-item{ display:flex; align-items:center; gap:10px; padding:8px 12px; border-top:1px solid var(--line); }
+  .oi-item:first-child{ border-top:0; }
+  .oi-item.is-movido{ background:#FFF7E6; }
+  .oi-num{ width:26px; font-weight:700; color:var(--steel); text-align:right; flex:none; }
+  .oi-titulo{ flex:1; min-width:0; }
+  .oi-setas{ display:flex; gap:4px; flex:none; }
+  .oi-setas button{ width:32px; height:30px; border:1.5px solid var(--line); border-radius:6px; background:#fff; cursor:pointer; font-size:14px; }
+  .oi-setas button:disabled{ opacity:0.35; cursor:default; }
 
   /* Adicionar vídeo: mais largo, com a prévia do vídeo e as perguntas */
   #videoModalOverlay .admin-modal-wide{ max-width:880px; }
