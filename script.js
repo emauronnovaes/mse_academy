@@ -6100,7 +6100,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       <input type="text" id="trnEdDescricao" value="${esc(t.descricao || '')}">
       <label class="admin-field-label" for="trnEdPublico">Para quem</label>
       <select id="trnEdPublico">${[['todos', 'Todos (sede e obra)'], ['sede', 'Só para quem é da sede'], ['obra', 'Só para quem é de obra']].map(([val, txt]) => `<option value="${val}" ${(t.publico || 'todos') === val ? 'selected' : ''}>${txt}</option>`).join('')}</select>
-      <p class="admin-field-hint">Obra = quem entra pelo CPF e é de obra (não alocado na sede). Quem não é para o vídeo não o vê ${t.trilha ? 'na trilha de integração' : 'em Cursos'}.</p>
+      <p class="admin-field-hint">Obra = quem a ficha do Portal diz que é de obra (entrando por CPF ou e-mail), menos os alocados na sede. Quem não é para o vídeo não o vê ${t.trilha ? 'na trilha de integração' : 'em Cursos'}.</p>
       ${t.trilha ? '' : `
       <label class="admin-field-label" for="trnEdObrig">É obrigatório?</label>
       <select id="trnEdObrig">

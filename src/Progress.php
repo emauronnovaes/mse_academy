@@ -62,24 +62,18 @@ function mse_cargo_matches_course(PDO $pdo, string $cargo, int $courseId): bool
  * @return array<int, array{id:int, obrigatorio:int, order_index:int}>
  */
 /**
- * A pessoa é de OBRA (senão, é da sede)? Só quem ENTRA PELO CPF (não por
- * e-mail), é de obra e NÃO está alocado na sede. users.eh_obra vem da ficha;
- * users.login_por_cpf, do login (para quem ainda não tem essa marca, vale o
- * e-mail interno de quem não tem e-mail).
+ * A pessoa é de OBRA (senão, é da sede)? Pela ficha do Portal (users.eh_obra):
+ * tem obra e NÃO está alocada na sede. Vale tanto para quem entra pelo CPF
+ * quanto por e-mail (tem gente de obra com e-mail).
  */
 function mse_usuario_eh_obra(PDO $pdo, int $userId): bool
 {
     if (!mse_tem_coluna($pdo, 'users', 'eh_obra')) {
         return false;
     }
-    $temLoginCpf = mse_tem_coluna($pdo, 'users', 'login_por_cpf');
-    $st = $pdo->prepare(
-        'SELECT eh_obra, ' . ($temLoginCpf ? "COALESCE(login_por_cpf, email LIKE '%@sem-email.mse.local')" : "email LIKE '%@sem-email.mse.local'")
-        . ' AS por_cpf FROM users WHERE id = ?'
-    );
+    $st = $pdo->prepare('SELECT eh_obra FROM users WHERE id = ?');
     $st->execute([$userId]);
-    $u = $st->fetch() ?: ['eh_obra' => 0, 'por_cpf' => 0];
-    return (int) $u['eh_obra'] === 1 && (int) $u['por_cpf'] === 1;
+    return (int) $st->fetchColumn() === 1;
 }
 
 /**
@@ -223,9 +217,7 @@ function mse_integracao_por_pessoa(PDO $pdo): array
 
     $ehObra = [];
     if ($temObra || $temSede) {
-        $porCpf = mse_tem_coluna($pdo, 'users', 'login_por_cpf')
-            ? "COALESCE(login_por_cpf, email LIKE '%@sem-email.mse.local')" : "email LIKE '%@sem-email.mse.local'";
-        foreach ($pdo->query("SELECT id FROM users WHERE eh_obra = 1 AND {$porCpf} = 1") as $u) {
+        foreach ($pdo->query('SELECT id FROM users WHERE eh_obra = 1') as $u) { // mesma regra de mse_usuario_eh_obra
             $ehObra[(int) $u['id']] = true;
         }
     }
