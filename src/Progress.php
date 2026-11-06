@@ -106,13 +106,64 @@ function mse_cursos_cobertos_pela_trilha(PDO $pdo, int $userId): array
     }
     $st = $pdo->prepare(
         "SELECT DISTINCT c.id FROM courses c
-         JOIN courses i ON i.id IN (" . implode(',', array_map('intval', $trilha)) . ")
-              AND i.video_source = c.video_source
-              AND ((c.video_source = 'youtube' AND c.youtube_id <> '' AND c.youtube_id = i.youtube_id)
-                OR (c.video_source <> 'youtube' AND c.video_key <> '' AND c.video_key = i.video_key))
+         JOIN courses i ON i.id IN (" . implode(',', array_map('intval', $trilha)) . ") AND " . mse_sql_mesmo_video('c', 'i') . "
          WHERE c.type = 'curso'"
     );
     $st->execute();
+    return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/** Condição SQL: as aulas $a e $b usam o mesmo vídeo (mesmo link do YouTube ou mesmo arquivo). */
+function mse_sql_mesmo_video(string $a, string $b): string
+{
+    return "{$b}.video_source = {$a}.video_source
+              AND (({$a}.video_source = 'youtube' AND {$a}.youtube_id <> '' AND {$a}.youtube_id = {$b}.youtube_id)
+                OR ({$a}.video_source <> 'youtube' AND {$a}.video_key <> '' AND {$a}.video_key = {$b}.video_key))";
+}
+
+/**
+ * Quem concluiu um curso conta como tendo concluído a aula da integração com o
+ * mesmo vídeo (ex.: NR-06 assistida em Cursos antes de ir para a integração da
+ * obra). Grava a conclusão na aula da integração, com a data do curso. Quem não
+ * assistiu continua devendo a aula da integração.
+ *
+ * Sem $userId vale para todo mundo.
+ */
+function mse_sincronizar_mesmo_video(PDO $pdo, ?int $userId = null): void
+{
+    $soEla = $userId ? ' AND p.user_id = ' . (int) $userId : '';
+    $origem = "SELECT p.user_id, i.id AS course_id, MIN(COALESCE(p.completed_at, p.updated_at)) AS concluido_em
+               FROM user_course_progress p
+               JOIN courses c ON c.id = p.course_id AND c.type = 'curso'
+               JOIN courses i ON i.type = 'onboarding' AND " . mse_sql_mesmo_video('c', 'i') . "
+               WHERE p.status = 'concluido'{$soEla}
+               GROUP BY p.user_id, i.id";
+    try {
+        // Começou a aula da integração (ou foi resetada) mas já tinha concluído o curso: conclui.
+        $pdo->exec(
+            "UPDATE user_course_progress u
+             JOIN ({$origem}) o ON o.user_id = u.user_id AND o.course_id = u.course_id
+             SET u.status = 'concluido', u.watched_pct = 100, u.completed_at = o.concluido_em
+             WHERE u.status <> 'concluido'"
+        );
+        // Nunca abriu a aula da integração: cria a conclusão.
+        $pdo->exec(
+            "INSERT IGNORE INTO user_course_progress (user_id, course_id, status, watched_pct, completed_at)
+             SELECT o.user_id, o.course_id, 'concluido', 100, o.concluido_em FROM ({$origem}) o"
+        );
+    } catch (Throwable $e) {
+        error_log('[mesmo_video] ' . $e->getMessage());
+    }
+}
+
+/** Aulas da outra trilha (curso <-> integração) com o mesmo vídeo desta. @return int[] */
+function mse_aulas_mesmo_video(PDO $pdo, int $courseId): array
+{
+    $st = $pdo->prepare(
+        "SELECT o.id FROM courses c JOIN courses o ON o.id <> c.id AND o.type <> c.type AND " . mse_sql_mesmo_video('c', 'o') . "
+         WHERE c.id = ?"
+    );
+    $st->execute([$courseId]);
     return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
 }
 
@@ -202,6 +253,7 @@ function mse_aulas_da_trilha(PDO $pdo, int $userId): array
  */
 function mse_integracao_por_pessoa(PDO $pdo): array
 {
+    mse_sincronizar_mesmo_video($pdo); // curso concluído conta na aula da integração com o mesmo vídeo
     $temSorteio = mse_tem_coluna($pdo, 'courses', 'grupo_sorteio') && mse_tem_tabela($pdo, 'user_sorteio_aula');
     $temObrigatorio = mse_tem_coluna($pdo, 'courses', 'obrigatorio');
     $temObra = mse_tem_coluna($pdo, 'courses', 'somente_obra') && mse_tem_coluna($pdo, 'users', 'eh_obra');

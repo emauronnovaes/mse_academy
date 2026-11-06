@@ -128,6 +128,7 @@ function mse_vini_registrar_evento(int $userId, string $tipo, ?array $detalhe = 
 function mse_vini_cursos_obrigatorios(PDO $pdo, ?int $userId): array
 {
     if ($userId) {
+        mse_sincronizar_mesmo_video($pdo, $userId); // curso concluído conta na aula da integração com o mesmo vídeo
         $ids = array_column(array_filter(mse_aulas_da_trilha($pdo, $userId), static fn($c) => $c['obrigatorio']), 'id');
     } else {
         $temObrig = mse_tem_coluna($pdo, 'courses', 'obrigatorio');

@@ -2349,14 +2349,17 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       return;
     }
     const feitas = new Set(catalogProgress.completed);
-    const falta = courses.filter(c => c.nivel && !feitas.has(c.id));
+    // Aula da integração que veio de um curso cobrado (ex.: NR-06 da obra) entra junto.
+    const faltaTrilha = ONBOARDING.filter(m => m.nivel && !onbProgress.completed.includes(m.id))
+      .map(m => ({ id: m.id, title: m.title, label: 'Integração', nivel: m.nivel, trilha: true }));
+    const falta = courses.filter(c => c.nivel && !feitas.has(c.id)).concat(faltaTrilha);
     if(!falta.length) return;
     const obrig = falta.filter(c => c.nivel === 'obrigatoria');
     const recom = falta.filter(c => c.nivel === 'recomendada');
     const bloco = (titulo, classe, lista) => !lista.length ? '' : `
       <p class="suas-aulas-grupo ${classe}">${titulo} (${lista.length})</p>
       <ul class="suas-aulas-itens">${lista.map(c => `
-        <li><button type="button" class="suas-aulas-item ${classe}" data-id="${c.id}">
+        <li><button type="button" class="suas-aulas-item ${classe}" data-id="${c.id}"${c.trilha ? ' data-trilha="1"' : ''}>
           <strong>${escaparHtml(c.title)}</strong><span>${escaparHtml(c.label)}</span>
         </button></li>`).join('')}
       </ul>`;
@@ -2367,8 +2370,14 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const fechar = () => { overlay.hidden = true; };
     document.getElementById('suasAulasFechar').onclick = fechar;
     overlay.querySelectorAll('.suas-aulas-item').forEach(b => b.addEventListener('click', () => {
-      const c = courses.find(x => x.id === Number(b.dataset.id));
       fechar();
+      if(b.dataset.trilha){ // a integração segue a ordem da trilha
+        showView('integracao');
+        const modulo = document.getElementById('onbActiveModule');
+        if(modulo) modulo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      const c = courses.find(x => x.id === Number(b.dataset.id));
       if(c) openVideoModal(c);
     }));
   }
@@ -2411,6 +2420,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       youtubeId: c.youtube_id,
       temQuiz: !!c.tem_quiz,
       obrigatorio: c.obrigatorio !== false,
+      // Mesmo vídeo de um curso obrigatório/recomendado para a pessoa (ex.: NR-06 da obra).
+      nivel: c.nivel || null,
       videoSource: c.video_source,
       questions: [], // preenchido ao abrir o módulo (vem do detail.php)
     }));

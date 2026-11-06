@@ -9,6 +9,9 @@ mse_cors();
 $user = mse_require_auth();
 
 $pdo = mse_db();
+// Curso já concluído conta na aula da integração com o mesmo vídeo (ex.: NR-06 que virou integração da obra).
+require_once __DIR__ . '/../../src/Progress.php';
+mse_sincronizar_mesmo_video($pdo, (int) $user['id']);
 $stmt = $pdo->prepare(
     'SELECT course_id, status, watched_pct, completed_at
      FROM user_course_progress

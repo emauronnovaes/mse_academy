@@ -137,7 +137,7 @@ if ($courses && mse_tem_tabela($pdo, 'course_departamentos')) {
     foreach ($stmt->fetchAll() as $linha) {
         $deptosPorCurso[(int) $linha['course_id']][$linha['departamento_norm']] = $linha['departamento'];
     }
-    if ($deptosPorCurso) {
+    if ($deptosPorCurso || $type === 'onboarding') {
         $cols = ['a.name AS area_nome'];
         if (mse_tem_coluna($pdo, 'users', 'setor_portal')) {
             $cols[] = 'u.setor_portal';
@@ -148,6 +148,32 @@ if ($courses && mse_tem_tabela($pdo, 'course_departamentos')) {
             if (trim((string) $valor) !== '') {
                 $meusDeptos[mse_departamento_chave((string) $valor)] = true;
             }
+        }
+    }
+}
+
+// Aula da integração com o mesmo vídeo de um curso obrigatório/recomendado para
+// esta pessoa (ex.: NR-06 da obra): continua sendo cobrada no aviso "Suas aulas".
+$nivelDaIntegracao = [];
+if ($type === 'onboarding' && $courses && $temClassif) {
+    $idsTrilha = implode(',', array_map(static fn($c) => (int) $c['id'], $courses));
+    $temDeptos = mse_tem_tabela($pdo, 'course_departamentos');
+    $st = $pdo->query(
+        "SELECT i.id AS aula, c.id AS curso, c.obrigatoriedade FROM courses i
+         JOIN courses c ON c.type = 'curso' AND c.is_published = 1 AND " . mse_sql_mesmo_video('c', 'i') . "
+         WHERE i.id IN ({$idsTrilha})"
+    );
+    foreach ($st->fetchAll() as $par) {
+        $deptos = [];
+        if ($temDeptos) {
+            $sd = $pdo->prepare('SELECT departamento_norm, departamento FROM course_departamentos WHERE course_id = ?');
+            $sd->execute([(int) $par['curso']]);
+            $deptos = $sd->fetchAll(PDO::FETCH_KEY_PAIR);
+        }
+        $nivel = mse_nivel_da_aula($par['obrigatoriedade'], $deptos, $meusDeptos);
+        $aula = (int) $par['aula'];
+        if ($nivel === 'obrigatoria' || ($nivel && !isset($nivelDaIntegracao[$aula]))) {
+            $nivelDaIntegracao[$aula] = $nivel;
         }
     }
 }
@@ -183,7 +209,7 @@ foreach ($courses as &$course) {
     $course['areas_obrigatorias'] = $restrito;
     $course['departamentos_obrigatorios'] = array_values($deptos);
     // Para ESTA pessoa: 'obrigatoria', 'recomendada' ou null (catálogo; a trilha tem regra própria).
-    $course['nivel'] = $course['type'] === 'curso' ? mse_nivel_da_aula($course['obrigatoriedade'], $deptos, $meusDeptos) : null;
+    $course['nivel'] = $course['type'] === 'curso' ? mse_nivel_da_aula($course['obrigatoriedade'], $deptos, $meusDeptos) : ($nivelDaIntegracao[$course['id']] ?? null);
     $course['palavras_chave'] = $course['palavras_chave'] !== null && $course['palavras_chave'] !== '' ? explode(', ', (string) $course['palavras_chave']) : [];
     unset($course['obrigatoriedade']);
     if ($restrito || $deptos) {

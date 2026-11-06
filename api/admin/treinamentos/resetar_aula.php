@@ -14,6 +14,9 @@ require_once __DIR__ . '/../../../src/Progress.php';
  * (as tentativas ficam gravadas, só não valem mais). O log de check-in/out
  * também fica.
  *
+ * A aula com o mesmo vídeo na outra trilha (o curso e a cópia na integração)
+ * é resetada junto: senão a conclusão de uma voltaria a concluir a outra.
+ *
  * POST {user_id, course_id}
  */
 
@@ -56,9 +59,9 @@ if (mse_garantir_refazer_quiz($pdo)) {
 if (mse_tem_coluna($pdo, 'user_course_progress', 'checkin_em')) {
     $sets[] = 'checkin_em = NULL';
 }
+$ids = array_merge([$courseId], mse_aulas_mesmo_video($pdo, $courseId));
 $params[] = $userId;
-$params[] = $courseId;
-$pdo->prepare('UPDATE user_course_progress SET ' . implode(', ', $sets) . ' WHERE user_id = ? AND course_id = ?')->execute($params);
+$pdo->prepare('UPDATE user_course_progress SET ' . implode(', ', $sets) . ' WHERE user_id = ? AND course_id IN (' . implode(',', $ids) . ')')->execute($params);
 
 error_log(sprintf(
     '[resetar_aula] admin #%d (%s) resetou "%s" de %s (user %d, course %d); antes: status=%s pct=%s concluido=%s',

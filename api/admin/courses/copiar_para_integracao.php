@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../../src/Cors.php';
 require_once __DIR__ . '/../../../src/Response.php';
 require_once __DIR__ . '/../../../src/Auth.php';
 require_once __DIR__ . '/../../../src/Classificacao.php';
+require_once __DIR__ . '/../../../src/Progress.php';
 
 /**
  * Coloca um vídeo de Cursos também na trilha de Integração: cria uma CÓPIA
@@ -12,8 +13,8 @@ require_once __DIR__ . '/../../../src/Classificacao.php';
  * integração, para o público escolhido (padrão: só obra). O curso original
  * continua no catálogo como está.
  *
- * O progresso é separado: assistir a cópia na integração não conclui o curso,
- * e vice-versa.
+ * Quem já concluiu o curso fica com a aula da integração concluída; quem não
+ * concluiu precisa assistir na integração.
  *
  * POST {course_id, publico?: 'todos'|'sede'|'obra'}
  */
@@ -94,5 +95,7 @@ try {
     $pdo->rollBack();
     throw $e;
 }
+
+mse_sincronizar_mesmo_video($pdo);
 
 mse_json(['ok' => true, 'course_id' => $novoId, 'perguntas' => $perguntas]);
