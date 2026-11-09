@@ -38,7 +38,9 @@ $stmt = $pdo->prepare(
             ' . ($temAviso ? 'c.aviso_presenca' : '1 AS aviso_presenca') . ',
             ' . ($temClassif ? 'c.palavras_chave, c.obrigatoriedade, c.tema_sugerido, c.tema_status'
                              : 'NULL AS palavras_chave, NULL AS obrigatoriedade, NULL AS tema_sugerido, NULL AS tema_status') . ',
-            (SELECT COUNT(*) FROM quiz_questions q WHERE q.course_id = c.id) AS total_perguntas
+            (SELECT COUNT(*) FROM quiz_questions q WHERE q.course_id = c.id) AS total_perguntas,
+            (SELECT COUNT(*) FROM user_course_progress p WHERE p.course_id = c.id AND p.user_id <> c.enviado_por
+                AND (p.status = "concluido" OR p.watched_pct > 0)) AS assistiram
      FROM courses c
      LEFT JOIN areas a ON a.id = c.area_id
      WHERE c.enviado_por IS NOT NULL AND c.enviado_por = ?
@@ -73,6 +75,7 @@ foreach ($stmt->fetchAll() as $c) {
         'conteudo_programatico' => $c['conteudo_programatico'],
         'assuntos' => $c['assuntos'],
         'total_perguntas' => (int) $c['total_perguntas'],
+        'assistiram' => (int) $c['assistiram'],
         'palavras_chave' => $c['palavras_chave'] !== null && $c['palavras_chave'] !== '' ? explode(', ', (string) $c['palavras_chave']) : [],
         'obrigatoriedade' => $c['obrigatoriedade'],
         'tema_sugerido' => $c['tema_sugerido'],

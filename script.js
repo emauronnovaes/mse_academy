@@ -7011,6 +7011,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           ${v.status === 'recusado' ? `<span class="mv-motivo">Motivo: ${esc(v.motivo_recusa || 'não informado')}</span>` : ''}
         </div>
         <div class="mv-acoes">
+          <button type="button" class="aulas-btn" data-mv="assistiram">Quem assistiu (${v.assistiram || 0})</button>
           <button type="button" class="aulas-btn" data-mv="editar">Editar</button>
           <button type="button" class="aulas-btn" data-mv="perguntas">Perguntas</button>
           <button type="button" class="adm-remover" data-mv="excluir">Excluir</button>
@@ -7019,6 +7020,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     corpo.querySelectorAll('.mv-item').forEach(el => {
       const v = videos.find(x => x.id === parseInt(el.dataset.id, 10));
+      el.querySelector('[data-mv="assistiram"]').addEventListener('click', () => abrirQuemAssistiuMeuVideo(v));
       el.querySelector('[data-mv="editar"]').addEventListener('click', () => abrirEditarEnvio(v, abrirMeusVideos));
       el.querySelector('[data-mv="perguntas"]').addEventListener('click', () => {
         abrirPerguntaDaAula(v.id, v.titulo);
@@ -7040,6 +7042,55 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         }
       });
     });
+  }
+
+  // Quem assistiu um vídeo que a pessoa enviou, e o que respondeu nas perguntas.
+  async function abrirQuemAssistiuMeuVideo(v){
+    const corpo = abrirDialogoAula('Quem assistiu', v.titulo, true);
+    dgAoFechar = abrirMeusVideos; // ao fechar, volta para a lista
+    corpo.innerHTML = '<p>Carregando...</p>';
+    let d;
+    try{
+      d = await apiFetch('api/meus_videos/assistiram.php?course_id=' + v.id);
+    }catch(e){
+      corpo.innerHTML = `<p class="trn-vazio-lista">Não foi possível carregar: ${esc(e.message)}</p>`;
+      return;
+    }
+    const pessoas = d.pessoas || [];
+    if(!pessoas.length){
+      corpo.innerHTML = '<p class="trn-vazio-lista">Ninguém assistiu este vídeo ainda.</p>';
+      return;
+    }
+    const situacao = p => p.status === 'concluido' ? 'Concluiu' : p.percentual > 0 ? 'Assistindo' : 'Não começou';
+    const acertos = p => p.perguntas.filter(q => q.situacao === 'acertou').length;
+    corpo.innerHTML = `
+      <p class="trn-sub">${pessoas.length} ${pessoas.length === 1 ? 'pessoa' : 'pessoas'}${d.total_perguntas ? ` · ${d.total_perguntas} ${d.total_perguntas === 1 ? 'pergunta' : 'perguntas'}` : ''}</p>
+      <table class="trn-tabela trn-tabela-log">
+        <thead><tr><th>Pessoa</th><th>Assistiu</th><th>Situação</th>${d.total_perguntas ? '<th>Perguntas</th>' : ''}</tr></thead>
+        <tbody>${pessoas.map((p, i) => `
+          <tr>
+            <td><strong>${esc(p.nome)}</strong></td>
+            <td class="trn-nowrap">${p.percentual}%</td>
+            <td class="trn-nowrap">${situacao(p)}${p.concluido_em ? `<span class="trn-sub">${esc(trnFmtDataHora(p.concluido_em))}</span>` : ''}</td>
+            ${d.total_perguntas ? `<td class="trn-nowrap">${acertos(p)} de ${d.total_perguntas} certas
+              <button type="button" class="trn-link mv-ver-resp" data-i="${i}">Ver respostas</button></td>` : ''}
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+    corpo.querySelectorAll('.mv-ver-resp').forEach(b => b.addEventListener('click', () => {
+      const tr = b.closest('tr');
+      const aberta = tr.nextElementSibling && tr.nextElementSibling.classList.contains('trn-resp-linha');
+      if(aberta){
+        tr.nextElementSibling.remove();
+        b.textContent = 'Ver respostas';
+        return;
+      }
+      const linha = document.createElement('tr');
+      linha.className = 'trn-resp-linha';
+      linha.innerHTML = `<td colspan="${tr.children.length}">${trnRespostasHtml(pessoas[Number(b.dataset.i)].perguntas)}</td>`;
+      tr.insertAdjacentElement('afterend', linha);
+      b.textContent = 'Esconder respostas';
+    }));
   }
 
   // ---------- Aviso de vídeo recusado ----------
