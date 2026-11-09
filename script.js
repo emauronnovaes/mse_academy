@@ -3853,7 +3853,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     });
     // Tipo e duração: só admin (a duração sai sozinha da prévia do vídeo).
     document.getElementById('videoModalTipoWrap').hidden = vmParaAprovacao;
-    document.getElementById('videoModalDuracaoWrap').hidden = vmParaAprovacao;
+    vmAtualizarCampoDuracao();
     const hint = document.getElementById('videoModalHint');
     hint.textContent = vmParaAprovacao
       ? 'Preencha as informações abaixo. O vídeo vai para aprovação antes de ficar disponível.'
@@ -3863,11 +3863,20 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
                       || 'Vídeo de integração: aparece igual para todo mundo, na trilha de Integração.'));
   }
 
+  // Minutos só são perguntados para YouTube. Arquivo enviado: a duração vem
+  // do próprio vídeo (o campo só aparece se o navegador não conseguir lê-la).
+  function vmAtualizarCampoDuracao(){
+    const origem = document.getElementById('videoModalOrigem').value;
+    document.getElementById('videoModalDuracaoWrap').hidden =
+      vmParaAprovacao || !(origem === 'youtube' || (origem === 's3' && vmEstado.duracaoFalhou));
+  }
+
   function atualizarVisibilidadeOrigemVideo(){
     const origem = document.getElementById('videoModalOrigem').value;
     document.getElementById('videoModalYoutubeWrap').hidden = origem !== 'youtube';
     document.getElementById('videoModalArquivoWrap').hidden = origem !== 's3';
     document.getElementById('videoModalPlaylistWrap').hidden = origem !== 'playlist';
+    vmAtualizarCampoDuracao();
     // Sortear entre playlists não faz sentido: elas são conteúdo extra,
     // não alternativas de uma mesma aula obrigatória.
     document.getElementById('videoModalSorteioWrap').hidden = true; // grupo de sorteio saiu do formulário
@@ -3988,7 +3997,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // saem a duração, o título (YouTube) e o tempo de cada pergunta. As
   // perguntas são quantas o admin quiser, cada uma no fim ou num minuto e
   // segundo do vídeo — as mesmas do "Atividades" da tela Treinamentos.
-  const vmEstado = { blocos: [], uid: 0, duracaoSeg: 0, player: null, video: null, url: null, ultimaFonte: '' };
+  const vmEstado = { blocos: [], uid: 0, duracaoSeg: 0, duracaoFalhou: false, player: null, video: null, url: null, ultimaFonte: '' };
 
   function vmFmt(seg){
     return String(Math.floor(seg / 60)).padStart(2, '0') + ':' + String(Math.floor(seg % 60)).padStart(2, '0');
@@ -4021,6 +4030,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     vmEstado.video = null;
     if(vmEstado.url){ URL.revokeObjectURL(vmEstado.url); vmEstado.url = null; }
     vmEstado.duracaoSeg = 0;
+    vmEstado.duracaoFalhou = false;
     vmEstado.ultimaFonte = '';
     document.getElementById('videoModalPreviaPlayer').innerHTML = '';
     document.getElementById('videoModalPrevia').hidden = true;
@@ -4031,9 +4041,11 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   function vmDefinirDuracao(seg){
     if(!(seg > 0)) return;
     vmEstado.duracaoSeg = Math.floor(seg);
+    vmEstado.duracaoFalhou = false;
     document.getElementById('videoModalDuracao').value = Math.max(1, Math.round(seg / 60));
+    vmAtualizarCampoDuracao();
     document.getElementById('videoModalPreviaInfo').textContent =
-      `Duração: ${vmFmt(seg)} (preenchida no campo Duração). Pause no ponto em que quer uma pergunta e use "Usar tempo do vídeo".`;
+      `Duração: ${vmFmt(seg)}. Pause no ponto em que quer uma pergunta e use "Usar tempo do vídeo".`;
   }
 
   function vmAtualizarBotoesTempo(){
@@ -4094,6 +4106,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       document.getElementById('videoModalPreviaPlayer').innerHTML = `<video src="${vmEstado.url}" controls playsinline></video>`;
       vmEstado.video = document.querySelector('#videoModalPreviaPlayer video');
       vmEstado.video.addEventListener('loadedmetadata', () => vmDefinirDuracao(vmEstado.video.duration));
+      // Formato que o navegador não abre (ex.: alguns .mov): aí pergunta os minutos.
+      vmEstado.video.addEventListener('error', () => {
+        vmEstado.duracaoFalhou = true;
+        vmAtualizarCampoDuracao();
+        document.getElementById('videoModalPreviaInfo').textContent = 'Não consegui abrir a prévia deste arquivo para ler a duração. Informe a duração em minutos.';
+      });
       vmAtualizarBotoesTempo();
       return;
     }
@@ -4276,8 +4294,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     vmPalavraPendente();
     const titulo = document.getElementById('videoModalTitulo').value.trim();
     const descricao = document.getElementById('videoModalDescricao').value.trim();
-    const duracao = parseInt(document.getElementById('videoModalDuracao').value, 10) || 5;
     const origem = document.getElementById('videoModalOrigem').value;
+    const duracao = origem === 's3' && vmEstado.duracaoSeg > 0
+      ? Math.max(1, Math.round(vmEstado.duracaoSeg / 60)) // lida do próprio arquivo
+      : (parseInt(document.getElementById('videoModalDuracao').value, 10) || 5);
     const arquivo = origem === 's3' ? document.getElementById('videoModalArquivo').files[0] : null;
     const youtubeEntrada = document.getElementById('videoModalYoutubeUrl').value.trim();
     const playlistEntrada = document.getElementById('videoModalPlaylistUrl').value.trim();
@@ -4356,6 +4376,13 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         feedback.textContent = 'Não consegui identificar a playlist nesse link. Cola o link completo (ex: https://youtube.com/playlist?list=PL...) ou só o código depois de "list=".';
         return;
       }
+    }
+
+    if(origem === 's3' && arquivo && !vmEstado.duracaoSeg && !vmEstado.duracaoFalhou){
+      feedback.hidden = false;
+      feedback.className = 'admin-modal-feedback erro';
+      feedback.textContent = 'Espere a prévia do vídeo carregar: é dela que sai a duração.';
+      return;
     }
 
     submitBtn.disabled = true;
@@ -8021,7 +8048,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const btnEnviarVideo = document.getElementById('btnEnviarVideo');
     if(!isAdmin && getRealSessionToken()) mostrarAvisosDeRecusa();
     if(!isAdmin && getRealSessionToken()) atualizarBotaoMeusVideos();
-    if(getRealSessionToken() && window.mseMostrarSuasAulas) setTimeout(window.mseMostrarSuasAulas, 400);
+    // Admin não recebe a cobrança de aulas pendentes.
+    if(getRealSessionToken() && !isAdmin && window.mseMostrarSuasAulas) setTimeout(window.mseMostrarSuasAulas, 400);
     if(btnEnviarVideo && !isAdmin && getRealSessionToken()){
       // Mesma barra do admin, só com este botão (vermelho). O admin pode
       // desabilitar o envio: aí o botão nem aparece (o servidor também recusa).
