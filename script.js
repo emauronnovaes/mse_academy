@@ -7064,6 +7064,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const situacao = p => p.status === 'concluido' ? 'Concluiu' : p.percentual > 0 ? 'Assistindo' : 'Não começou';
     const acertos = p => p.perguntas.filter(q => q.situacao === 'acertou').length;
     corpo.innerHTML = `
+      <div class="reh-barra">
+        <button type="button" class="admin-modal-submit" id="mvPresencaPdf">Baixar lista de presença (PDF)</button>
+      </div>
       <p class="trn-sub">${pessoas.length} ${pessoas.length === 1 ? 'pessoa' : 'pessoas'}${d.total_perguntas ? ` · ${d.total_perguntas} ${d.total_perguntas === 1 ? 'pergunta' : 'perguntas'}` : ''}</p>
       <table class="trn-tabela trn-tabela-log">
         <thead><tr><th>Pessoa</th><th>Assistiu</th><th>Situação</th>${d.total_perguntas ? '<th>Perguntas</th>' : ''}</tr></thead>
@@ -7077,6 +7080,14 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           </tr>`).join('')}
         </tbody>
       </table>`;
+    // O mesmo formulário REH-002-F1 que os admins baixam, só deste vídeo.
+    const btnPdf = document.getElementById('mvPresencaPdf');
+    btnPdf.addEventListener('click', () => trnComBotao(btnPdf, async () => {
+      const lp = await apiFetch('api/meus_videos/presenca.php?course_id=' + v.id);
+      if(!(lp.participantes || []).length) throw new Error('ninguém tem check-in neste vídeo ainda.');
+      await trnBaixarPdf(lpFormularioHtml(lp.treinamento, lp.participantes),
+        trnNomePdf(`lista-presenca-REH-002-F1-${trnSlug(lp.treinamento.tema) || v.id}`), { retrato: true, classe: 'rel-formulario' });
+    }));
     corpo.querySelectorAll('.mv-ver-resp').forEach(b => b.addEventListener('click', () => {
       const tr = b.closest('tr');
       const aberta = tr.nextElementSibling && tr.nextElementSibling.classList.contains('trn-resp-linha');
