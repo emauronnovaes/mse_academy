@@ -26,6 +26,10 @@ const MSE_COLUNAS_APROVACAO = [
     'motivo_recusa' => 'VARCHAR(500) NULL',
     // Quando quem enviou viu o aviso de recusa (o pop-up aparece uma vez só).
     'recusa_vista_em' => 'DATETIME NULL',
+    // Identificação e assunto do e-mail "vídeo para aprovação": a aprovação sai
+    // como RESPOSTA a ele (mesma conversa na caixa de entrada dos admins).
+    'notificacao_message_id' => 'VARCHAR(255) NULL',
+    'notificacao_assunto' => 'VARCHAR(300) NULL',
 ];
 
 /** As colunas existem (ou acabaram de ser criadas)? */

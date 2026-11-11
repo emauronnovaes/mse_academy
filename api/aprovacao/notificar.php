@@ -52,9 +52,16 @@ $dados = mse_email_aprovacao_dados($pdo, $courseId);
 $html = mse_email_aprovacao_html($dados);
 $texto = mse_email_aprovacao_texto($dados);
 
-$resultado = mse_enviar_email($emails, 'Vídeo para aprovação: ' . $curso['title'] . ' · MSE Academy', $html, $texto);
+$assunto = 'Vídeo para aprovação: ' . $curso['title'] . ' · MSE Academy';
+$messageId = mse_email_novo_message_id();
+$resultado = mse_enviar_email($emails, $assunto, $html, $texto, ['message_id' => $messageId]);
 if ($resultado['ok']) {
     $pdo->prepare('UPDATE courses SET notificado_em = NOW() WHERE id = ?')->execute([$courseId]);
+    // Guarda o e-mail enviado: a aprovação sai como resposta a ele (mesma conversa).
+    if (mse_garantir_colunas_aprovacao($pdo)) {
+        $pdo->prepare('UPDATE courses SET notificacao_message_id = ?, notificacao_assunto = ? WHERE id = ?')
+            ->execute([$messageId, mb_substr($assunto, 0, 300), $courseId]);
+    }
 }
 
 // O motivo exato da falha fica no log do servidor e no "Testar e-mail" dos

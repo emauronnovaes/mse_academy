@@ -85,11 +85,26 @@ function mse_disparo_enviar(string $assunto, string $html, string $texto): void
     }
 }
 
+/** Identificação única de um e-mail (cabeçalho Message-ID), já com os <>. */
+function mse_email_novo_message_id(): string
+{
+    $de = trim(mse_env('MAIL_FROM')) ?: trim(mse_env('SMTP_USER'));
+    $dominio = substr(strrchr($de, '@') ?: '@academy.local', 1);
+    return '<' . bin2hex(random_bytes(16)) . "@{$dominio}>";
+}
+
 /**
  * Envia uma mensagem (HTML + texto puro) para uma lista de endereços.
  * Devolve ['ok' => bool, 'erro' => ?string]. Nunca lança exceção.
+ *
+ * $opcoes:
+ *   'message_id'  identificação deste e-mail (mse_email_novo_message_id), para guardar e
+ *                 responder depois;
+ *   'responde_a'  Message-ID de um e-mail já enviado: este sai como resposta a ele, na
+ *                 mesma conversa (In-Reply-To/References). Pela Central de disparos não dá
+ *                 para mandar esses cabeçalhos: aí a conversa se junta só pelo "Re:" do assunto.
  */
-function mse_enviar_email(array $para, string $assunto, string $html, string $texto): array
+function mse_enviar_email(array $para, string $assunto, string $html, string $texto, array $opcoes = []): array
 {
     if (mse_disparo_configurado()) {
         try {
@@ -113,7 +128,8 @@ function mse_enviar_email(array $para, string $assunto, string $html, string $te
 
     $de = trim(mse_env('MAIL_FROM')) ?: trim(mse_env('SMTP_USER'));
     $nomeDe = trim(mse_env('MAIL_FROM_NAME')) ?: 'MSE Academy';
-    $mensagem = mse_email_montar($de, $nomeDe, $para, $assunto, $html, $texto);
+    $mensagem = mse_email_montar($de, $nomeDe, $para, $assunto, $html, $texto,
+        (string) ($opcoes['message_id'] ?? ''), (string) ($opcoes['responde_a'] ?? ''));
 
     try {
         if (trim(mse_env('SMTP_HOST')) !== '') {
@@ -138,19 +154,26 @@ function mse_email_cabecalho_utf8(string $texto): string
     return preg_match('/[^\x20-\x7E]/', $texto) ? '=?UTF-8?B?' . base64_encode($texto) . '?=' : $texto;
 }
 
-function mse_email_montar(string $de, string $nomeDe, array $para, string $assunto, string $html, string $texto): string
+function mse_email_montar(string $de, string $nomeDe, array $para, string $assunto, string $html, string $texto,
+    string $messageId = '', string $respondeA = ''): string
 {
     $limite = 'mse-' . bin2hex(random_bytes(12));
     $dominio = substr(strrchr($de, '@') ?: '@academy.local', 1);
+    $valido = static fn(string $id): bool => (bool) preg_match('/^<[^<>\s]+@[^<>\s]+>$/', $id);
     $cabecalhos = [
         'Date: ' . date('r'),
         'From: ' . mse_email_cabecalho_utf8($nomeDe) . " <{$de}>",
         'To: ' . implode(', ', $para),
         'Subject: ' . mse_email_cabecalho_utf8($assunto),
-        'Message-ID: <' . bin2hex(random_bytes(16)) . "@{$dominio}>",
-        'MIME-Version: 1.0',
-        "Content-Type: multipart/alternative; boundary=\"{$limite}\"",
+        'Message-ID: ' . ($valido($messageId) ? $messageId : '<' . bin2hex(random_bytes(16)) . "@{$dominio}>"),
     ];
+    if ($valido($respondeA)) {
+        // Resposta: Gmail e Outlook juntam na mesma conversa do e-mail original.
+        $cabecalhos[] = 'In-Reply-To: ' . $respondeA;
+        $cabecalhos[] = 'References: ' . $respondeA;
+    }
+    $cabecalhos[] = 'MIME-Version: 1.0';
+    $cabecalhos[] = "Content-Type: multipart/alternative; boundary=\"{$limite}\"";
     $parte = static function (string $tipo, string $conteudo) use ($limite): string {
         return "--{$limite}\r\nContent-Type: {$tipo}; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n"
             . rtrim(chunk_split(base64_encode($conteudo), 76, "\r\n")) . "\r\n";

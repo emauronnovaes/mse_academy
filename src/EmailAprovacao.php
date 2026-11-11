@@ -260,3 +260,53 @@ function mse_email_aprovacao_exemplo(array $admin): array
         'link' => mse_url_academy() . '/',
     ];
 }
+
+
+/**
+ * Resposta ao e-mail "vídeo para aprovação": avisa os admins, na mesma
+ * conversa, que o vídeo foi aprovado (por quem e quando). Só se o aviso
+ * original foi enviado. Nunca lança erro.
+ *
+ * @return array{enviado: bool, erro: ?string}|null null = não havia e-mail para responder
+ */
+function mse_responder_email_aprovado(PDO $pdo, int $courseId, array $admin): ?array
+{
+    require_once __DIR__ . '/Email.php';
+    try {
+        $temId = mse_garantir_colunas_aprovacao($pdo);
+        $st = $pdo->prepare('SELECT c.title, c.notificado_em, '
+            . ($temId ? 'c.notificacao_message_id, c.notificacao_assunto' : 'NULL AS notificacao_message_id, NULL AS notificacao_assunto')
+            . ', u.name AS autor FROM courses c LEFT JOIN users u ON u.id = c.enviado_por WHERE c.id = ?');
+        $st->execute([$courseId]);
+        $c = $st->fetch();
+        if (!$c || $c['notificado_em'] === null) {
+            return null; // o aviso de aprovação nunca saiu: não há o que responder
+        }
+        // Assunto igual ao do original com "Re:" (vídeos avisados antes desta mudança não têm o assunto guardado).
+        $original = trim((string) $c['notificacao_assunto']) ?: 'Vídeo para aprovação: ' . $c['title'] . ' · MSE Academy';
+        $assunto = 'Re: ' . $original;
+
+        $e = static fn($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+        $quem = trim((string) ($admin['name'] ?? '')) ?: 'um admin';
+        $quando = (new DateTime('now', new DateTimeZone('America/Sao_Paulo')))->format('d/m/Y \à\s H:i');
+        $link = mse_url_academy();
+        $texto = "O vídeo \"{$c['title']}\"" . ($c['autor'] ? ", enviado por {$c['autor']}," : '')
+            . " foi aprovado por {$quem} em {$quando} e já está publicado na MSE Academy.\n\n{$link}";
+        $html = '<div style="font-family:\'Segoe UI\',Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1C1B1A;">'
+            . '<p style="margin:0 0 12px;"><strong style="color:#1f9d57;">&#10004; Vídeo aprovado</strong></p>'
+            . '<p style="margin:0 0 12px;">O vídeo <strong>' . $e($c['title']) . '</strong>'
+            . ($c['autor'] ? ', enviado por ' . $e($c['autor']) . ',' : '')
+            . ' foi aprovado por <strong>' . $e($quem) . '</strong> em ' . $e($quando) . ' e já está publicado na MSE Academy.</p>'
+            . '<p style="margin:0;"><a href="' . $e($link) . '" style="color:#C4212C;">Abrir a MSE Academy</a></p></div>';
+
+        $emails = array_column($pdo->query("SELECT email FROM users WHERE role = 'admin' AND active = 1 AND email <> ''")->fetchAll(), 'email');
+        $r = mse_enviar_email($emails, $assunto, $html, $texto, [
+            'message_id' => mse_email_novo_message_id(),
+            'responde_a' => (string) $c['notificacao_message_id'],
+        ]);
+        return ['enviado' => $r['ok'], 'erro' => $r['erro']];
+    } catch (Throwable $e) {
+        error_log('[aprovacao] Resposta "vídeo aprovado" falhou: ' . $e->getMessage());
+        return ['enviado' => false, 'erro' => $e->getMessage()];
+    }
+}

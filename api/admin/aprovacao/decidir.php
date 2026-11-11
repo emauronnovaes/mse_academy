@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../../src/Auth.php';
 require_once __DIR__ . '/../../../src/Aprovacao.php';
 require_once __DIR__ . '/../../../src/Assuntos.php';
 require_once __DIR__ . '/../../../src/Classificacao.php';
+require_once __DIR__ . '/../../../src/EmailAprovacao.php';
 
 /**
  * Aprova ou recusa um vídeo enviado para aprovação.
@@ -133,6 +134,10 @@ try {
 // Recusou: o arquivo do vídeo é apagado da AWS (⚠ irreversível — ver mse_excluir_arquivo_recusado).
 $arquivo = $acao === 'recusar' ? mse_excluir_arquivo_recusado($pdo, $courseId) : ['excluido' => false, 'aviso' => null];
 
+// Aprovou: responde o e-mail "vídeo para aprovação" (mesma conversa) avisando que foi aprovado.
+// Falha no e-mail não desfaz a aprovação: só volta o aviso na resposta.
+$emailAprovado = $acao === 'aprovar' ? mse_responder_email_aprovado($pdo, $courseId, $admin) : null;
+
 // Aulas mudaram: o banco de consulta se atualiza em até 1 minuto.
 require_once __DIR__ . '/../../../src/Viniconsultas.php';
 mse_vini_recalcular_agendado(true);
@@ -143,4 +148,5 @@ mse_json([
     'arquivo_excluido' => $arquivo['excluido'],
     'aviso_arquivo' => $arquivo['aviso'],
     'tema' => $temaPendente ? ($acao === 'aprovar' && $tema === 'aprovar' ? 'aprovado' : 'recusado') : null,
+    'email_aprovado' => $emailAprovado,
 ]);
