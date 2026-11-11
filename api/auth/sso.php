@@ -97,8 +97,10 @@ if ($email === '') {
     }
 }
 
-$primeiroNome = mse_first_name_from_email($email);
+$primeiroNome = mse_primeiro_nome($nome, $email);
 $pdo = mse_db();
+// E-mail que já é a conta de outra pessoa? Entra numa conta separada (ver mse_chave_login).
+$email = mse_chave_login($pdo, $email, $cpf, $nome);
 
 $areaId = null;
 if ($areaSlug !== null) {

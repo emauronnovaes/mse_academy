@@ -18,6 +18,80 @@ function mse_hash_token(string $token): string
     return hash('sha256', $token);
 }
 
+/**
+ * Primeiro nome para a saudação: sai do nome da pessoa. O e-mail só quando
+ * não há nome — um e-mail herdado de outra pessoa (vaga, caixa de obra)
+ * mostrava o nome errado ("Viviane" para a Helena).
+ */
+function mse_primeiro_nome(string $nome, string $email): string
+{
+    $nome = trim($nome);
+    if ($nome !== '' && !mse_str_contains($nome, '@') && preg_match('/\p{L}/u', $nome)) {
+        $primeiro = preg_split('/\s+/u', $nome)[0];
+        return mb_convert_case(mb_strtolower($primeiro, 'UTF-8'), MB_CASE_TITLE, 'UTF-8');
+    }
+    return mse_first_name_from_email($email);
+}
+
+/** Primeiro nome sem acento e em minúsculas, para comparar. Vazio se não for um nome (e-mail, CPF). */
+function mse_primeiro_nome_comparavel(string $nome): string
+{
+    $nome = trim($nome);
+    if ($nome === '' || mse_str_contains($nome, '@')) {
+        return '';
+    }
+    $t = mb_strtolower($nome, 'UTF-8');
+    $semAcento = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $t);
+    if ($semAcento !== false) {
+        $t = $semAcento;
+    }
+    $t = trim((string) preg_replace('/\s+/', ' ', (string) preg_replace('/[^a-z\s]/', '', $t)));
+    return $t === '' ? '' : explode(' ', $t)[0];
+}
+
+/**
+ * A conta (o e-mail, que é a chave da tabela users) em que esta pessoa
+ * entra. Normalmente é o próprio e-mail. Mas se a conta com esse e-mail é
+ * de OUTRA pessoa (CPF diferente; sem CPF dos dois lados, primeiro nome
+ * diferente) — e-mail herdado de quem saiu, caixa compartilhada da obra,
+ * erro na ficha do RH —, entrar nela misturava as duas: uma via o nome e
+ * os vídeos da outra. Aí a pessoa vai para a conta do CPF dela (ou uma
+ * nova), e a outra fica intacta.
+ */
+function mse_chave_login(PDO $pdo, string $email, ?string $cpf, string $nome): string
+{
+    $cpf = (string) preg_replace('/\D+/', '', (string) $cpf);
+    $cpf = strlen($cpf) === 11 ? $cpf : '';
+
+    $st = $pdo->prepare('SELECT id, name, cpf FROM users WHERE email = ?');
+    $st->execute([$email]);
+    $dono = $st->fetch();
+    if (!$dono) {
+        return $email;
+    }
+    $cpfDono = (string) preg_replace('/\D+/', '', (string) $dono['cpf']);
+    if ($cpf !== '' && strlen($cpfDono) === 11) {
+        $outraPessoa = $cpfDono !== $cpf;
+    } else {
+        $a = mse_primeiro_nome_comparavel((string) $dono['name']);
+        $b = mse_primeiro_nome_comparavel($nome);
+        $outraPessoa = $a !== '' && $b !== '' && $a !== $b;
+    }
+    if (!$outraPessoa) {
+        return $email;
+    }
+
+    error_log("[login] O e-mail {$email} é da conta #{$dono['id']} ({$dono['name']}), mas quem entrou foi {$nome}: entra numa conta separada.");
+    if ($cpf !== '') {
+        $st = $pdo->prepare('SELECT email FROM users WHERE cpf = ?');
+        $st->execute([$cpf]);
+        $doCpf = $st->fetchColumn();
+        return $doCpf !== false ? (string) $doCpf : $cpf . '@sem-email.mse.local';
+    }
+    return 'sem-cpf-' . substr(hash('sha256', mse_primeiro_nome_comparavel($nome) . '|' . mb_strtolower(trim($nome), 'UTF-8') . '|' . $email), 0, 16)
+        . '@sem-email.mse.local';
+}
+
 /** Cria uma sessão (linha em auth_tokens) e devolve o token pro cliente. */
 function mse_create_session(int $userId): string
 {

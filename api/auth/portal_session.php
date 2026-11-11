@@ -37,7 +37,7 @@ $nome = $sessao['nome'] ?: $email;
 $cpf = $sessao['cpf'] ?? null;
 $cargo = $sessao['cargo'] ?? null;
 
-$primeiroNome = mse_first_name_from_email($email);
+$primeiroNome = mse_primeiro_nome((string) $sessao['nome'], $email);
 
 $pdo = mse_db();
 
@@ -75,6 +75,9 @@ if ($sessao['nome']) {
 if ($areaId === null) {
     $areaId = mse_area_id_por_cargo($pdo, $cargo);
 }
+
+// E-mail que já é a conta de outra pessoa? Entra numa conta separada (ver mse_chave_login).
+$email = mse_chave_login($pdo, $email, $cpf, (string) $nome);
 
 $stmt = $pdo->prepare(
     "INSERT INTO users (name, first_name, email, cpf, cargo, area_id, role, provisioned_via)

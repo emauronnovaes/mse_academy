@@ -2320,3 +2320,11 @@
   .vid-player-wrap.tem-controles:has(.vid-fs-reserva) video::-webkit-media-controls-fullscreen-button{ display:none; }
   /* No YouTube fica por cima do botão de tela cheia dele (canto de baixo à direita), que não funcionaria */
   .vid-player-wrap.tem-controles .vid-fullscreen-btn.vid-fs-reserva.vid-fs-yt{ top:auto; right:6px; bottom:4px; background:rgba(0,0,0,0.75); }
+
+  /* Quem está logado (topo, todas as abas) */
+  .quem-logado{ display:flex; align-items:center; gap:10px; flex-shrink:0; font-size:13px; color:rgba(255,255,255,0.7); white-space:nowrap; }
+  .quem-logado[hidden]{ display:none; }
+  .quem-logado-nome{ font-weight:600; color:#fff; max-width:180px; overflow:hidden; text-overflow:ellipsis; }
+  .quem-logado button{ background:none; border:1px solid rgba(255,255,255,0.25); color:rgba(255,255,255,0.85); border-radius:100px; padding:5px 12px; font:inherit; cursor:pointer; }
+  .quem-logado button:hover{ border-color:#fff; color:#fff; }
+  @media (max-width:640px){ .quem-logado{ width:100%; justify-content:flex-end; } }
