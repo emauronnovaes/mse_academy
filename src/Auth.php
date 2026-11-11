@@ -57,6 +57,11 @@ function mse_primeiro_nome_comparavel(string $nome): string
  * erro na ficha do RH —, entrar nela misturava as duas: uma via o nome e
  * os vídeos da outra. Aí a pessoa vai para a conta do CPF dela (ou uma
  * nova), e a outra fica intacta.
+ *
+ * Exceção: se o e-mail tem o nome de quem está entrando e não o do dono
+ * atual (helena.goes@ entrando, conta com nome Viviane), o e-mail é de quem
+ * está entrando. A conta atual sai dele (vai para a chave do CPF dela, com
+ * o que tem dentro) e quem entra fica com o próprio e-mail.
  */
 function mse_chave_login(PDO $pdo, string $email, ?string $cpf, string $nome): string
 {
@@ -70,15 +75,34 @@ function mse_chave_login(PDO $pdo, string $email, ?string $cpf, string $nome): s
         return $email;
     }
     $cpfDono = (string) preg_replace('/\D+/', '', (string) $dono['cpf']);
+    $a = mse_primeiro_nome_comparavel((string) $dono['name']);
+    $b = mse_primeiro_nome_comparavel($nome);
     if ($cpf !== '' && strlen($cpfDono) === 11) {
         $outraPessoa = $cpfDono !== $cpf;
     } else {
-        $a = mse_primeiro_nome_comparavel((string) $dono['name']);
-        $b = mse_primeiro_nome_comparavel($nome);
         $outraPessoa = $a !== '' && $b !== '' && $a !== $b;
     }
     if (!$outraPessoa) {
         return $email;
+    }
+
+    // O e-mail tem o nome de quem está entrando, e não o do dono atual? Então é dela.
+    $nomeDoEmail = mse_primeiro_nome_comparavel(str_replace(['.', '_', '-'], ' ', explode('@', $email)[0]));
+    if ($nomeDoEmail !== '' && $nomeDoEmail === $b && $nomeDoEmail !== $a) {
+        $chaveDono = strlen($cpfDono) === 11
+            ? $cpfDono . '@sem-email.mse.local'
+            : 'sem-cpf-' . substr(hash('sha256', $a . '|' . mb_strtolower(trim((string) $dono['name']), 'UTF-8') . '|' . $email), 0, 16) . '@sem-email.mse.local';
+        $st = $pdo->prepare('SELECT COUNT(*) FROM users WHERE email = ?');
+        $st->execute([$chaveDono]);
+        if ((int) $st->fetchColumn() === 0) {
+            $pdo->prepare('UPDATE users SET email = ? WHERE id = ?')->execute([$chaveDono, (int) $dono['id']]);
+            error_log("[login] O e-mail {$email} é de {$nome}: a conta #{$dono['id']} ({$dono['name']}) passou para {$chaveDono}.");
+            // Quem entra já tinha conta separada pelo CPF? Ela fica com o e-mail.
+            if ($cpf !== '') {
+                $pdo->prepare('UPDATE users SET email = ? WHERE cpf = ?')->execute([$email, $cpf]);
+            }
+            return $email;
+        }
     }
 
     error_log("[login] O e-mail {$email} é da conta #{$dono['id']} ({$dono['name']}), mas quem entrou foi {$nome}: entra numa conta separada.");

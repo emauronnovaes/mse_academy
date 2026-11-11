@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261111a">
+<link rel="stylesheet" href="style.css?v=20261111b">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -43,12 +43,6 @@
       <button data-view="integracao" id="tabIntegracao" role="tab" aria-selected="false" aria-controls="view-integracao">Integração</button>
       <button data-view="cursos" id="tabCursos" role="tab" aria-selected="false" aria-controls="view-cursos">Cursos</button>
     </nav>
-    <!-- Quem está logado, em todas as abas: num computador usado por várias pessoas, quem chega vê se está na conta de outro -->
-    <div class="quem-logado" id="quemLogado" hidden>
-      <i class="fa-solid fa-user" aria-hidden="true"></i>
-      <span class="quem-logado-nome" id="quemLogadoNome"></span>
-      <button type="button" id="btnSair">Não é você? Sair</button>
-    </div>
   </div>
   <div class="admin-toolbar" id="adminToolbar" hidden>
     <!-- Para quem não é admin: o vídeo vai para aprovação antes de aparecer -->
@@ -748,7 +742,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261111a"></script>
+<script src="script.js?v=20261111b"></script>
 
 </body>
 </html>

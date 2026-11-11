@@ -7949,34 +7949,20 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }
   }
 
-  // Nome de quem está logado no topo, com "Sair". O nome vem do servidor
-  // (da conta do token), não do que ficou guardado no navegador.
-  async function mostrarQuemLogado(){
-    const caixa = document.getElementById('quemLogado');
-    if(!caixa || !getRealSessionToken()) return;
+  // A saudação usa o nome da conta (vindo do servidor), não o que ficou
+  // guardado no navegador de um login antigo (antes vinha do e-mail).
+  async function atualizarNomeDaSaudacao(){
+    if(!getRealSessionToken()) return;
     let nome;
     try{
       const d = await apiFetch('api/auth/me.php');
       nome = String((d.user && d.user.name) || '').trim();
     }catch(e){ return; }
-    if(!nome || nome.includes('@')) nome = localStorage.getItem('mse_academy_real_user_name') || 'Colaborador';
-    const partes = nome.split(/\s+/);
-    const curto = partes.length > 1 ? partes[0] + ' ' + partes[partes.length - 1] : partes[0];
-    document.getElementById('quemLogadoNome').textContent = curto;
-    caixa.title = nome;
-    caixa.hidden = false;
-    // A saudação também passa a usar o nome da conta (antes vinha do e-mail).
-    const primeiro = partes[0].charAt(0).toUpperCase() + partes[0].slice(1).toLowerCase();
+    if(!nome || nome.includes('@')) return;
+    const p = nome.split(/\s+/)[0];
+    const primeiro = p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
     try{ localStorage.setItem('mse_academy_real_user_name', primeiro); }catch(e){}
     updateGreetingBanner(primeiro);
-    document.getElementById('btnSair').addEventListener('click', async () => {
-      if(!confirm(`Sair da conta de ${nome}?`)) return;
-      try{ await apiFetch('api/auth/logout.php', { method: 'POST' }); }catch(e){}
-      clearRealSession();
-      try{ sessionStorage.removeItem('mse_suas_aulas_vista'); }catch(e){}
-      alert('Você saiu. Para entrar com a sua conta, abra a MSE Academy pelo Portal MSE.');
-      window.location.href = 'https://portalmse.com.br';
-    });
   }
 
   document.addEventListener('DOMContentLoaded', async () => {
@@ -7984,7 +7970,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     await tryRealSsoLogin(diagnostico);
     updateGreetingBanner(); // atualiza a saudação com o nome real, se o login deu certo
-    mostrarQuemLogado();
+    atualizarNomeDaSaudacao();
 
     // Só aqui a sessão existe, e os endpoints de conteúdo exigem login —
     // por isso a trilha e o catálogo carregam neste ponto, e não no
