@@ -212,7 +212,11 @@ foreach ($courses as &$course) {
     $course['nivel'] = $course['type'] === 'curso' ? mse_nivel_da_aula($course['obrigatoriedade'], $deptos, $meusDeptos) : ($nivelDaIntegracao[$course['id']] ?? null);
     $course['palavras_chave'] = $course['palavras_chave'] !== null && $course['palavras_chave'] !== '' ? explode(', ', (string) $course['palavras_chave']) : [];
     unset($course['obrigatoriedade']);
-    if ($restrito || $deptos) {
+    // Integração não entra nessa regra: ela é obrigatória e em ordem para todos
+    // que a têm na trilha. Antes, aula da integração com departamento marcado
+    // virava "opcional" na tela, mas o servidor (mse_course_is_unlocked) seguia
+    // cobrando: as aulas seguintes ficavam bloqueadas e o progresso não gravava.
+    if ($course['type'] !== 'onboarding' && ($restrito || $deptos)) {
         $daArea = $minhaArea !== null && in_array($minhaArea, $restrito, true);
         $doDepto = (bool) array_intersect_key($deptos, $meusDeptos);
         if (!$daArea && !$doDepto) {
