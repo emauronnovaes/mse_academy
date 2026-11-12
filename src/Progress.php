@@ -124,35 +124,81 @@ function mse_sql_mesmo_video(string $a, string $b): string
 /**
  * Quem concluiu um curso conta como tendo concluído a aula da integração com o
  * mesmo vídeo (ex.: NR-06 assistida em Cursos antes de ir para a integração da
- * obra). Grava a conclusão na aula da integração, com a data do curso. Quem não
- * assistiu continua devendo a aula da integração.
+ * obra), e vice-versa: quem concluiu a NR-06 na integração fica com o curso
+ * concluído. Grava a conclusão com a data da outra. Quem não assistiu continua
+ * devendo.
  *
  * Sem $userId vale para todo mundo.
  */
 function mse_sincronizar_mesmo_video(PDO $pdo, ?int $userId = null): void
 {
     $soEla = $userId ? ' AND p.user_id = ' . (int) $userId : '';
-    $origem = "SELECT p.user_id, i.id AS course_id, MIN(COALESCE(p.completed_at, p.updated_at)) AS concluido_em
-               FROM user_course_progress p
-               JOIN courses c ON c.id = p.course_id AND c.type = 'curso'
-               JOIN courses i ON i.type = 'onboarding' AND " . mse_sql_mesmo_video('c', 'i') . "
-               WHERE p.status = 'concluido'{$soEla}
-               GROUP BY p.user_id, i.id";
+    foreach ([['curso', 'onboarding'], ['onboarding', 'curso']] as [$de, $para]) {
+        $origem = "SELECT p.user_id, i.id AS course_id, MIN(COALESCE(p.completed_at, p.updated_at)) AS concluido_em
+                   FROM user_course_progress p
+                   JOIN courses c ON c.id = p.course_id AND c.type = '{$de}'
+                   JOIN courses i ON i.type = '{$para}' AND " . mse_sql_mesmo_video('c', 'i') . "
+                   WHERE p.status = 'concluido'{$soEla}
+                   GROUP BY p.user_id, i.id";
+        try {
+            // Começou a outra aula (ou foi resetada) mas já tinha concluído esta: conclui.
+            $pdo->exec(
+                "UPDATE user_course_progress u
+                 JOIN ({$origem}) o ON o.user_id = u.user_id AND o.course_id = u.course_id
+                 SET u.status = 'concluido', u.watched_pct = 100, u.completed_at = o.concluido_em
+                 WHERE u.status <> 'concluido'"
+            );
+            // Nunca abriu a outra aula: cria a conclusão.
+            $pdo->exec(
+                "INSERT IGNORE INTO user_course_progress (user_id, course_id, status, watched_pct, completed_at)
+                 SELECT o.user_id, o.course_id, 'concluido', 100, o.concluido_em FROM ({$origem}) o"
+            );
+        } catch (Throwable $e) {
+            error_log('[mesmo_video] ' . $e->getMessage());
+        }
+    }
+}
+
+/**
+ * Copia o progresso da pessoa nesta aula para a aula da outra trilha com o mesmo
+ * vídeo (NR-06/NR-12 da integração <-> NR-06/NR-12 de Cursos). Sem isso, quem
+ * assiste pela integração só aparecia na cópia, e o curso ficava sem registro.
+ * O % só sobe e "concluído" nunca volta atrás, como no progress/update.php.
+ */
+function mse_espelhar_progresso_mesmo_video(PDO $pdo, int $userId, int $courseId): void
+{
     try {
-        // Começou a aula da integração (ou foi resetada) mas já tinha concluído o curso: conclui.
-        $pdo->exec(
-            "UPDATE user_course_progress u
-             JOIN ({$origem}) o ON o.user_id = u.user_id AND o.course_id = u.course_id
-             SET u.status = 'concluido', u.watched_pct = 100, u.completed_at = o.concluido_em
-             WHERE u.status <> 'concluido'"
+        $gemeas = mse_aulas_mesmo_video($pdo, $courseId);
+        if (!$gemeas) {
+            return;
+        }
+        $temCheckin = mse_tem_coluna($pdo, 'user_course_progress', 'checkin_em');
+        $st = $pdo->prepare('SELECT status, watched_pct, completed_at' . ($temCheckin ? ', checkin_em' : ', NULL AS checkin_em')
+            . ' FROM user_course_progress WHERE user_id = ? AND course_id = ?');
+        $st->execute([$userId, $courseId]);
+        $p = $st->fetch();
+        if (!$p) {
+            return;
+        }
+        $st = $pdo->prepare(
+            "INSERT INTO user_course_progress (user_id, course_id, status, watched_pct, completed_at" . ($temCheckin ? ', checkin_em' : '') . ")
+             VALUES (?, ?, ?, ?, ?" . ($temCheckin ? ', ?' : '') . ")
+             ON DUPLICATE KEY UPDATE
+                watched_pct = GREATEST(watched_pct, VALUES(watched_pct)),
+                status = IF(status = 'concluido' OR VALUES(status) = 'concluido', 'concluido',
+                         IF(status = 'em_andamento' OR VALUES(status) = 'em_andamento', 'em_andamento', status)),
+                completed_at = COALESCE(completed_at, VALUES(completed_at))"
+                . ($temCheckin ? ', checkin_em = COALESCE(checkin_em, VALUES(checkin_em))' : '')
         );
-        // Nunca abriu a aula da integração: cria a conclusão.
-        $pdo->exec(
-            "INSERT IGNORE INTO user_course_progress (user_id, course_id, status, watched_pct, completed_at)
-             SELECT o.user_id, o.course_id, 'concluido', 100, o.concluido_em FROM ({$origem}) o"
-        );
+        foreach ($gemeas as $outra) {
+            $v = [$userId, $outra, $p['status'], $p['watched_pct'], $p['completed_at']];
+            if ($temCheckin) {
+                $v[] = $p['checkin_em'];
+            }
+            $st->execute($v);
+        }
     } catch (Throwable $e) {
-        error_log('[mesmo_video] ' . $e->getMessage());
+        error_log('[mesmo_video] espelhar: ' . $e->getMessage());
     }
 }
 

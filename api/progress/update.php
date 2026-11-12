@@ -85,6 +85,9 @@ $stmt->execute([
     'completed_at' => $completedAt,
 ]);
 
+// NR-06/NR-12: o mesmo vídeo existe em Cursos e na integração; o progresso vale para as duas.
+mse_espelhar_progresso_mesmo_video($pdo, (int) $user['id'], $courseId);
+
 // Pontos da aula sem pergunta. O mesmo cuidado do quiz/submit.php: só
 // soma na PRIMEIRA vez, senão reassistir renderia pontos de novo a cada
 // vez, sem limite.
