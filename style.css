@@ -2320,4 +2320,74 @@
   .vid-player-wrap.tem-controles:has(.vid-fs-reserva) video::-webkit-media-controls-fullscreen-button{ display:none; }
   /* No YouTube fica por cima do botão de tela cheia dele (canto de baixo à direita), que não funcionaria */
   .vid-player-wrap.tem-controles .vid-fullscreen-btn.vid-fs-reserva.vid-fs-yt{ top:auto; right:6px; bottom:4px; background:rgba(0,0,0,0.75); }
+  /* ================================================================
+     Celular — ajustes de uso (no computador nada muda)
+     ================================================================ */
+  @media (max-width:640px){
+    /* Topo: preso na tela ele ocupava 1/4 do celular (logo, busca, abas e
+       barra de botões). Agora rola junto com a página, em duas linhas
+       enxutas: logo + abas em cima, busca embaixo. */
+    header{ position:relative; }
+    .topbar{ gap:10px 12px; padding:10px 16px; }
+    .brand-logo{ height:22px; }
+    .brand-name{ display:none; }
+    nav.tabs{ margin-left:auto; gap:2px; }
+    nav.tabs button{ padding:8px 10px; }
+    .search-box{ order:3; flex:1 1 100%; max-width:none; padding:9px 14px; }
+    .search-box input{ font-size:16px; } /* abaixo de 16px o iPhone dá zoom ao tocar na busca */
+    .admin-toolbar{ padding:8px 16px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .admin-toolbar.is-minimizado{ padding:6px 16px 6px 0; }
+    .btn-add-people{ padding:8px 12px; font-size:13px; }
 
+    /* Banners: muito espaço vazio antes do conteúdo. */
+    .welcome-banner{ padding:44px 0 48px; min-height:0; }
+    .welcome-banner h1{ font-size:34px; }
+    .welcome-banner p{ font-size:15.5px; margin-top:12px; }
+    .welcome-eyebrow{ margin-bottom:10px; }
+    #trilha{ padding-top:28px !important; }
+    .section{ padding:48px 0; }
+    .trilha-hero{ padding:22px 20px; margin-bottom:24px; border-radius:12px; }
+    .hero{ padding:56px 0 48px; }
+    .hero h1{ font-size:28px; }
+    .hero p.lead{ font-size:15px; margin-top:12px; }
+
+    /* Trilha: era quase duas telas de altura antes de chegar no vídeo. */
+    .onb-path-card{ margin-bottom:20px; }
+    .onb-path-viewport{ aspect-ratio:1 / 1.45; padding:44px 56px 40px; }
+    .onb-node-label-standalone{ font-size:11.5px; line-height:1.3; padding:7px 10px; }
+
+    /* Vídeo da integração mais largo (menos borda em volta). */
+    .onb-head{ padding:14px; gap:12px; }
+    .onb-body{ padding:0 10px 14px; }
+    .vid-player-wrap{ border-radius:6px; }
+
+    /* Cartão "Central de ajuda": o texto ficava espremido ao lado da imagem
+       (uma palavra por linha). No celular, só o texto. */
+    .intro-banner{ grid-template-columns:1fr; }
+    .intro-banner .intro-text{ padding:28px 22px; }
+    .intro-banner .intro-img{ display:none; }
+
+    /* Janela do vídeo (Cursos): menos borda, vídeo começa no topo. */
+    .video-modal-head{ padding:12px 14px; }
+    .video-modal-body{ padding:12px 10px 24px; align-items:flex-start; }
+  }
+
+  /* Pergunta no meio do vídeo e "Você ainda está aí?": no celular o player
+     tem uns 176px de altura e a pergunta ficava cortada (só 2 alternativas
+     à vista, o resto escondido numa rolagem). Agora ocupam a tela inteira. */
+  @media (max-width:640px), (max-height:500px){
+    .vid-atividade, .vid-presenca{ position:fixed; padding:16px; }
+    .vid-player-wrap:has(> .vid-atividade), .vid-player-wrap:has(> .vid-presenca){ z-index:400; }
+    .vid-atividade-card{ max-height:calc(100% - 16px); padding:18px 16px; }
+    .vid-atividade-pergunta{ font-size:16.5px; margin-bottom:12px; }
+    .vid-atividade-opcao{ padding:12px 14px; font-size:15px; }
+    .vid-presenca-card{ padding:22px 20px; }
+    .vid-presenca-titulo{ font-size:19px; }
+    .vid-presenca-texto{ font-size:14.5px; margin-bottom:16px; }
+    .vid-presenca-btn{ padding:12px 24px; font-size:16px; }
+  }
+
+  /* Celular deitado: o topo não fica preso (senão sobrava pouco para o vídeo). */
+  @media (max-height:500px) and (orientation:landscape){
+    header{ position:relative; }
+  }
