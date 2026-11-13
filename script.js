@@ -4991,7 +4991,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     const links = visao === 'links';
     document.getElementById('trnTabelaTreinamentos').hidden = porPessoa || admitidos || links;
     document.getElementById('trnTabelaLinks').hidden = !links;
-    document.getElementById('trnLinksCsv').hidden = !links;
+    document.getElementById('trnLinksPdf').hidden = !links;
     document.getElementById('trnTabelaPessoas').hidden = !porPessoa;
     document.getElementById('trnTabelaAdmitidos').hidden = !admitidos;
     document.getElementById('trnAdmCsv').hidden = !admitidos;
@@ -5155,11 +5155,42 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
       </tr>`;
     }).join('');
   }
-  function baixarCsvLinks(){
+  // PDF da lista (o que está na tela, com a busca aplicada). O cabeçalho é
+  // próprio: o dos outros relatórios cita o período, que aqui não filtra nada.
+  async function baixarPdfLinks(){
     const lista = linksFiltradas();
-    trnBaixarCsv('aulas-e-links.csv', [['Aula', 'Onde fica', 'Assunto', 'Vídeo', 'Publicado em', 'Link (só o vídeo)']]
-      .concat(lista.map(a => [a.tema, a.trilha ? 'Integração' : 'Cursos', a.area || '',
-        LINK_ORIGEM[a.video_source] || a.video_source || '', trnFmtData(a.data), linkDaAula(a.id)])));
+    const q = document.getElementById('trnBusca').value.trim();
+    const btn = document.getElementById('trnLinksPdf');
+    btn.disabled = true;
+    btn.textContent = 'Gerando...';
+    try{
+      const agora = new Date();
+      const html = `
+        <div class="rel-cabecalho">
+          <div><strong>MSE Academy</strong> · Aulas e links</div>
+          <div>Gerado em ${agora.toLocaleDateString('pt-BR')} ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
+        </div>
+        <p class="rel-filtros">${q ? esc(`Busca: "${q}"`) : 'Sem filtros'} · ${lista.length} ${lista.length === 1 ? 'aula' : 'aulas'}</p>
+        <table class="trn-tabela">
+          <thead><tr><th>Aula</th><th>Onde fica</th><th>Assunto</th><th>Vídeo</th><th>Publicado em</th><th>Link (só o vídeo)</th></tr></thead>
+          <tbody>${lista.map(a => `
+            <tr>
+              <td><strong>${esc(a.tema)}</strong></td>
+              <td>${a.trilha ? 'Integração' : 'Cursos'}</td>
+              <td>${esc(a.area || '')}</td>
+              <td>${esc(LINK_ORIGEM[a.video_source] || a.video_source || '')}</td>
+              <td>${trnFmtData(a.data)}</td>
+              <td style="word-break:break-all;font-size:11px">${esc(linkDaAula(a.id))}</td>
+            </tr>`).join('') || '<tr><td colspan="6" class="trn-vazio-lista">Nenhuma aula encontrada.</td></tr>'}
+          </tbody>
+        </table>`;
+      await trnBaixarPdf(html, trnNomePdf('aulas-e-links'));
+    }catch(e){
+      alert('Não foi possível gerar o PDF: ' + e.message);
+    }finally{
+      btn.disabled = false;
+      btn.textContent = 'Baixar PDF';
+    }
   }
   async function copiarTexto(texto){
     try { await navigator.clipboard.writeText(texto); return true; }
@@ -6557,7 +6588,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('trnNovoVideo').addEventListener('click', openVideoModal);
     document.getElementById('trnOrdemIntegracao').addEventListener('click', abrirOrdemIntegracao);
     document.getElementById('trnAdmCsv').addEventListener('click', admBaixarCsv);
-    document.getElementById('trnLinksCsv').addEventListener('click', baixarCsvLinks);
+    document.getElementById('trnLinksPdf').addEventListener('click', baixarPdfLinks);
     document.getElementById('trnCorpoLinks').addEventListener('click', async (e) => {
       const b = e.target.closest('.trn-links-copiar');
       if(!b) return;
