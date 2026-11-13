@@ -840,7 +840,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
           <div class="onb-badge">${badgeContent}</div>
           <div>
             <h4>${mod.title}</h4>
-            <p>${mod.desc} · ${formatarDuracao(mod.duracaoSegundos, mod.minutes)}</p>
+            <p>${mod.desc} · ${formatarDuracao(mod.duracaoSegundos, mod.minutes)} · ${linkSoVideo(mod.id)}</p>
           </div>
           <span class="onb-status">${statusLabel}</span>
         </div>
@@ -1823,6 +1823,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>
       </svg>
     </button>`;
+  }
+
+  // Link "Abrir só o vídeo": abre a aula numa aba só com o player (video.html).
+  // Lá não conta como concluída — é só para assistir ou mandar o link.
+  function linkSoVideo(id){
+    return `<a class="vid-so-video" href="video.html?id=${encodeURIComponent(id)}" target="_blank" rel="noopener">Abrir só o vídeo ↗</a>`;
   }
 
   // controlslist do <video>: tira a velocidade (só administrador usa) e o botão de tela cheia do
@@ -3019,6 +3025,8 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
 
     videoModalTitleEl.textContent = course.title;
     videoModalAreaEl.textContent = course.label;
+    const soVideo = document.getElementById('videoModalSoVideo');
+    if(soVideo) soVideo.href = 'video.html?id=' + encodeURIComponent(course.id);
     videoModalBodyEl.innerHTML = `
       <div class="video-modal-inner">
         <div class="vid-player-wrap">

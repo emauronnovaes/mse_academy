@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#000000">
+<title>Vídeo · MSE Academy</title>
+<!-- Página "só o vídeo": aberta pelo link "Abrir só o vídeo" de cada aula.
+     Usa o mesmo login da Academy (token salvo no navegador) e as mesmas
+     regras do servidor (aula bloqueada continua bloqueada). Assistir por
+     aqui NÃO conta como aula concluída: sem trava de avanço, sem pergunta
+     e sem "Você ainda está aí?". -->
+<style>
+  :root{ --bg:#000; --txt:#F2F2F2; --sub:#A6ACB5; --red:#C4212C; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; background:var(--bg); color:var(--txt);
+    font-family:"Segoe UI", Roboto, Arial, Helvetica, sans-serif; }
+  body{ display:flex; flex-direction:column; min-height:100vh; }
+  .topo{ display:flex; align-items:center; gap:12px; padding:10px 16px; }
+  .topo h1{ font-size:15px; font-weight:600; line-height:1.3; flex:1; min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .topo a{ color:var(--sub); font-size:13px; text-decoration:none; white-space:nowrap; }
+  .topo a:hover{ color:var(--txt); }
+  .palco{ flex:1; display:flex; align-items:center; justify-content:center; padding:0 0 12px; }
+  .moldura{ width:100%; max-width:calc((100vh - 90px) * 16 / 9); aspect-ratio:16/9; background:#000; }
+  .moldura iframe, .moldura video{ width:100%; height:100%; border:0; display:block; background:#000; }
+  .aviso{ max-width:460px; margin:0 16px; text-align:center; font-size:15px; line-height:1.5; color:var(--sub); }
+  .aviso strong{ display:block; color:var(--txt); font-size:17px; margin-bottom:8px; }
+  .aviso a{ display:inline-block; margin-top:16px; padding:10px 18px; border-radius:8px;
+    background:var(--red); color:#fff; text-decoration:none; font-weight:600; }
+  .rodape{ padding:0 16px 14px; text-align:center; font-size:12.5px; color:var(--sub); }
+  .rodape a{ color:var(--txt); }
+  @media (max-height:500px) and (orientation:landscape){
+    .topo, .rodape{ display:none; }
+    .palco{ padding:0; }
+    .moldura{ max-width:calc(100vh * 16 / 9); }
+  }
+</style>
+</head>
+<body>
+  <div class="topo">
+    <h1 id="titulo">Carregando...</h1>
+    <a href="index.html">Ir para a Academy</a>
+  </div>
+  <div class="palco" id="palco"><div class="aviso">Carregando o vídeo...</div></div>
+  <div class="rodape" id="rodape" hidden>
+    Assistir por aqui não conta como aula concluída. Para concluir, assista pela
+    <a href="index.html">MSE Academy</a>.
+  </div>
+
+<script>
+(function(){
+  const palco = document.getElementById('palco');
+  const tituloEl = document.getElementById('titulo');
+  const id = parseInt(new URLSearchParams(location.search).get('id'), 10);
+
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function aviso(titulo, texto, comBotao){
+    tituloEl.textContent = 'MSE Academy';
+    palco.innerHTML = `<div class="aviso"><strong>${esc(titulo)}</strong>${esc(texto)}`
+      + (comBotao ? '<br><a href="index.html">Abrir a MSE Academy</a>' : '') + '</div>';
+  }
+  function token(){
+    try { return localStorage.getItem('mse_academy_real_session_token'); } catch(e){ return null; }
+  }
+
+  async function detalhe(){
+    const t = token();
+    const res = await fetch('api/courses/detail.php?id=' + id, {
+      credentials: 'include',
+      headers: t ? { 'Authorization': 'Bearer ' + t } : {},
+    });
+    const dados = await res.json().catch(() => ({}));
+    if(!res.ok){ const e = new Error(dados.error || ('Erro ' + res.status)); e.status = res.status; throw e; }
+    return dados.course;
+  }
+
+  async function iniciar(){
+    if(!(id > 0)){ aviso('Link inválido', 'Este link de vídeo está incompleto.', true); return; }
+    if(!token()){ aviso('Entre na MSE Academy', 'Para ver este vídeo, entre primeiro na MSE Academy neste navegador e depois abra o link de novo.', true); return; }
+
+    let c;
+    try { c = await detalhe(); }
+    catch(e){
+      if(e.status === 401) aviso('Sessão expirada', 'Entre de novo na MSE Academy e depois abra o link outra vez.', true);
+      else if(e.status === 403) aviso('Aula bloqueada', e.message, true);
+      else if(e.status === 404) aviso('Vídeo não encontrado', 'Esta aula não existe ou foi retirada da Academy.', true);
+      else aviso('Não foi possível carregar o vídeo', e.message, true);
+      return;
+    }
+
+    document.title = c.title + ' · MSE Academy';
+    tituloEl.textContent = c.title;
+
+    let player = '';
+    if(c.video_source === 'playlist' && c.youtube_id){
+      player = `<iframe src="https://www.youtube-nocookie.com/embed/videoseries?list=${encodeURIComponent(c.youtube_id)}&rel=0"
+        title="${esc(c.title)}" allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+    } else if(c.video_url){
+      player = `<video src="${esc(c.video_url)}" controls controlslist="nodownload" playsinline autoplay></video>`;
+    } else if(c.youtube_id){
+      player = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(c.youtube_id)}?rel=0&autoplay=1&playsinline=1"
+        title="${esc(c.title)}" allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+    } else {
+      aviso('Sem vídeo', 'Esta aula ainda não tem vídeo cadastrado.', false);
+      tituloEl.textContent = c.title;
+      return;
+    }
+    palco.innerHTML = `<div class="moldura">${player}</div>`;
+    document.getElementById('rodape').hidden = false;
+
+    // Link do vídeo enviado vence em 4 h: se der erro, pega um novo e continua do mesmo ponto.
+    const v = palco.querySelector('video');
+    if(v){
+      let renovou = false;
+      v.addEventListener('error', async () => {
+        if(renovou) return;
+        renovou = true;
+        const pos = v.currentTime || 0;
+        try {
+          const novo = await detalhe();
+          if(!novo.video_url) return;
+          v.src = novo.video_url;
+          v.addEventListener('loadedmetadata', () => { v.currentTime = pos; v.play().catch(() => {}); }, { once:true });
+        } catch(e){ /* fica no erro do próprio player */ }
+      });
+    }
+  }
+  iniciar();
+})();
+</script>
+</body>
+</html>
