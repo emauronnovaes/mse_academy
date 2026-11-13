@@ -4988,7 +4988,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.querySelectorAll('#trnVisao button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.visao === visao)));
     const porPessoa = visao === 'pessoas';
     const admitidos = visao === 'admitidos' || visao === 'pendentes' || visao === 'concluiram' || visao === 'dispensados';
-    document.getElementById('trnTabelaTreinamentos').hidden = porPessoa || admitidos;
+    const links = visao === 'links';
+    document.getElementById('trnTabelaTreinamentos').hidden = porPessoa || admitidos || links;
+    document.getElementById('trnTabelaLinks').hidden = !links;
+    document.getElementById('trnLinksCsv').hidden = !links;
     document.getElementById('trnTabelaPessoas').hidden = !porPessoa;
     document.getElementById('trnTabelaAdmitidos').hidden = !admitidos;
     document.getElementById('trnAdmCsv').hidden = !admitidos;
@@ -4997,10 +5000,12 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('trnCampoLocal').hidden = !admitidos;
     // Em Pendentes e Concluíram o status já está decidido pela aba.
     document.getElementById('trnCampoStatus').hidden = visao !== 'admitidos';
-    document.getElementById('trnNovoVideo').hidden = porPessoa || admitidos || trnEstado.modo === 'relatorios';
+    document.getElementById('trnNovoVideo').hidden = porPessoa || admitidos || links || trnEstado.modo === 'relatorios';
     document.getElementById('trnOrdemIntegracao').hidden = document.getElementById('trnNovoVideo').hidden;
     const dica = document.querySelector('#treinamentosTela .trn-dica');
-    if(dica) dica.textContent = admitidos
+    if(dica) dica.textContent = links
+      ? 'Todas as aulas publicadas, com o link que abre só o vídeo. A lista é montada na hora: vídeo novo aprovado já aparece aqui. A busca filtra pelo nome da aula ou pelo assunto (as datas não valem aqui).'
+      : admitidos
       ? 'Aqui as datas filtram pela data de admissão (sem datas: últimos 30 dias). A busca filtra por nome, CPF, e-mail, cargo, departamento, obra ou gerente.'
       : porPessoa
         ? 'Busque pelo nome, e-mail ou CPF da pessoa — ou pelo nome de um curso para ver quem fez. As datas filtram pelo período em que as pessoas participaram.'
@@ -5055,6 +5060,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   async function carregarTreinamentos(){
     if(document.getElementById('treinamentosTela').hidden) return;
     if(admEhVisao()) return carregarAdmitidos();
+    if(trnEstado.visao === 'links') return carregarLinksAulas();
     // Primeira carga sempre pela lista de treinamentos: é ela que traz as
     // opções de Tipo e Norma pros filtros.
     if(trnEstado.visao === 'pessoas' && trnEstado.tipos.length) return carregarPessoas();
@@ -5097,6 +5103,76 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   };
   let admDados = null;
   let admChaveCarregada = '';
+
+  // ---------- Aulas e links ----------
+  // Todas as aulas publicadas com o link "só o vídeo" (video.html). Buscada
+  // do banco toda vez que a aba abre: vídeo novo aprovado já entra, sem
+  // ninguém precisar atualizar planilha nenhuma.
+  const linksEstado = { aulas: [], pedido: 0 };
+  function linkDaAula(id){ return new URL('video.html?id=' + id, location.href).href; }
+  function linksFiltradas(){
+    const q = document.getElementById('trnBusca').value.trim().toLowerCase();
+    if(!q) return linksEstado.aulas;
+    return linksEstado.aulas.filter(a => (a.tema + ' ' + (a.area || '')).toLowerCase().includes(q));
+  }
+  const LINK_ORIGEM = { youtube: 'YouTube', s3: 'Enviado', playlist: 'Playlist do YouTube' };
+  async function carregarLinksAulas(){
+    const pedido = ++linksEstado.pedido;
+    const contagem = document.getElementById('trnContagem');
+    contagem.textContent = 'Carregando...';
+    try{
+      const d = await apiFetch('api/admin/treinamentos/busca.php');
+      if(pedido !== linksEstado.pedido) return;
+      // Integração primeiro (como na trilha), depois os cursos; dentro de cada um, por nome.
+      linksEstado.aulas = (d.treinamentos || []).filter(a => !a.arquivado)
+        .sort((x, y) => (Number(y.trilha) - Number(x.trilha)) || String(x.tema).localeCompare(String(y.tema), 'pt-BR'));
+      renderLinksAulas();
+    }catch(e){
+      if(pedido !== linksEstado.pedido) return;
+      contagem.textContent = 'Não foi possível carregar: ' + e.message;
+    }
+  }
+  function renderLinksAulas(){
+    const lista = linksFiltradas();
+    document.getElementById('trnContagem').textContent = `${lista.length} ${lista.length === 1 ? 'aula' : 'aulas'}`;
+    const corpo = document.getElementById('trnCorpoLinks');
+    if(!lista.length){
+      corpo.innerHTML = '<tr><td colspan="6" class="trn-vazio-lista">Nenhuma aula encontrada.</td></tr>';
+      return;
+    }
+    corpo.innerHTML = lista.map(a => {
+      const link = linkDaAula(a.id);
+      return `<tr>
+        <td><strong>${esc(a.tema)}</strong></td>
+        <td>${a.trilha ? 'Integração' : 'Cursos'}</td>
+        <td>${esc(a.area || '')}</td>
+        <td>${esc(LINK_ORIGEM[a.video_source] || a.video_source || '')}</td>
+        <td class="trn-nowrap">${trnFmtData(a.data)}</td>
+        <td class="trn-links-celula">
+          <a href="${esc(link)}" target="_blank" rel="noopener" class="trn-links-url">${esc(link)}</a>
+          <button type="button" class="trn-link trn-links-copiar" data-link="${esc(link)}">Copiar</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+  function baixarCsvLinks(){
+    const lista = linksFiltradas();
+    trnBaixarCsv('aulas-e-links.csv', [['Aula', 'Onde fica', 'Assunto', 'Vídeo', 'Publicado em', 'Link (só o vídeo)']]
+      .concat(lista.map(a => [a.tema, a.trilha ? 'Integração' : 'Cursos', a.area || '',
+        LINK_ORIGEM[a.video_source] || a.video_source || '', trnFmtData(a.data), linkDaAula(a.id)])));
+  }
+  async function copiarTexto(texto){
+    try { await navigator.clipboard.writeText(texto); return true; }
+    catch(e){
+      const t = document.createElement('textarea');
+      t.value = texto; t.style.position = 'fixed'; t.style.opacity = '0';
+      document.body.appendChild(t); t.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch(_){}
+      t.remove();
+      return ok;
+    }
+  }
 
   function admEhVisao(){ return ['admitidos', 'pendentes', 'concluiram', 'dispensados'].includes(trnEstado.visao); }
 
@@ -6481,6 +6557,14 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('trnNovoVideo').addEventListener('click', openVideoModal);
     document.getElementById('trnOrdemIntegracao').addEventListener('click', abrirOrdemIntegracao);
     document.getElementById('trnAdmCsv').addEventListener('click', admBaixarCsv);
+    document.getElementById('trnLinksCsv').addEventListener('click', baixarCsvLinks);
+    document.getElementById('trnCorpoLinks').addEventListener('click', async (e) => {
+      const b = e.target.closest('.trn-links-copiar');
+      if(!b) return;
+      const ok = await copiarTexto(b.dataset.link);
+      b.textContent = ok ? 'Copiado!' : 'Não copiou';
+      setTimeout(() => { b.textContent = 'Copiar'; }, 1800);
+    });
     document.getElementById('trnAdmSync').addEventListener('click', admAtualizarBanco);
     document.getElementById('trnConsultarFicha').addEventListener('click', abrirConsultaFicha);
     document.getElementById('trnAdmPdf').addEventListener('click', admBaixarPdf);

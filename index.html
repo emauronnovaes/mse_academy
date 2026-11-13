@@ -22,7 +22,7 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261113b">
+<link rel="stylesheet" href="style.css?v=20261113c">
 <title>MSE Academy — Central de ajuda do portal</title>
 </head>
 <body>
@@ -368,6 +368,7 @@
             <button type="button" data-visao="admitidos" aria-pressed="false" title="Quem o RH admitiu no período e se fez a integração">Admitidos</button>
             <button type="button" data-visao="pendentes" aria-pressed="false" title="Novos contratados que ainda não fizeram a integração">Pendentes</button>
             <button type="button" data-visao="concluiram" aria-pressed="false" title="Admitidos que já terminaram a integração">Concluíram</button>
+            <button type="button" data-visao="links" aria-pressed="false" title="Todas as aulas publicadas com o link que abre só o vídeo">Aulas e links</button>
           </div>
           <strong id="trnContagem" aria-live="polite">Carregando...</strong>
         </div>
@@ -378,6 +379,7 @@
           <button type="button" class="trn-btn" id="trnAdmSync" hidden title="Grava no banco a lista de quem não fez a integração, para o outro sistema consultar">Atualizar banco</button>
           <button type="button" class="trn-btn" id="trnAdmCsv" hidden>Baixar planilha</button>
           <button type="button" class="trn-btn" id="trnAdmPdf" hidden>Baixar PDF</button>
+          <button type="button" class="trn-btn" id="trnLinksCsv" hidden>Baixar planilha</button>
 
         </div>
       </div>
@@ -411,6 +413,13 @@
             </tr>
           </thead>
           <tbody id="trnCorpoAdmitidos"></tbody>
+        </table>
+        <!-- Aulas e links: montada na hora a partir do banco (vídeo novo aprovado já entra) -->
+        <table class="trn-tabela" id="trnTabelaLinks" hidden>
+          <thead>
+            <tr><th>Aula</th><th>Onde fica</th><th>Assunto</th><th>Vídeo</th><th>Publicado em</th><th>Link (só o vídeo)</th></tr>
+          </thead>
+          <tbody id="trnCorpoLinks"></tbody>
         </table>
       </div>
     </section>
@@ -743,7 +752,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261113b"></script>
+<script src="script.js?v=20261113c"></script>
 
 </body>
 </html>
