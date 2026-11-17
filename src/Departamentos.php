@@ -26,7 +26,10 @@ require_once __DIR__ . '/PortalFichaApi.php';
  *
  * Para tirar mais um, é só acrescentar o nome aqui (maiúscula, acento,
  * espaço e pontuação não importam). Além desta lista, qualquer nome no
- * formato "CLIENTE - LOCAL" (com " - " no meio) é tratado como obra.
+ * formato "CLIENTE - LOCAL" (com " - " no meio) é tratado como obra, e nome
+ * com código de contrato (CP068, CP 343...) ou RMI nunca é departamento.
+ * Nome com a marca "Depto"/"Dept." ("TI - Depto") é departamento, mesmo com
+ * " - " no meio; a marca sai do nome na lista ("TI").
  */
 const MSE_DEPARTAMENTOS_IGNORADOS = [
     'SCALA - CAMPINAS-SP - CP068',
@@ -50,10 +53,34 @@ const MSE_DEPARTAMENTOS_IGNORADOS = [
     'EUROFARMA',
 ];
 
-/** Esse texto é nome de obra (e não departamento)? A escolha do admin (tabela departamentos_config) vale mais que os padrões. */
+/**
+ * Tira a marca de departamento do começo ou do fim do nome:
+ * "Recrutamento - Depto" e "Dept. Recrutamento" viram "Recrutamento".
+ * "Departamento" por extenso fica (pode ser parte do nome, ex.: Departamento Pessoal).
+ */
+function mse_departamento_limpo(string $nome): string
+{
+    $n = trim((string) preg_replace('/\s+/u', ' ', $nome));
+    $marca = 'dep(?:to|t)\.?';
+    $limpo = (string) preg_replace('/^' . $marca . '(?:\s*[-–:]\s*|\s+)/iu', '', $n);
+    $limpo = trim((string) preg_replace('/(?:\s*[-–]\s*|\s+)' . $marca . '$/iu', '', $limpo));
+    return $limpo !== '' ? $limpo : $n;
+}
+
+/** O nome traz a marca "Depto"/"Dept."? */
+function mse_departamento_tem_marca(string $nome): bool
+{
+    return mse_departamento_limpo($nome) !== trim((string) preg_replace('/\s+/u', ' ', $nome));
+}
+
+/** Esse texto é nome de obra (e não departamento)? A escolha do admin (tabela departamentos_config) vale mais que os padrões, menos para CP e RMI. */
 function mse_departamento_eh_obra(string $nome, ?array $config = null): bool
 {
     static $ignorados = null;
+    // Código de contrato (CP068) e RMI: nunca é departamento, nem com "Mostrar".
+    if (preg_match('/\bCP\s*-?\s*\d+|\bRMI\b/iu', $nome)) {
+        return true;
+    }
     if ($config !== null) {
         $tipo = $config[mse_departamento_chave($nome)]['tipo'] ?? null;
         if ($tipo === 'mostrar') {
@@ -62,6 +89,10 @@ function mse_departamento_eh_obra(string $nome, ?array $config = null): bool
         if ($tipo === 'ocultar') {
             return true;
         }
+    }
+    // "TI - Depto": a marca diz que é departamento, apesar do " - ".
+    if (mse_departamento_tem_marca($nome)) {
+        return false;
     }
     if ($ignorados === null) {
         $ignorados = array_flip(array_map(static fn($n) => str_replace(' ', '', mse_departamento_chave($n)), MSE_DEPARTAMENTOS_IGNORADOS));
@@ -113,10 +144,20 @@ function mse_departamentos_config(PDO $pdo): array
     return $mapa;
 }
 
-/** "Programação" e "PROGRAMACAO" viram a mesma coisa. */
+/** "Programação", "PROGRAMACAO" e "Programação - Depto" viram a mesma coisa. */
 function mse_departamento_chave(string $nome): string
 {
-    return mse_portal_ficha_normalizar_nome($nome);
+    return mse_portal_ficha_normalizar_nome(mse_departamento_limpo($nome));
+}
+
+/**
+ * Chaves do departamento de uma pessoa: a atual e a de antes de a marca
+ * "Depto" sair do nome — vídeo marcado antes disso guardou "ti depto" e
+ * continua valendo para quem é de "TI - Depto".
+ */
+function mse_departamento_chaves_pessoa(string $valor): array
+{
+    return array_values(array_unique([mse_departamento_chave($valor), mse_portal_ficha_normalizar_nome($valor)]));
 }
 
 /** Garante a tabela course_departamentos (migração 025). false = não existe e não deu pra criar. */
@@ -159,7 +200,7 @@ function mse_departamentos_portal(PDO $pdo): array
     $lista = [];
     foreach ($b['nomes'] as $n) {
         if (!mse_departamento_eh_obra($n, $config)) {
-            $lista[mse_departamento_chave($n)] = $n;
+            $lista[mse_departamento_chave($n)] = mse_departamento_limpo($n);
         }
     }
     foreach ($config as $chave => $c) { // departamentos adicionados à mão
@@ -184,7 +225,13 @@ function mse_departamentos_gerenciar(PDO $pdo): array
     $config = mse_departamentos_config($pdo);
     $itens = [];
     foreach ($b['nomes'] as $n) {
-        $itens[mse_departamento_chave($n)] = ['nome' => $n, 'oculto' => mse_departamento_eh_obra($n, $config), 'manual' => false];
+        $chave = mse_departamento_chave($n);
+        $oculto = mse_departamento_eh_obra($n, $config);
+        // "TI" e "TI - Depto" viram uma linha só; vale a que aparece na lista.
+        if (isset($itens[$chave]) && ($oculto || !$itens[$chave]['oculto'])) {
+            continue;
+        }
+        $itens[$chave] = ['nome' => mse_departamento_limpo($n), 'oculto' => $oculto, 'manual' => false];
     }
     foreach ($config as $chave => $c) {
         if ($c['tipo'] === 'extra') {

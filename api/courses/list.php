@@ -146,7 +146,9 @@ if ($courses && mse_tem_tabela($pdo, 'course_departamentos')) {
         $stmt->execute([(int) $user['id']]);
         foreach (($stmt->fetch() ?: []) as $valor) {
             if (trim((string) $valor) !== '') {
-                $meusDeptos[mse_departamento_chave((string) $valor)] = true;
+                foreach (mse_departamento_chaves_pessoa((string) $valor) as $chaveDepto) {
+                    $meusDeptos[$chaveDepto] = true;
+                }
             }
         }
     }

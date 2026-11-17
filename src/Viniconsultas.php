@@ -170,7 +170,9 @@ function mse_vini_aulas_do_departamento(PDO $pdo, ?int $userId, ?string $deptoFi
     $chaves = [];
     foreach ($nomes as $n) {
         if (trim((string) $n) !== '') {
-            $chaves[mse_departamento_chave((string) $n)] = true;
+            foreach (mse_departamento_chaves_pessoa((string) $n) as $chaveDepto) {
+                $chaves[$chaveDepto] = true;
+            }
         }
     }
     $temClassif = mse_tem_coluna($pdo, 'courses', 'obrigatoriedade');
