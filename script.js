@@ -5157,6 +5157,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   }
   // PDF da lista (o que está na tela, com a busca aplicada). O cabeçalho é
   // próprio: o dos outros relatórios cita o período, que aqui não filtra nada.
+  // O link vai como <a>: a folha do PDF é uma imagem, e sem o link de verdade
+  // o leitor de PDF "lia" o texto da imagem e trocava letras (portalmse virava
+  // portaimse). Com o <a>, o gerador grava o endereço exato no PDF.
   async function baixarPdfLinks(){
     const lista = linksFiltradas();
     const q = document.getElementById('trnBusca').value.trim();
@@ -5180,7 +5183,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
               <td>${esc(a.area || '')}</td>
               <td>${esc(LINK_ORIGEM[a.video_source] || a.video_source || '')}</td>
               <td>${trnFmtData(a.data)}</td>
-              <td style="word-break:break-all;font-size:11px">${esc(linkDaAula(a.id))}</td>
+              <td style="word-break:break-all;font-size:11px"><a href="${esc(linkDaAula(a.id))}" style="color:#C4212C">${esc(linkDaAula(a.id))}</a></td>
             </tr>`).join('') || '<tr><td colspan="6" class="trn-vazio-lista">Nenhuma aula encontrada.</td></tr>'}
           </tbody>
         </table>`;
