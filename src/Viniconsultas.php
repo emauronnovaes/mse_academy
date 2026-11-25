@@ -316,7 +316,7 @@ function mse_viniconsultas_gravar(PDO $pdo, array $pessoas, string $verificadoEm
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON DUPLICATE KEY UPDATE
            nome = VALUES(nome), cpf = VALUES(cpf), email = VALUES(email), cargo = VALUES(cargo), departamento = VALUES(departamento),
-           user_id = VALUES(user_id), entrou_na_academy = VALUES(entrou_na_academy), primeiro_login = VALUES(primeiro_login),
+           user_id = COALESCE(user_id, VALUES(user_id)), entrou_na_academy = VALUES(entrou_na_academy), primeiro_login = VALUES(primeiro_login),
            ultimo_login = VALUES(ultimo_login), total_logins = VALUES(total_logins),
            situacao_integracao = VALUES(situacao_integracao),
            integracao_concluida = VALUES(integracao_concluida), integracao_concluida_em = VALUES(integracao_concluida_em),
@@ -570,7 +570,10 @@ function mse_vini_recalcular_agendado(bool $aulaMudou = false): void
                 ignore_user_abort(true);
                 @set_time_limit(90);
                 $t0 = microtime(true);
-                mse_vini_importar_funcionarios_lote($pdo, 8.0);
+                // 7h e 14h: novos admitidos da API de integração (o "Atualizar banco", sozinho).
+                require_once __DIR__ . '/IntegracaoBanco.php';
+                mse_sincronizar_programado_lote($pdo, 6.0);
+                mse_vini_importar_funcionarios_lote($pdo, max(2.0, 8.0 - (microtime(true) - $t0)));
                 mse_vini_recalcular_lote($pdo, max(3.0, 12.0 - (microtime(true) - $t0)));
             } catch (Throwable $e) {
                 error_log('[consultasmia] recalculo agendado: ' . $e->getMessage());
@@ -579,6 +582,33 @@ function mse_vini_recalcular_agendado(bool $aulaMudou = false): void
     } catch (Throwable $e) {
         error_log('[consultasmia] agendar recalculo: ' . $e->getMessage());
     }
+}
+
+/** Horários (hora de Brasília) em que o banco de consulta é atualizado por inteiro. */
+const MSE_ATUALIZACAO_HORARIOS = [7, 14];
+
+/**
+ * O último horário programado que já passou ('Y-m-d H:i:s', hora de Brasília):
+ * às 10h é hoje 07:00; às 15h, hoje 14:00; às 6h, ontem 14:00.
+ */
+function mse_ultimo_horario_programado(): string
+{
+    $agora = new DateTime('now', new DateTimeZone('America/Sao_Paulo'));
+    $horas = MSE_ATUALIZACAO_HORARIOS;
+    rsort($horas);
+    foreach ($horas as $h) {
+        $marco = (clone $agora)->setTime($h, 0);
+        if ($marco <= $agora) {
+            return $marco->format('Y-m-d H:i:s');
+        }
+    }
+    return (clone $agora)->modify('-1 day')->setTime($horas[0], 0)->format('Y-m-d H:i:s');
+}
+
+/** Hora de agora em Brasília ('Y-m-d H:i:s'), no mesmo formato de mse_ultimo_horario_programado(). */
+function mse_agora_brasilia(): string
+{
+    return (new DateTime('now', new DateTimeZone('America/Sao_Paulo')))->format('Y-m-d H:i:s');
 }
 
 /**
@@ -601,8 +631,8 @@ function mse_vini_data_da_ficha(array $f): string
 /**
  * Importa TODOS os funcionários ativos da ficha do Portal para consultasmia e
  * consultasmia_2 (além dos admitidos, que vêm da API de integração), em LOTES
- * COM LIMITE DE TEMPO. Uma importação completa começa 1 vez por dia, ou na hora
- * se pedida (botão "Atualizar banco"); a lista da ficha é baixada uma vez por
+ * COM LIMITE DE TEMPO. Uma importação completa começa às 7h e às 14h (ver
+ * MSE_ATUALIZACAO_HORARIOS), ou na hora se pedida (botão "Atualizar banco"); a lista da ficha é baixada uma vez por
  * importação e guardada num arquivo temporário até ela terminar.
  *
  * @param bool $forcar começa uma importação nova agora, mesmo se já houve hoje
@@ -626,14 +656,13 @@ function mse_vini_importar_funcionarios_lote(PDO $pdo, float $orcamentoSeg, bool
     }
 
     if (!$emAndamento) {
+        // Já rodou depois do último horário programado (7h ou 14h)? Então espera o próximo.
         $ultima = mse_config_ler($pdo, 'funcionarios_importacao_em', '');
-        $passouUmDia = $ultima === ''
-            || (int) $pdo->query('SELECT TIMESTAMPDIFF(SECOND, ' . $pdo->quote($ultima) . ', NOW())')->fetchColumn() >= 86400;
-        if (!$forcar && !$passouUmDia) {
+        if (!$forcar && $ultima !== '' && $ultima >= mse_ultimo_horario_programado()) {
             return $res;
         }
-        // Marca antes de chamar a API: se ela falhar, só tenta de novo amanhã (ou no próximo "Atualizar banco").
-        mse_config_gravar($pdo, 'funcionarios_importacao_em', (string) $pdo->query('SELECT NOW()')->fetchColumn(), 'sistema');
+        // Marca antes de chamar a API: se ela falhar, só tenta de novo no próximo horário (ou no próximo "Atualizar banco").
+        mse_config_gravar($pdo, 'funcionarios_importacao_em', mse_agora_brasilia(), 'sistema');
         mse_config_gravar($pdo, 'funcionarios_forcar', '0', 'sistema');
         try {
             $fichas = mse_portal_fichas_ativas();

@@ -123,7 +123,7 @@ function mse_sincronizar_lista(PDO $pdo, array $admitidos, string $hoje, string 
          ON DUPLICATE KEY UPDATE
            nome = VALUES(nome), cpf = VALUES(cpf), email = VALUES(email), telefone = VALUES(telefone), cargo = VALUES(cargo),
            departamento = VALUES(departamento), obra = VALUES(obra), empresa = VALUES(empresa), vinculo = VALUES(vinculo),
-           gerente_nome = VALUES(gerente_nome), gerente_email = VALUES(gerente_email), user_id = VALUES(user_id),
+           gerente_nome = VALUES(gerente_nome), gerente_email = VALUES(gerente_email), user_id = COALESCE(user_id, VALUES(user_id)),
            situacao = VALUES(situacao), aulas_obrigatorias = VALUES(aulas_obrigatorias), aulas_concluidas = VALUES(aulas_concluidas),
            ultimo_acesso = VALUES(ultimo_acesso), concluiu_em = VALUES(concluiu_em), prova = VALUES(prova),
            detalhe_aulas = VALUES(detalhe_aulas), verificado_em = VALUES(verificado_em)'
@@ -206,6 +206,79 @@ function mse_sincronizar_agora(PDO $pdo): array
     }
     $agora = new DateTime('now', new DateTimeZone('America/Sao_Paulo'));
     return [$agora->format('Y-m-d'), $agora->format('Y-m-d H:i:s')];
+}
+
+/**
+ * O "Atualizar banco" automático, às 7h e às 14h (MSE_ATUALIZACAO_HORARIOS),
+ * sem cron: chamado pelo recálculo agendado (mse_vini_recalcular_agendado),
+ * depois da resposta de uma requisição comum, em partes curtas.
+ *   1ª parte: baixa a lista de admitidos dos últimos 90 dias e guarda num
+ *             arquivo temporário (a API pode levar dezenas de segundos);
+ *   seguintes: grava 10 pessoas por vez (integracao_admitidos e consultasmia);
+ *   no fim: reconfere quem já estava pendente e ficou fora do período.
+ * Nunca muda o id das linhas nem o user_id já gravado (só preenche se vazio).
+ */
+function mse_sincronizar_programado_lote(PDO $pdo, float $orcamentoSeg): void
+{
+    require_once __DIR__ . '/Configuracoes.php';
+    if (!mse_garantir_configuracoes($pdo) || !mse_garantir_tabela_integracao($pdo)) {
+        return;
+    }
+    $t0 = microtime(true);
+    $arquivo = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mse_academy_admitidos_' . md5(__DIR__) . '.json';
+    $emAndamento = mse_config_ler($pdo, 'integracao_auto_pendente', '0') === '1' && is_file($arquivo);
+
+    if (!$emAndamento) {
+        $ultima = mse_config_ler($pdo, 'integracao_auto_em', '');
+        if ($ultima !== '' && $ultima >= mse_ultimo_horario_programado()) {
+            return; // já rodou depois do último horário (7h ou 14h)
+        }
+        [$hoje, $inicio] = mse_sincronizar_agora($pdo);
+        // Marca antes de chamar a API: se ela falhar, só tenta de novo no próximo horário.
+        mse_config_gravar($pdo, 'integracao_auto_em', mse_agora_brasilia(), 'sistema');
+        $aviso = null;
+        try {
+            $admitidos = mse_integracao_admitidos(date('Y-m-d', strtotime($hoje . ' -90 days')), $hoje, $aviso);
+        } catch (Throwable $e) {
+            mse_config_gravar($pdo, 'integracao_auto_erro', mb_substr($e->getMessage(), 0, 250), 'sistema');
+            return;
+        }
+        file_put_contents($arquivo, json_encode(array_values($admitidos), JSON_UNESCAPED_UNICODE));
+        mse_config_gravar($pdo, 'integracao_auto_cursor', '0', 'sistema');
+        mse_config_gravar($pdo, 'integracao_auto_inicio', $inicio, 'sistema');
+        mse_config_gravar($pdo, 'integracao_auto_erro', (string) ($aviso ?? ''), 'sistema');
+        mse_config_gravar($pdo, 'integracao_auto_pendente', '1', 'sistema');
+        return; // grava nas próximas partes
+    }
+
+    $admitidos = json_decode((string) @file_get_contents($arquivo), true);
+    if (!is_array($admitidos)) {
+        mse_config_gravar($pdo, 'integracao_auto_pendente', '0', 'sistema');
+        return;
+    }
+    $cursor = (int) mse_config_ler($pdo, 'integracao_auto_cursor', '0');
+    while ($cursor < count($admitidos) && microtime(true) - $t0 < $orcamentoSeg) {
+        $lote = array_slice($admitidos, $cursor, 10);
+        try {
+            mse_sincronizar_lote($pdo, $lote);
+        } catch (Throwable $e) {
+            error_log('[integracao] atualização programada, lote a partir de ' . $cursor . ': ' . $e->getMessage());
+        }
+        $cursor += count($lote); // mesmo com erro avança: um lote ruim não trava o resto
+        mse_config_gravar($pdo, 'integracao_auto_cursor', (string) $cursor, 'sistema');
+    }
+    if ($cursor < count($admitidos)) {
+        return;
+    }
+    $inicio = mse_config_ler($pdo, 'integracao_auto_inicio', '');
+    while (microtime(true) - $t0 < $orcamentoSeg) {
+        $r = mse_sincronizar_antigos($pdo, $inicio, 8);
+        if ($r['restantes'] === 0) {
+            mse_config_gravar($pdo, 'integracao_auto_pendente', '0', 'sistema');
+            @unlink($arquivo);
+            return;
+        }
+    }
 }
 
 /** Um lote pequeno de admitidos (vindos do navegador). */
