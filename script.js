@@ -246,7 +246,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   // de avanço e o progresso. Assim, assistir pelo link conta como assistido.
   function abrirAulaDoLink(){
     const id = Number(new URLSearchParams(location.search).get('aula'));
-    if(!(id > 0)) return;
+    if(!(id > 0) || !conteudoCarregado) return; // sem login as aulas não carregaram: nada a abrir ainda
     // Tira o ?aula= do endereço: recarregar a página não reabre a aula sozinha.
     try{
       const u = new URL(location.href);
