@@ -1860,54 +1860,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }
   }
 
-  // ---------- Macete: Ctrl+M e depois Ctrl+Y soltam o show de fogos 3D ----------
-  // Só para uma pessoa: o e-mail não fica escrito aqui, só a "impressão digital"
-  // dele (SHA-256), comparada com a de quem está logado.
-  const MACETE_FOGOS_HASH = '1b27dea61492d6d57a1cbc23f8908149672ed42f37737f0cc44b2ecf5b5f9e0d';
-  async function ligarMaceteDosFogos(email){
-    if(ligarMaceteDosFogos.ligado || !email || !window.crypto || !crypto.subtle) return;
-    try{
-      const dados = new TextEncoder().encode(String(email).trim().toLowerCase());
-      const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', dados)))
-        .map(b => b.toString(16).padStart(2, '0')).join('');
-      if(hash !== MACETE_FOGOS_HASH) return;
-    }catch(e){ return; }
-    ligarMaceteDosFogos.ligado = true;
-    let mEm = 0; // quando o Ctrl+M foi apertado
-    document.addEventListener('keydown', (e) => {
-      if(!e.ctrlKey || e.altKey || e.shiftKey) return;
-      const k = (e.key || '').toLowerCase();
-      if(k === 'm'){ mEm = Date.now(); e.preventDefault(); return; }
-      if(k === 'y' && Date.now() - mEm < 2000){ mEm = 0; e.preventDefault(); mostrarFogos3D(); }
-    });
-  }
-
-  // "Fireworks Show", de tamminen, no player do Sketchfab (crédito exigido no rodapé da tela).
-  function mostrarFogos3D(){
-    if(document.getElementById('fogos3d')) return;
-    const tela = document.createElement('div');
-    tela.id = 'fogos3d';
-    tela.className = 'fogos-3d';
-    tela.setAttribute('role', 'dialog');
-    tela.setAttribute('aria-label', 'Show de fogos');
-    const params = 'autostart=1&preload=1&transparent=1&ui_infos=0&ui_controls=0&ui_stop=0&ui_inspector=0&ui_hint=0'
-      + '&ui_help=0&ui_settings=0&ui_vr=0&ui_ar=0&ui_fullscreen=0&ui_annotations=0&ui_loading=0';
-    tela.innerHTML = `
-      <iframe title="Fireworks Show" src="https://sketchfab.com/models/6f50cd9b3fce473f913a123513fa4cbd/embed?${params}"
-        allow="autoplay; fullscreen; xr-spatial-tracking" allowfullscreen frameborder="0"></iframe>
-      <button type="button" class="fogos-3d-fechar" aria-label="Fechar">&times;</button>
-      <p class="fogos-3d-credito"><a href="https://sketchfab.com/3d-models/fireworks-show-6f50cd9b3fce473f913a123513fa4cbd" target="_blank" rel="noopener">Fireworks Show</a>
-        by <a href="https://sketchfab.com/tamminen" target="_blank" rel="noopener">tamminen</a>
-        on <a href="https://sketchfab.com" target="_blank" rel="noopener">Sketchfab</a></p>
-    `;
-    document.body.appendChild(tela);
-    const fechar = () => { tela.remove(); document.removeEventListener('keydown', noEsc, true); };
-    const noEsc = (e) => { if(e.key === 'Escape'){ e.preventDefault(); e.stopImmediatePropagation(); fechar(); } };
-    document.addEventListener('keydown', noEsc, true);
-    tela.querySelector('.fogos-3d-fechar').addEventListener('click', fechar);
-    tela.querySelector('.fogos-3d-fechar').focus();
-  }
-
   function soltarFogos(){
     if(soltarFogos.jaRodou) return;
     // Quem pediu menos movimento no sistema não recebe a animação. É a
@@ -3831,7 +3783,6 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     if(!token) return false;
     try{
       const data = await apiFetch('api/auth/me.php');
-      if(data.user) ligarMaceteDosFogos(data.user.email);
       return data.user && data.user.role === 'admin';
     }catch(e){
       return false;

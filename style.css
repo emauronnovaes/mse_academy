@@ -1374,19 +1374,6 @@
   /* Fogos de artifício de quem concluiu a integração. Cobre a tela inteira
      mas não intercepta clique nenhum: é decoração por cima, a pessoa
      continua usando a página normalmente enquanto os fogos correm. */
-  /* Show de fogos 3D (macete Ctrl+M, Ctrl+Y): player do Sketchfab por cima de tudo */
-  .fogos-3d{
-    position:fixed; inset:0; z-index:100002; background:rgba(8,10,28,0.78);
-    display:flex; flex-direction:column;
-  }
-  .fogos-3d iframe{ flex:1; width:100%; border:0; display:block; }
-  .fogos-3d-fechar{
-    position:absolute; top:14px; right:16px; width:40px; height:40px; border-radius:50%; cursor:pointer;
-    border:1.5px solid rgba(255,255,255,0.4); background:rgba(0,0,0,0.45); color:#fff; font-size:22px; line-height:1;
-  }
-  .fogos-3d-credito{ margin:0; padding:6px 12px 10px; text-align:center; font-size:12.5px; color:rgba(255,255,255,0.75); }
-  .fogos-3d-credito a{ color:#7fd3ff; font-weight:600; }
-
   .fogos-canvas{
     position:fixed; inset:0; z-index:9999;
     pointer-events:none;
