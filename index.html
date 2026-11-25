@@ -368,7 +368,7 @@
             <button type="button" data-visao="admitidos" aria-pressed="false" title="Quem o RH admitiu no período e se fez a integração">Admitidos</button>
             <button type="button" data-visao="pendentes" aria-pressed="false" title="Novos contratados que ainda não fizeram a integração">Pendentes</button>
             <button type="button" data-visao="concluiram" aria-pressed="false" title="Admitidos que já terminaram a integração">Concluíram</button>
-            <button type="button" data-visao="links" aria-pressed="false" title="Todas as aulas publicadas com o link que abre só o vídeo">Aulas e links</button>
+            <button type="button" data-visao="links" aria-pressed="false" title="Todas as aulas publicadas com o link que abre a Academy direto na aula">Aulas e links</button>
           </div>
           <strong id="trnContagem" aria-live="polite">Carregando...</strong>
         </div>
@@ -417,7 +417,7 @@
         <!-- Aulas e links: montada na hora a partir do banco (vídeo novo aprovado já entra) -->
         <table class="trn-tabela" id="trnTabelaLinks" hidden>
           <thead>
-            <tr><th>Aula</th><th>Onde fica</th><th>Assunto</th><th>Vídeo</th><th>Publicado em</th><th>Link (só o vídeo)</th></tr>
+            <tr><th>Aula</th><th>Onde fica</th><th>Assunto</th><th>Vídeo</th><th>Publicado em</th><th>Link da aula</th></tr>
           </thead>
           <tbody id="trnCorpoLinks"></tbody>
         </table>
@@ -684,7 +684,7 @@
       <div>
         <h3 id="videoModalTitle">Título do tutorial</h3>
         <span id="videoModalArea">Área</span>
-        <a id="videoModalSoVideo" class="vid-so-video" href="#" target="_blank" rel="noopener">Abrir só o vídeo ↗</a>
+        <a id="videoModalSoVideo" class="vid-so-video" href="#" target="_blank" rel="noopener">Link da aula ↗</a>
       </div>
       <button type="button" class="video-modal-close" id="videoModalClose" aria-label="Fechar vídeo">
         <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
@@ -752,7 +752,7 @@
   </div>
 </footer>
 
-<script src="script.js?v=20261123a"></script>
+<script src="script.js?v=20261125a"></script>
 
 </body>
 </html>

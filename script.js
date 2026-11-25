@@ -241,6 +241,42 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   updateGreetingBanner(); // mostra algo já de cara (Colaborador ou nome salvo de uma visita anterior)
 
   // ---------- Abas: Integração / Cursos ----------
+  // Link de uma aula (index.html?aula=N; o antigo video.html?id=N redireciona
+  // pra cá): abre a aula no player normal da Academy — com as perguntas, a trava
+  // de avanço e o progresso. Assim, assistir pelo link conta como assistido.
+  function abrirAulaDoLink(){
+    const id = Number(new URLSearchParams(location.search).get('aula'));
+    if(!(id > 0)) return;
+    // Tira o ?aula= do endereço: recarregar a página não reabre a aula sozinha.
+    try{
+      const u = new URL(location.href);
+      u.searchParams.delete('aula');
+      history.replaceState(history.state, '', u.href);
+    }catch(e){}
+    const idx = ONBOARDING.findIndex(m => m.id === id);
+    if(idx >= 0){
+      showView('integracao');
+      if(idx <= onbCurrentIndex()){
+        onbSelectedIndex = idx;
+        renderActiveModuleSection();
+      } else {
+        alert('Esta aula da Integração ainda está bloqueada: conclua as aulas anteriores primeiro. Abrimos a aula em que você está.');
+      }
+      setTimeout(() => {
+        const modulo = document.getElementById('onbActiveModule');
+        if(modulo) modulo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 150);
+      return;
+    }
+    const c = courses.find(x => x.id === id);
+    if(c){
+      showView('cursos');
+      openVideoModal(c);
+      return;
+    }
+    alert('Esta aula não está disponível para você, ou foi retirada da Academy.');
+  }
+
   function showView(name){
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById('view-' + name).classList.add('active');
@@ -1825,10 +1861,16 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     </button>`;
   }
 
-  // Link "Abrir só o vídeo": abre a aula numa aba só com o player (video.html).
-  // Lá não conta como concluída — é só para assistir ou mandar o link.
+  // Link da aula: abre a Academy já nesta aula (index.html?aula=N), com perguntas,
+  // trava de avanço e progresso — quem assiste pelo link conta como quem assistiu.
   function linkSoVideo(id){
-    return `<a class="vid-so-video" href="video.html?id=${encodeURIComponent(id)}" target="_blank" rel="noopener">Abrir só o vídeo ↗</a>`;
+    return `<a class="vid-so-video" href="${escaparHtml(linkDaAula(id))}" target="_blank" rel="noopener">Link da aula ↗</a>`;
+  }
+  // Endereço do link de uma aula (também usado na aba "Aulas e links" dos Relatórios).
+  function linkDaAula(id){
+    const u = new URL('index.html', location.href);
+    u.search = '?aula=' + encodeURIComponent(id);
+    return u.href;
   }
 
   // controlslist do <video>: tira a velocidade (só administrador usa) e o botão de tela cheia do
@@ -3026,7 +3068,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     videoModalTitleEl.textContent = course.title;
     videoModalAreaEl.textContent = course.label;
     const soVideo = document.getElementById('videoModalSoVideo');
-    if(soVideo) soVideo.href = 'video.html?id=' + encodeURIComponent(course.id);
+    if(soVideo) soVideo.href = linkDaAula(course.id);
     videoModalBodyEl.innerHTML = `
       <div class="video-modal-inner">
         <div class="vid-player-wrap">
@@ -5004,7 +5046,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     document.getElementById('trnOrdemIntegracao').hidden = document.getElementById('trnNovoVideo').hidden;
     const dica = document.querySelector('#treinamentosTela .trn-dica');
     if(dica) dica.textContent = links
-      ? 'Todas as aulas publicadas, com o link que abre só o vídeo. A lista é montada na hora: vídeo novo aprovado já aparece aqui. A busca filtra pelo nome da aula ou pelo assunto (as datas não valem aqui).'
+      ? 'Todas as aulas publicadas, com o link que abre a Academy direto na aula (com as perguntas, e contando como assistida). A lista é montada na hora: vídeo novo aprovado já aparece aqui. A busca filtra pelo nome da aula ou pelo assunto (as datas não valem aqui).'
       : admitidos
       ? 'Aqui as datas filtram pela data de admissão (sem datas: últimos 30 dias). A busca filtra por nome, CPF, e-mail, cargo, departamento, obra ou gerente.'
       : porPessoa
@@ -5105,11 +5147,10 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   let admChaveCarregada = '';
 
   // ---------- Aulas e links ----------
-  // Todas as aulas publicadas com o link "só o vídeo" (video.html). Buscada
+  // Todas as aulas publicadas com o link da aula (abre a Academy nela). Buscada
   // do banco toda vez que a aba abre: vídeo novo aprovado já entra, sem
   // ninguém precisar atualizar planilha nenhuma.
   const linksEstado = { aulas: [], pedido: 0 };
-  function linkDaAula(id){ return new URL('video.html?id=' + id, location.href).href; }
   function linksFiltradas(){
     const q = document.getElementById('trnBusca').value.trim().toLowerCase();
     if(!q) return linksEstado.aulas;
@@ -5175,7 +5216,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         </div>
         <p class="rel-filtros">${q ? esc(`Busca: "${q}"`) : 'Sem filtros'} · ${lista.length} ${lista.length === 1 ? 'aula' : 'aulas'}</p>
         <table class="trn-tabela">
-          <thead><tr><th>Aula</th><th>Onde fica</th><th>Assunto</th><th>Vídeo</th><th>Publicado em</th><th>Link (só o vídeo)</th></tr></thead>
+          <thead><tr><th>Aula</th><th>Onde fica</th><th>Assunto</th><th>Vídeo</th><th>Publicado em</th><th>Link da aula</th></tr></thead>
           <tbody>${lista.map(a => `
             <tr>
               <td><strong>${esc(a.tema)}</strong></td>
@@ -8121,6 +8162,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     window.mseEhAdmin = isAdmin;
     window.mseRenomearAula = renomearAula;
     if(isAdmin && typeof renderOnboarding === 'function') renderOnboarding();
+    abrirAulaDoLink();
     diagnostico.temTokenSalvo = !!getRealSessionToken();
 
     // mostrarPainelDiagnostico(diagnostico); // desativado — só reativar se precisar depurar de novo
