@@ -2564,9 +2564,9 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
   }
 
   // Vídeos vistos (concluídos), contando os de Integração e os de Cursos.
-  const META_PRATA = 5;
-  const META_OURO = 10;
-  const META_DIAMANTE = 15;
+  const META_PRATA = 15;
+  const META_OURO = 30;
+  const META_DIAMANTE = 50;
   function getVideosVistos(){
     return onbProgress.completed.length + catalogProgress.completed.length;
   }
@@ -2574,7 +2574,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     return `Veja ${meta} vídeos (Integração e Cursos) para chegar ${nome === 'Prata' ? 'à' : 'ao'} ${nome} (${Math.min(getVideosVistos(), meta)} de ${meta}).`;
   }
 
-  // Bronze -> Prata (5 vídeos) -> Ouro (10) -> Diamante (15). Metas provisórias: é só trocar os três números acima.
+  // Bronze -> Prata (15 vídeos) -> Ouro (30) -> Diamante (50). Metas provisórias: é só trocar os três números acima.
   // Contam todos os vídeos concluídos: os da trilha de Integração e os de Cursos.
   const LEVELS = [
     {
