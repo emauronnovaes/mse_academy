@@ -22,8 +22,10 @@
 <!-- O ?v= tem que ser igual ao do @font-face no style.css: endereços
      diferentes fazem o navegador baixar a mesma fonte duas vezes. -->
 <link rel="preload" href="fonts/fa-mse-900.woff2?v=20260928" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=20261113c">
+<link rel="stylesheet" href="style.css?v=20261125e">
 <title>MSE Academy — Central de ajuda do portal</title>
+<!-- three.js (baú 3D da trilha): só é baixado quando o baú aparece. -->
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 </head>
 <body>
 
@@ -748,11 +750,12 @@
     </div>
     <div class="wrap foot-bottom" style="padding-left:0;padding-right:0;">
       <span>© 2026 MSE Engenharia — MSE Academy</span>
+      <span class="foot-credito">Baú 3D: <a href="https://sketchfab.com/3d-models/stylized-chest-d78e206f32f74fac92089680f3978ed4" target="_blank" rel="noopener">“Stylized chest”</a>, de Zlata Budilova (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>)</span>
     </div>
   </div>
 </footer>
 
-<script src="script.js?v=20261125d"></script>
+<script src="script.js?v=20261125e"></script>
 
 </body>
 </html>

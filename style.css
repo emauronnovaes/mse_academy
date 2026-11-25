@@ -1026,6 +1026,32 @@
     60%{ transform:translateX(-50%) scale(1.15); opacity:0.7; }
     100%{ transform:translateX(-50%) scale(1); opacity:1; }
   }
+  /* Baú 3D (montarBau3D no script.js): o canvas entra no lugar do desenho. */
+  .onb-node.tem-bau-3d .chest-svg{ display:none; }
+  .chest-3d{
+    position:relative; z-index:1; display:block; width:150px; height:150px; pointer-events:none;
+    filter:drop-shadow(0 10px 12px rgba(120,80,10,0.25));
+  }
+  .onb-node.is-finish.is-locked .chest-3d{ filter:grayscale(0.85) brightness(0.9); }
+  /* Feixes amarelos suaves saindo da abertura da tampa (atrás do baú) */
+  .chest-feixe{
+    position:absolute; width:26px; height:120px; z-index:0; pointer-events:none;
+    transform-origin:50% 100%; border-radius:14px 14px 0 0;
+    background:linear-gradient(to top, rgba(255,214,90,0.9), rgba(255,228,140,0.4) 55%, rgba(255,240,180,0));
+    filter:blur(5px);
+  }
+  .chest-brilho{
+    position:absolute; width:120px; height:56px; z-index:0; pointer-events:none; border-radius:50%;
+    background:radial-gradient(rgba(255,222,110,0.85), rgba(255,222,110,0) 70%);
+    filter:blur(4px);
+  }
+  /* Moedas de ouro (na frente do baú) */
+  .chest-moeda{
+    position:absolute; width:16px; height:16px; z-index:3; pointer-events:none; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #FFF6C4 0 16%, #FFD34D 40%, #E0A100 74%, #A87400 100%);
+    box-shadow:inset 0 0 0 2px rgba(150,100,0,0.5), 0 2px 3px rgba(0,0,0,0.22);
+  }
+
   .chest-light-beam{
     position:absolute; top:50%; left:50%; width:3px; height:70px;
     background:linear-gradient(to top, rgba(255,223,126,0.9), rgba(255,223,126,0));
@@ -1114,6 +1140,7 @@
     .onb-node{width:56px; height:56px; font-size:17px;}
     .onb-node.is-finish.is-done, .onb-node.is-finish.is-locked{width:110px; height:110px;}
     .chest-svg{width:88px; height:88px;}
+    .chest-3d{width:110px; height:110px;}
     .onb-node-label-standalone{font-size:10px; width:92px;}
     .onb-node-label-standalone.is-label-right{ transform:translate(calc(-50% + 92px), -50%); }
     .onb-node-label-standalone.is-label-left{ transform:translate(calc(-50% - 92px), -50%); }
@@ -1480,8 +1507,10 @@
   footer li{margin-bottom:10px; font-size:14px;}
   footer li a:hover{color:#fff;}
   .foot-bottom{
-    display:flex; justify-content:center; padding-top:24px; font-size:12.5px;
+    display:flex; flex-wrap:wrap; justify-content:center; gap:4px 18px; padding-top:24px; font-size:12.5px;
   }
+  .foot-credito{ font-size:11.5px; opacity:0.7; }
+  .foot-credito a{ color:inherit; text-decoration:underline; }
 
   @media (max-width:920px){
     .search-box{max-width:none;}

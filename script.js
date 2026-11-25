@@ -562,6 +562,176 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     }catch(e){ /* o log não pode atrapalhar a animação */ }
   }
 
+  // ---------- Baú 3D (img/bau.glb) ----------
+  // Modelo "Stylized chest", de Zlata Budilova (Sketchfab, licença CC BY 4.0 —
+  // o crédito fica no rodapé). three.js vem do CDN (importmap no index.html) e
+  // só é baixado quando o baú aparece na trilha. Um renderizador só, reaproveitado:
+  // a trilha é redesenhada várias vezes e o navegador limita os WebGL por página.
+  // Sem WebGL, ou se algo falhar, continua o baú desenhado (SVG) de sempre.
+  // A tampa é a peça "Empty_82" do modelo, com o giro já na dobradiça.
+  const BAU_TAMPA_ABERTA = -1.85; // radianos (~106°): negativo levanta a frente da tampa
+  const bau3d = { promessa: null, falhou: false, THREE: null, renderer: null, cena: null, camera: null, modelo: null, tampa: null, quadro: 0 };
+
+  function carregarBau3D(){
+    if(!bau3d.promessa){
+      bau3d.promessa = Promise.all([
+        import('three'),
+        import('three/addons/loaders/GLTFLoader.js'),
+        import('three/addons/environments/RoomEnvironment.js'),
+      ]).then(([THREE, { GLTFLoader }, { RoomEnvironment }]) => new Promise((ok, falha) => {
+        new GLTFLoader().load('img/bau.glb?v=1', gltf => ok({ THREE, RoomEnvironment, modelo: gltf.scene }), undefined, falha);
+      })).then(({ THREE, RoomEnvironment, modelo }) => {
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(1);
+        renderer.setSize(320, 320, false); // o CSS define o tamanho na tela; 320 deixa nítido em tela de alta densidade
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.domElement.className = 'chest-3d';
+        renderer.domElement.setAttribute('aria-hidden', 'true');
+
+        const cena = new THREE.Scene();
+        // Reflexo de ambiente: sem ele o dourado (metálico) fica quase preto.
+        cena.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+        cena.add(new THREE.HemisphereLight(0xfff4dd, 0x6b4a2a, 0.9));
+        const sol = new THREE.DirectionalLight(0xffffff, 1.6);
+        sol.position.set(3, 6, 5);
+        cena.add(sol);
+
+        const tampa = modelo.getObjectByName('Empty_82');
+        if(tampa) tampa.rotation.x = 0; // o modelo vem com a tampa entreaberta: aqui fica fechada
+        cena.add(modelo);
+        modelo.updateMatrixWorld(true);
+        const caixa = new THREE.Box3().setFromObject(modelo);
+        modelo.position.sub(caixa.getCenter(new THREE.Vector3()));
+
+        // Câmera de frente, um pouco à direita e de cima, enquadrando o baú inteiro.
+        const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 200);
+        const raio = caixa.getSize(new THREE.Vector3()).length() / 2;
+        const dist = raio / Math.sin(THREE.MathUtils.degToRad(14)) * 1.02;
+        camera.position.set(0.42, 0.38, 0.82).normalize().multiplyScalar(dist);
+        camera.lookAt(0, 0, 0);
+
+        Object.assign(bau3d, { THREE, renderer, cena, camera, modelo, tampa });
+        return bau3d;
+      });
+      bau3d.promessa.catch(e => { bau3d.falhou = true; console.warn('[baú 3D] usando o desenho:', e && e.message); });
+    }
+    return bau3d.promessa;
+  }
+
+  function desenharBau3D(){
+    if(bau3d.renderer) bau3d.renderer.render(bau3d.cena, bau3d.camera);
+  }
+
+  // Troca o desenho do baú pelo 3D quando o modelo estiver pronto. O modelo
+  // (~3,3 MB) e o three.js só são baixados quando o baú chega perto da tela.
+  function montarBau3D(node){
+    if(bau3d.falhou || typeof WebGLRenderingContext === 'undefined') return;
+    if(!bau3d.promessa && 'IntersectionObserver' in window){
+      const olho = new IntersectionObserver(entradas => {
+        if(!entradas.some(e => e.isIntersecting)) return;
+        olho.disconnect();
+        if(node.isConnected) montarBau3D(node);
+      }, { rootMargin: '300px' });
+      olho.observe(node);
+      return;
+    }
+    carregarBau3D().then(b => {
+      if(!node.isConnected) return;
+      node.insertBefore(b.renderer.domElement, node.firstChild); // o mesmo canvas muda de casa a cada redesenho
+      node.classList.add('tem-bau-3d');
+      if(b.tampa && !b.quadro) b.tampa.rotation.x = 0;
+      desenharBau3D();
+    }).catch(() => {});
+  }
+
+  function animarTampa3D(para, ms, curva){
+    const t = bau3d.tampa;
+    if(!t) return;
+    const de = t.rotation.x;
+    const t0 = performance.now();
+    cancelAnimationFrame(bau3d.quadro);
+    const passo = (agora) => {
+      const k = Math.min((agora - t0) / ms, 1);
+      t.rotation.x = de + (para - de) * curva(k);
+      desenharBau3D();
+      bau3d.quadro = k < 1 ? requestAnimationFrame(passo) : 0;
+    };
+    bau3d.quadro = requestAnimationFrame(passo);
+  }
+  const curvaComEstouro = k => 1 + 2.4 * Math.pow(k - 1, 3) + 1.4 * Math.pow(k - 1, 2); // passa um pouco e volta
+  const curvaSuave = k => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
+
+  // Ponto da abertura da tampa (meio da borda de cima do baú), em px dentro da casa do baú.
+  function origemDaTampa(node){
+    const c = bau3d.renderer && bau3d.renderer.domElement;
+    if(node.classList.contains('tem-bau-3d') && c && c.parentNode === node && bau3d.modelo){
+      const p = bau3d.modelo.localToWorld(new bau3d.THREE.Vector3(0, 1.38, 0.15)).project(bau3d.camera);
+      const r = c.getBoundingClientRect();
+      const rn = node.getBoundingClientRect();
+      return { x: (p.x + 1) / 2 * r.width + r.left - rn.left, y: (1 - p.y) / 2 * r.height + r.top - rn.top };
+    }
+    return { x: node.clientWidth / 2, y: node.clientHeight * 0.42 };
+  }
+
+  // Feixes de luz amarela, suaves, saindo da abertura enquanto a tampa está aberta.
+  function soltarFeixesDaTampa(node, origem, ms){
+    const brilho = document.createElement('div');
+    brilho.className = 'chest-brilho';
+    brilho.style.left = origem.x + 'px';
+    brilho.style.top = origem.y + 'px';
+    node.appendChild(brilho);
+    brilho.animate([
+      { opacity: 0, transform: 'translate(-50%, -50%) scale(0.6)' },
+      { offset: 0.2, opacity: 1, transform: 'translate(-50%, -50%) scale(1)' },
+      { offset: 0.75, opacity: 0.85, transform: 'translate(-50%, -50%) scale(1.05)' },
+      { opacity: 0, transform: 'translate(-50%, -50%) scale(1.1)' },
+    ], { duration: ms, easing: 'ease-out', fill: 'both' }).onfinish = () => brilho.remove();
+
+    [-40, -24, -9, 5, 19, 34].forEach((a, i) => {
+      const f = document.createElement('div');
+      f.className = 'chest-feixe';
+      f.style.left = origem.x + 'px';
+      f.style.top = origem.y + 'px';
+      node.appendChild(f);
+      const alto = 0.75 + Math.random() * 0.45;
+      // Base do feixe na abertura (origem 50% 100%), abrindo em leque e balançando de leve.
+      f.animate([
+        { opacity: 0, transform: `translate(-50%, -100%) rotate(${a}deg) scaleY(0.2)` },
+        { offset: 0.25, opacity: 0.9, transform: `translate(-50%, -100%) rotate(${a + 3}deg) scaleY(${alto})` },
+        { offset: 0.7, opacity: 0.7, transform: `translate(-50%, -100%) rotate(${a - 3}deg) scaleY(${alto * 1.05})` },
+        { opacity: 0, transform: `translate(-50%, -100%) rotate(${a}deg) scaleY(${alto * 1.1})` },
+      ], { duration: ms, delay: i * 45, easing: 'ease-in-out', fill: 'both' }).onfinish = () => f.remove();
+    });
+  }
+
+  // Moedas de ouro pulando da abertura: sobem girando em arco e caem para os lados.
+  function soltarMoedas(node, origem){
+    const total = prefersReducedMotion ? 6 : 16;
+    for(let i = 0; i < total; i++){
+      const m = document.createElement('div');
+      m.className = 'chest-moeda';
+      m.style.left = origem.x + 'px';
+      m.style.top = origem.y + 'px';
+      node.appendChild(m);
+      const lado = (i % 2 ? 1 : -1) * (10 + Math.random() * 62);
+      const sobe = 55 + Math.random() * 60;
+      const cai = 60 + Math.random() * 45;
+      const giros = 2 + Math.floor(Math.random() * 3);
+      const quadros = [];
+      for(let k = 0; k <= 1.0001; k += 0.125){
+        const y = -sobe * 4 * k * (1 - k) + cai * k * k; // parábola: sobe e cai
+        quadros.push({
+          offset: Math.min(k, 1),
+          transform: `translate(-50%, -50%) translate(${(lado * k).toFixed(1)}px, ${y.toFixed(1)}px) rotateY(${Math.round(giros * 360 * k)}deg) scale(${(0.55 + 0.45 * Math.min(k * 4, 1)).toFixed(2)})`,
+          opacity: k < 0.1 ? k * 10 : k > 0.8 ? (1 - k) * 5 : 1,
+        });
+      }
+      m.animate(quadros, { duration: 1150 + Math.random() * 450, delay: Math.random() * 240, easing: 'linear', fill: 'both' })
+        .onfinish = () => m.remove();
+    }
+  }
+
   function openChestAnimation(node){
     const svg = node.querySelector('.chest-svg');
     if(!svg || svg.classList.contains('is-open')) return; // evita clique duplo no meio da animação
@@ -582,41 +752,19 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
     // já tinham murchado quando a tampa ainda nem tinha terminado de abrir.
     const PEAK_DELAY = 780;
 
-    setTimeout(() => {
-      // Feixes de luz irradiando do centro, como um estouro de brilho
-      const beamCount = 8;
-      for(let i = 0; i < beamCount; i++){
-        const beam = document.createElement('div');
-        beam.className = 'chest-light-beam';
-        const angle = (i / beamCount) * 360 + (Math.random() * 10 - 5);
-        beam.style.transform = `translate(-50%, -100%) rotate(${angle}deg)`;
-        beam.style.animationDelay = (Math.random() * 0.08) + 's';
-        node.appendChild(beam);
-        setTimeout(() => beam.remove(), 1150);
-      }
+    // Baú 3D: a tampa gira de verdade na dobradiça (passa um pouco e assenta).
+    const tem3d = node.classList.contains('tem-bau-3d') && bau3d.tampa;
+    if(tem3d) animarTampa3D(BAU_TAMPA_ABERTA, 1100, curvaComEstouro);
 
-      // Estoura partículas douradas/roxas saindo do centro do baú, em todas as direções
-      for(let i = 0; i < 22; i++){
-        const particle = document.createElement('div');
-        particle.className = 'chest-particle';
-        const angle = (i / 22) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
-        const dist = 40 + Math.random() * 44;
-        particle.style.setProperty('--px', `${Math.cos(angle) * dist}px`);
-        particle.style.setProperty('--py', `${Math.sin(angle) * dist - 24}px`);
-        particle.style.background = i % 3 === 0 ? '#8965C4' : '#F9A825';
-        const size = 4 + Math.random() * 4;
-        particle.style.width = size + 'px';
-        particle.style.height = size + 'px';
-        particle.style.animationDelay = (Math.random() * 0.15) + 's';
-        node.appendChild(particle);
-        setTimeout(() => particle.remove(), 1250);
-      }
-    }, PEAK_DELAY);
+    // Luz amarela saindo da abertura assim que a tampa desgruda; moedas no auge.
+    setTimeout(() => soltarFeixesDaTampa(node, origemDaTampa(node), 2100), 280);
+    setTimeout(() => soltarMoedas(node, origemDaTampa(node)), PEAK_DELAY - 280);
 
     // Fecha de novo depois de alguns segundos, pra poder abrir de novo se clicar outra vez
     setTimeout(() => {
       svg.classList.remove('is-open');
       node.classList.remove('is-opening');
+      if(tem3d) animarTampa3D(0, 520, curvaSuave);
     }, 2600);
   }
 
@@ -768,6 +916,7 @@ const IMG_SLIDE_5 = "img/slide-5.jpg";
         document.getElementById('onbActiveModule')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
       tilesLayer.appendChild(node);
+      if(isChestNode) montarBau3D(node);
 
       // O balão fica FORA do botão de propósito — se ficasse dentro, ele
       // "pulsava"/flutuava junto com a animação da casa (atual ou baú),
